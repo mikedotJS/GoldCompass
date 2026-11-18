@@ -110,7 +110,7 @@ function A.Decide(item, ctx)
   if hasAh then best = { action = "ah", unit = own } end -- item.bound: soulbound items cannot be auctioned
   if vendor > best.unit then best = { action = "vendor", unit = vendor } end
   local sale = best.unit
-  local maybe -- a craft that looks better but whose ingredient cost is not known well enough to recommend
+  local maybe -- (recipe) a craft that looks better but whose ingredient cost is not known well enough to recommend
 
   local de = item.gear and ctx.disenchant(item.id)
   if de and de * (1 - DEF.ahCut) > best.unit then best = { action = "disenchant", unit = de * (1 - DEF.ahCut) } end
@@ -122,7 +122,7 @@ function A.Decide(item, ctx)
       for _, m in ipairs(recipe.mats) do if m[1] == item.id then qty = qty + m[2] end end
       local perUnit = (e.result - (e.cost - qty * own)) / qty
       if perUnit > best.unit and item.count >= qty then
-        if e.uncertain then maybe = maybe or recipe.name
+        if e.uncertain then maybe = maybe or recipe
         else best = { action = "craft", unit = perUnit, recipe = e, qty = qty } end
       end
     end

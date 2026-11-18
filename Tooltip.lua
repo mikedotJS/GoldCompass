@@ -46,7 +46,7 @@ local function addSection(tt, id)
     for i = 1, more and uses.total or math.min(SHOWN, uses.total) do
       local e = uses.list[i]
       unconfirmed = unconfirmed or e.status ~= "known"
-      tt:AddDoubleLine(e.recipe.name .. "  " .. ns.Fmt.Status(e), ns.Money(e.result), 1, 1, 1, 1, 1, 1)
+      tt:AddDoubleLine(ns.Fmt.RecipeName(e.recipe) .. "  " .. ns.Fmt.Status(e), ns.Money(e.result), 1, 1, 1, 1, 1, 1)
     end
     if not more and uses.total > SHOWN then tt:AddLine(S.uses_more:format(uses.total - SHOWN), MUTE[1], MUTE[2], MUTE[3]) end
     if unconfirmed then tt:AddLine(S.tip_unconfirmed, MUTE[1], MUTE[2], MUTE[3]) end

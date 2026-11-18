@@ -829,3 +829,57 @@ describe("window layout and drawing", function()
     assert.matches("60 points de récolte par heure, 2 objets chacun, taxe HV de 5 %%.", tip)
   end)
 end)
+
+describe("text safety and localized recipe names", function()
+  -- Characters the game font cannot draw show as empty boxes. Allowed: Latin-1 (accents, middle dot, multiplication sign).
+  it("has no character outside Latin-1 in any file that holds user-visible text", function()
+    local bad = {}
+    for _, name in ipairs({ "Strings", "Tooltip", "Window", "Here", "Format", "Log", "Core", "Advice", "Spike", "Learned", "Nodes", "Prices", "ZoneRank" }) do
+      local f = assert(io.open(name .. ".lua", "rb"))
+      local src = f:read("a")
+      f:close()
+      local line = 1
+      for pos, cp in utf8.codes(src) do
+        if cp == 10 then line = line + 1 end
+        if cp > 0xFF then bad[#bad + 1] = ("%s.lua:%d U+%04X"):format(name, line, cp) end
+      end
+    end
+    assert.are.same({}, bad)
+  end)
+
+  it("shows the recipe name from the game when it has one, with C_Spell or the older GetSpellInfo", function()
+    setup({ scanned = true, alchemy = true })
+    local ns = loadAddon()
+    local recipe = { id = 2329, name = "Elixir of Minor Strength" }
+    _G.C_Spell = { GetSpellName = function(id) return id == 2329 and "Élixir de force mineure" or nil end }
+    assert.are.equal("Élixir de force mineure", ns.Fmt.RecipeName(recipe))
+    _G.C_Spell = nil
+    _G.GetSpellInfo = function() return "Élixir (ancien API)" end
+    assert.are.equal("Élixir (ancien API)", ns.Fmt.RecipeName(recipe))
+    _G.GetSpellInfo = function() return { name = "Élixir (table)" } end
+    assert.are.equal("Élixir (table)", ns.Fmt.RecipeName(recipe))
+    -- the tooltip uses it
+    _G.C_Spell = { GetSpellName = function() return "Élixir de force mineure" end }
+    ns.db = { buy = {} }
+    ns.char = { learned = {} }
+    handlers.item(GameTooltip, { id = 2449 })
+    assert.matches("Élixir de force mineure", table.concat(GameTooltip.lines, "\n"))
+    _G.C_Spell, _G.GetSpellInfo = nil, nil
+  end)
+
+  it("falls back to the English name from the data when the game returns nothing", function()
+    setup({ scanned = true, alchemy = true })
+    local ns = loadAddon()
+    local recipe = { id = 2329, name = "Elixir of Minor Strength" }
+    assert.are.equal("Elixir of Minor Strength", ns.Fmt.RecipeName(recipe))           -- no API at all
+    _G.C_Spell = { GetSpellName = function() return nil end }
+    assert.are.equal("Elixir of Minor Strength", ns.Fmt.RecipeName(recipe))           -- not cached yet
+    _G.C_Spell = { GetSpellName = function() return "" end }
+    assert.are.equal("Elixir of Minor Strength", ns.Fmt.RecipeName(recipe))           -- empty answer
+    ns.db = { buy = {} }
+    ns.char = { learned = {} }
+    handlers.item(GameTooltip, { id = 2449 })
+    assert.matches("Elixir of Minor Strength", table.concat(GameTooltip.lines, "\n"))
+    _G.C_Spell = nil
+  end)
+end)

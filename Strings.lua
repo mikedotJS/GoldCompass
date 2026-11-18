@@ -55,7 +55,7 @@ ns.S = {
   price_age = "prix %s",
   age_days = "%d j",
   age_fresh = "du jour",
-  none = "—", price_unknown = "prix inconnu",
+  none = "-", price_unknown = "prix inconnu",
 
   log_header = "journal : %d dernières entrées sur %d", log_cleared = "journal vidé",
 
@@ -69,7 +69,7 @@ ns.S = {
   sub_vendor = "pas de prix HV récent",
   sub_none = "aucun prix : scanne l'hôtel des ventes",
   uses = "Sert à %d usage%s", uses_price = "prix du résultat", uses_more = "+ %d autres (Maj pour tout voir)",
-  st_known = "|cff1eff00✓ connue|r", st_learn = "|cffffd100à apprendre : %s|r", st_quest = "|cffffd100à faire : quête|r",
+  st_known = "|cff1eff00connue|r", st_learn = "|cffffd100à apprendre : %s|r", st_quest = "|cffffd100à faire : quête|r",
   st_locked = "|cff9d9d9dniveau de métier %d requis|r", st_noprof = "|cff9d9d9dmétier requis : %s|r",
   where_v = "marchand", where_m = "butin de monstre", where_d = "butin", where_q = "quête", where_trainer = "entraîneur, niv. %d", where_unknown = "source inconnue",
   sub_maybe = "« %s » pourrait rapporter plus (estimation haute : coût des ingrédients inconnu)",
@@ -86,7 +86,7 @@ ns.S = {
   bags_api = "L'API des sacs n'est pas disponible.", bags_loading = "Lecture de ton sac...",
   g_ah = "Vendre à l'HV", g_craft = "Fabriquer / désenchanter", g_keep = "Garder", g_vendor = "Vendre au marchand", g_none = "Sans valeur connue",
   bags_total = "Ton sac vaut environ", bags_total_note = "~ estimation, hors objets gardés",
-  bags_more = "… et %d autres",
+  bags_more = "... et %d autres",
 
   -- here tab
   tab_here = "Ici", title_here = "Gold Compass · Ici",

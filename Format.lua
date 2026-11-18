@@ -7,11 +7,25 @@ ns.Fmt = F
 
 local SALE = { ah = S.act_ah, vendor = S.act_vendor, disenchant = S.act_de, none = S.act_none }
 
+-- Recipe name in the client's language: the game's spell name for the craft spell (C_Spell.GetSpellName, or the older
+-- GetSpellInfo), and the English name from Data/Recipes.lua when the game returns nothing (not cached yet, unknown ID).
+function F.RecipeName(recipe)
+  local name
+  if C_Spell and C_Spell.GetSpellName then
+    name = C_Spell.GetSpellName(recipe.id)
+  elseif GetSpellInfo then
+    name = GetSpellInfo(recipe.id)
+  end
+  if type(name) == "table" then name = name.name end
+  if type(name) == "string" and name ~= "" then return name end
+  return recipe.name
+end
+
 -- Headline of a decision, e.g. "Fabriquer : Huile ×2", "Garder 20, vendre le reste à l'HV".
 function F.Action(d, withCount)
   local text
   if d.action == "craft" then
-    text = (withCount and d.crafts > 1) and S.act_craft_n:format(d.recipe.recipe.name, d.crafts) or S.act_craft:format(d.recipe.recipe.name)
+    text = (withCount and d.crafts > 1) and S.act_craft_n:format(F.RecipeName(d.recipe.recipe), d.crafts) or S.act_craft:format(F.RecipeName(d.recipe.recipe))
   else
     text = SALE[d.action]
   end
@@ -26,7 +40,7 @@ function F.Reason(d, sale)
   if d.keep > 0 then return S.sub_keep:format(d.quest) end
   if d.action == "craft" then return S.sub_craft:format(ns.Money(math.max(0, d.unit - sale))) end
   if d.action == "vendor" then return S.sub_vendor end
-  if d.maybe then return S.sub_maybe:format(d.maybe) end
+  if d.maybe then return S.sub_maybe:format(F.RecipeName(d.maybe)) end
   if d.action == "none" then return S.sub_none end
 end
 

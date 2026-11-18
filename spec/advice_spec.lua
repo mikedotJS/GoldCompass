@@ -150,7 +150,7 @@ describe("Advice.Decide", function()
     assert.is_true(e.uncertain)
     local d = A.Decide({ id = 100, count = 5 }, c)
     assert.are_not.equal("craft", d.action)
-    assert.are.equal("Potion", d.maybe)
+    assert.are.equal("Potion", d.maybe.name)
     -- once the vendor BUY price is known (40c), the cost is certain and the craft is recommended
     c.buy = function(id) if id == 200 then return 40 end end
     local e2 = A.Evaluate(A.NewIndex(rows).byMat[200][1], c)
