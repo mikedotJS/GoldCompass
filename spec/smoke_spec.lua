@@ -42,6 +42,13 @@ local function setup(opts)
     _G.GetProfessions = function() return 1 end
     _G.GetProfessionInfo = function() return "Alchemy", nil, 50, nil, nil, nil, 171 end
   end
+  if opts.fishingSkill then
+    _G.GetProfessions = function() return 1, 2 end
+    _G.GetProfessionInfo = function(i)
+      if i == 1 then return "Alchemy", nil, 50, nil, nil, nil, 171 end
+      return "Fishing", nil, 75, nil, nil, nil, 356
+    end
+  end
   _G.IsPlayerSpell = function(id) return not opts.noSpell and id == 2329 end -- Elixir of Minor Strength
   _G.UnitFactionGroup = function() return "Alliance" end
   _G.InCombatLockdown = function() return opts.combat or false end
@@ -69,8 +76,12 @@ local function setup(opts)
   _G.time = os.time
   -- 100 Copper Veins (201) in zone 1411, 100 Peacebloom (401) in zone 1429; 3 spots of an unknown node
   local db = {
-    Mining = { [1411] = {}, [1429] = {} }, ["Herb Gathering"] = { [1429] = {} },
+    Mining = { [1411] = {}, [1429] = {} }, ["Herb Gathering"] = { [1429] = {} }, Fishing = {},
   }
+  if opts.pools then
+    db.Fishing[1411] = {}
+    for i = 1, 20 do db.Fishing[1411][i] = 107 end -- 20 Oily Blackmouth School spots in Durotar
+  end
   for i = 1, 100 do db.Mining[1411][i] = 201; db["Herb Gathering"][1429][i] = 401 end
   db.Mining[1411][1000], db.Mining[1411][1001], db.Mining[1411][1002] = 99999, 99999, 99999
   _G.GatherMate2 = { GetNodesForZone = function(_, zone, t) return pairs(db[t][zone] or {}) end }
@@ -414,5 +425,62 @@ describe("review fixes, group B", function()
       assert.is_not_nil(ns.Zones[id])
       assert.is_nil(ns.Zones[id][2])
     end
+  end)
+end)
+
+describe("fishing", function()
+  it("ranks fishing zones from recorded pools, with the supposed skill when the character cannot fish", function()
+    setup({ scanned = true, pools = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.Run(function(r) res = r end, { profession = "Fishing" })
+    assert.are.equal("ok", res.state)
+    assert.is_true(res.fishing)
+    assert.are.equal(1, #res.all)
+    assert.are.equal(1411, res.all[1].zone)
+    assert.are.equal(100, res.supposed) -- "if you learn Fishing": 5 x level 20
+    -- 20 pools of item 6358 at 35c: 2 x 35 x 0.95 = 66.5 per pool; pace 60 x 20/100 = 12; 12 x 66.5 = 798c
+    assert.is_near(798, res.all[1].copperPerHour, 1e-6)
+    assert.matches("estimation", ns.S.per_hour:format("x"))
+  end)
+
+  it("says plainly that no pool is recorded, and that it is not an error", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.Run(function(r) res = r end, { profession = "Fishing" })
+    assert.are.equal("nofishing", res.state)
+    local title, body = ns.StateText(res)
+    assert.matches("Aucun banc enregistré", title)
+    assert.matches("GatherMate les mémorise", body)
+    assert.has_no.errors(function() ns.Window.Toggle() end)
+  end)
+
+  it("includes fishing in the All ranking only for a character that fishes", function()
+    setup({ scanned = true, pools = true, fishingSkill = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.Run(function(r) res = r end)
+    assert.are.equal("ok", res.state)
+    assert.are.equal(1411, res.all[1].zone)
+    assert.is_nil(res.supposed) -- real Fishing skill 75
+    setup({ scanned = true, pools = true, alchemy = true })
+    ns = loadAddon()
+    ns.db = {}
+    ns.Run(function(r) res = r end)
+    assert.are.equal("ok", res.state)   -- Alchemy only: supposed gathering skills, pools of Fishing included in "All"
+    assert.are.equal(100, res.supposed)
+  end)
+
+  it("keeps Auctionator failures on the fishing filter as an error state", function()
+    setup({ scanned = true, pools = true, aucFails = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.Run(function(r) res = r end, { profession = "Fishing" })
+    assert.are.equal("price_error", res.state)
   end)
 end)

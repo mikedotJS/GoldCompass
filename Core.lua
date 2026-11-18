@@ -39,7 +39,8 @@ end
 
 -- Skills of the character by profession (English names, as in Data/Recipes.lua and the node types).
 local SKILL_LINES = { [182] = "Herb Gathering", [186] = "Mining", [171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting",
-  [202] = "Engineering", [165] = "Leatherworking", [197] = "Tailoring", [185] = "Cooking", [129] = "First Aid" } -- Classic skill line IDs, unverified on Forever (spike S4)
+  [202] = "Engineering", [165] = "Leatherworking", [197] = "Tailoring", [185] = "Cooking", [129] = "First Aid",
+  [356] = "Fishing", [393] = "Skinning" } -- Classic skill line IDs, unverified on Forever (spike S4)
 function ns.Skills()
   local skills = {}
   if GetProfessions and GetProfessionInfo then
@@ -60,9 +61,9 @@ local function gatherSkills(only)
     if real[only] then return { [only] = real[only] } end
     return { [only] = supposed }, supposed
   end
-  local skills = { ["Mining"] = real["Mining"], ["Herb Gathering"] = real["Herb Gathering"] }
+  local skills = { ["Mining"] = real["Mining"], ["Herb Gathering"] = real["Herb Gathering"], ["Fishing"] = real["Fishing"] }
   if next(skills) then return skills end
-  return { ["Mining"] = supposed, ["Herb Gathering"] = supposed }, supposed
+  return { ["Mining"] = supposed, ["Herb Gathering"] = supposed, ["Fishing"] = supposed }, supposed
 end
 
 -- Context for the pure Advice module, read from the game.
@@ -103,7 +104,8 @@ local function compute(opts)
     vendor = ns.Prices.Vendor, ageKnown = ns.Prices.HasAge(), constants = { maxRows = math.huge },
   }
   local result = ns.ZoneRank.Rank(input)
-  if result.status == "no_nodes" then return { state = "nogather" } end
+  -- fishing is ranked only from pools GatherMate2 has recorded for this player (its Forever data has none)
+  if result.status == "no_nodes" then return { state = opts and opts.profession == "Fishing" and "nofishing" or "nogather" } end
   if result.status == "no_scan" then return { state = "noscan" } end
   for _, row in ipairs(result.rows) do
     row.name = ns.Nodes.ZoneName(row.zone)
@@ -114,6 +116,7 @@ local function compute(opts)
   local top = {}
   for i = 1, math.min(ns.TOP, #result.rows) do top[i] = result.rows[i] end
   return { state = "ok", rows = top, all = result.rows, input = input, supposed = supposed,
+    fishing = opts and opts.profession == "Fishing",
     ageUnknown = not ns.Prices.HasAge() }
 end
 
@@ -158,7 +161,7 @@ local STATE_TEXT = {
   nogather = { S.nogather_t, S.nogather_p }, noscan = { S.noscan_t, S.noscan_p },
   no_gathermate_addon = { S.nogm_t, S.nogm_p }, no_auctionator_addon = { S.noauc_t, S.noauc_p },
   price_error = { S.error_t, S.error_p }, error = { S.unexpected_t, "" },
-  empty = { S.bags_empty_t, S.bags_empty_p }, here_nodata = { S.here_nodata_t, S.here_nodata_p },
+  empty = { S.bags_empty_t, S.bags_empty_p }, nofishing = { S.nofish_t, S.nofish_p }, here_nodata = { S.here_nodata_t, S.here_nodata_p },
 }
 ns.StateText = function(res)
   local t = STATE_TEXT[res.state]

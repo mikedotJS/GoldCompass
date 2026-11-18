@@ -13,7 +13,7 @@ Install in `E:\Programmes\World of Warcraft\_forever_\Interface\AddOns` (CurseFo
 | GatherMate2_Data (v42.0 or later) | https://www.curseforge.com/wow/addons/gathermate2_data |
 | Auctionator (12.1.5 or later) | https://www.curseforge.com/wow/addons/auctionator |
 
-GoldCompass is already copied there by `scripts/deploy.sh`. Log in with a low-level character and tick GoldCompass in the AddOns list.
+GoldCompass (with LICENSE, NOTICE and THIRD-PARTY) is already copied there by `scripts/deploy.sh`. Log in with a low-level character and tick GoldCompass in the AddOns list.
 Do the lines in order; lines 3 to 5 need the three addons installed but NOT yet configured.
 
 | # | Type | Expected | Send back |
@@ -41,15 +41,22 @@ Use a character with at least one profession (ideally one recipe known), a few i
 | 14 | `/gc spike`, read the `S5` lines | `TooltipDataProcessor`, `C_Container`, `IsPlayerSpell` true; `IsPlayerSpell(2329)` is true only if you know that Alchemy recipe | The S5 lines |
 | 15 | Hover a herb or ore in the bags | Under the normal tooltip: a teal `GOLD COMPASS` header, ONE action line (green, with a price on the right) and a grey reason; then `Sert à N usages` with at most 3 recipes (`✓ connue` green, `à apprendre : ...` gold, grey for missing profession), then `~ estimation · prix HV vus il y a ...` | Screenshot |
 | 16 | Hold Shift while hovering | The full recipe list appears without moving the mouse | Screenshot |
-| 17 | Hover a grey item, then an item with no price | Grey item: vendor action. No price: `aucun prix : scanne l'hôtel des ventes`. An item with no use and no price: no Gold Compass lines at all | What you saw |
+| 17 | Hover a grey item, then an item with no AH price and no vendor value | Grey item: vendor action. No price at all: the line `Aucune valeur connue` and under it `aucun prix : scanne l'hôtel des ventes`. A price of 0 is never shown as `<1s`: it reads `prix inconnu` | What you saw |
 | 18 | Hover an item during combat | No Gold Compass lines, no error | Yes / no |
 | 19 | Enable Forever Ledger, hover a herb | No second verdict line from Gold Compass, only the recipes list | Screenshot |
 | 20 | `/gc`, click the `Sac` tab | Loading panel, then groups (Vendre à l'HV, Fabriquer / désenchanter, Garder, Vendre au marchand) with totals, and `Ton sac vaut environ ...` at the bottom | Screenshot |
 | 21 | Loot or sell an item with the Sac tab open | The list updates by itself | Yes / no |
-| 22 | Empty your bags (or open the tab on a character with empty bags) | `Ton sac est vide` panel | Yes / no |
+| 22 | Empty your bags except the Hearthstone (or use a fresh character) | `Ton sac est vide` panel (the Hearthstone is ignored) | Yes / no |
 | 23 | Click the `Ici` tab, walk into another zone | Zone name, `~X/h pour toi`, a comparison line, `À récolter ici`, quest pick-ups when the zone has quests, a profession hint if you lack Herbalism or Mining. It refreshes when the zone changes. In a city: `Pas de données pour cette zone` | Screenshot of two zones |
 | 24 | On the `Carte` tab, tick `Mon niveau seulement` | High-level zones disappear instantly (no reload) | Yes / no |
-| 25 | Click the `Métier : ...` button three times | It cycles Tous, Herboristerie, Minage; the list is recomputed each time | Yes / no |
+| 25 | Click the `Métier : ...` button four times | It cycles Tous, Herboristerie, Minage, Pêche, back to Tous; the list is recomputed each time | Yes / no |
+| 26 | Select `Métier : Pêche` on a character that has never had GatherMate record a fishing pool | Panel `Aucun banc enregistré` / `Aucun banc enregistré ici : pêche des bancs en jouant, GatherMate les mémorise.` with `Réessayer` (not an error) | The text |
+| 27 | Fish a few pools (Oily Blackmouth, Firefin Snapper, Sagefish, Deviate Fish, Stonescale Eel) so GatherMate records them, then select `Pêche` again | Only the zones with recorded pools are ranked, figures show `~...(estimation)`, the banner `Pêche : seules les zones où GatherMate a enregistré des bancs sont classées.` is shown. Expect small figures: the pace is cut when fewer than 100 spots are known | Screenshot, and which pool gave which item |
+| 28 | Open the profession window of a profession you know (Alchemy for example), close it, then hover an ingredient | The recipes you know show `✓ connue` even if `/gc spike` said `IsPlayerSpell` is false | Yes / no |
+| 29 | Visit a vendor selling a reagent (vial, flux, thread), then hover a herb used in a recipe needing it | The craft can now be recommended (before the visit the tooltip says a craft `pourrait rapporter plus (estimation haute ...)`) | What you saw |
+| 30 | Hover a soulbound green item in the bags, with and without the Bags tab open | Never `Vendre à l'HV`; the tooltip and the Bags tab agree | Yes / no |
+| 31 | Tick `Mon niveau seulement` | Zones with an unknown level (the four Forever-only zones) disappear and the banner says `N zone(s) de niveau inconnu masquée(s)`. Send the real name and level range of map IDs 2482, 2521, 2548, 2652 if you can read them | The names |
+| 32 | In combat, click a zone row; also hover an item and press Shift | The map does not open and chat says `Impossible d'ouvrir la carte en combat.`; the tooltip does not redraw | Yes / no |
 
 Spike S4 (zone and level) is the `S4` lines of line 2: the map ID should match the zone you stand in, and each profession line shows its `skillLine` (GoldCompass expects 182 for Herbalism and 186 for Mining; if yours differ, say so, the ranking will think you have no profession).
 Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in one zone and count; send the count.

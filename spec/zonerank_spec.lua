@@ -8,6 +8,7 @@ local nodes = {
   [1] = { type = MINING, item = 100, skill = 1, yield = 2 },
   [2] = { type = HERB, item = 200, skill = 1, yield = 2 },
   [3] = { type = MINING, item = 300, skill = 100, yield = 2 },
+  [5] = { type = "Fishing", item = 400, skill = 1, yield = 2 }, -- a fishing pool type
   [4] = { type = HERB, item = nil },                 -- Forever-only node with no known item
 }
 local skills = { [MINING] = 300, [HERB] = 300 }
@@ -128,6 +129,20 @@ describe("ZoneRank.Rank", function()
     -- no Herbalism at all: herb node ignored
     local r2 = run({ [10] = { [2] = 100 } }, { [200] = { 3000, 0 } }, nil, { skills = { [MINING] = 50 } })
     assert.are.equal("no_nodes", r2.status)
+  end)
+
+  it("ranks fishing from recorded pools only; a zone with no recorded pool is not ranked", function()
+    -- item 400 (a fish) sells at 1000c: 2 x 1000 x 0.95 = 1900 per pool.
+    -- Zone 30: 10 recorded pools -> pace 60 x 10/100 = 6 -> 6 x 1900 = 11400. Zone 31: nothing recorded -> absent.
+    local r = run({ [30] = { [5] = 10 }, [31] = {} }, { [400] = { 1000, 0 } }, nil, { skills = { Fishing = 20 } })
+    assert.are.equal("ok", r.status)
+    assert.are.equal(1, #r.rows)
+    assert.are.equal(30, r.rows[1].zone)
+    assert.is_near(11400, r.rows[1].copperPerHour, 1e-6)
+    -- without any recorded pool the answer is no_nodes (the screen then says so)
+    assert.are.equal("no_nodes", run({ [31] = {} }, { [400] = { 1000, 0 } }, nil, { skills = { Fishing = 20 } }).status)
+    -- a character without the Fishing skill gets no fishing zone
+    assert.are.equal("no_nodes", run({ [30] = { [5] = 10 } }, { [400] = { 1000, 0 } }).status) -- default skills: Mining and Herbalism only
   end)
 
   it("lists the two items that contribute most, best first", function()

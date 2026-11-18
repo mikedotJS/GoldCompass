@@ -164,7 +164,7 @@ local function build()
   f.profBtn = button(f, "", 170)
   f.profBtn:SetPoint("TOPRIGHT", -14, -55)
   f.profBtn:SetScript("OnClick", function()
-    local order = { [false] = "Herb Gathering", ["Herb Gathering"] = "Mining", ["Mining"] = false }
+    local order = { [false] = "Herb Gathering", ["Herb Gathering"] = "Mining", ["Mining"] = "Fishing", ["Fishing"] = false }
     ns.db.profession = order[ns.db.profession or false] or nil
     W.UpdateControls()
     W.Refresh()
@@ -294,6 +294,7 @@ function renderMap(res)
   local partial = ns.PartialText(shown)
   if partial ~= "" then banner[#banner + 1] = partial end
   if hidden > 0 then banner[#banner + 1] = S.unknown_level_hidden:format(hidden) end
+  if res.fishing then banner[#banner + 1] = S.fish_note end
   if res.ageUnknown then banner[#banner + 1] = S.age_unknown end
   f.banner:SetText(table.concat(banner, " "))
   if #shown == 0 then return showPanel(S.nolevel_t, S.nolevel_p, true) end

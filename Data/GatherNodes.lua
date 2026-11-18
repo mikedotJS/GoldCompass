@@ -4,13 +4,17 @@
 --   item  = item ID the node gives (nil = unknown, the node is counted as "unknown" and ignored)
 --   skill = gathering skill needed
 --   yield = average items per node (PLAN.md section 5 assumption: 2, unverified on Forever)
+-- Fishing rows (type "Fishing", GatherMate2 fishing pool IDs 101 to 110): the pool-to-item pairing is inferred from the
+-- pool and item names, item IDs checked against Forever Ledger's item list. NOT verified in the game: the pairing,
+-- the yield (2 per pool) and the skill (1, so the skill gate is not modelled for pools). GatherMate2_Data ships no
+-- fishing data for Forever: pools only exist here once GatherMate2 has recorded them for this player.
 -- Sources: node IDs read in GatherMate2/Constants.lua (master, 2026-11-18); item IDs checked
 -- against the item names in Forever Ledger's ClassicItems.lua (MIT); skill levels are the
 -- original Classic requirements and are NOT verified on Forever. The three Forever-only nodes
 -- have no known item ID yet (PLAN.md section 3).
 local _, ns = ...
 
-local H, M = "Herb Gathering", "Mining"
+local H, M, F = "Herb Gathering", "Mining", "Fishing"
 
 ns.GatherNodes = {
   [401] = { type = H, item = 2447, skill = 1, yield = 2 }, -- Peacebloom
@@ -63,4 +67,13 @@ ns.GatherNodes = {
   [215] = { type = M, item = 10620, skill = 275, yield = 2 }, -- Rich Thorium Vein
   [212] = { type = M, item = 10620, skill = 275, yield = 2 }, -- Ooze Covered Rich Thorium Vein
   [4201] = { type = M, item = nil, skill = nil, yield = 2 }, -- Heavy Thorium Vein (Forever only)
+  -- Fishing pools (GatherMate2 IDs; the Lesser/Sparse/Abundant/Teeming variants share these IDs)
+  [101] = { type = F, item = nil, skill = nil, yield = 2 }, -- Floating Wreckage (random loot, no item)
+  [103] = { type = F, item = nil, skill = nil, yield = 2 }, -- Floating Debris (random loot, no item)
+  [105] = { type = F, item = 6359, skill = 1, yield = 2 }, -- Firefin Snapper School -> Firefin Snapper
+  [106] = { type = F, item = 21153, skill = 1, yield = 2 }, -- Greater Sagefish School -> Raw Greater Sagefish
+  [107] = { type = F, item = 6358, skill = 1, yield = 2 }, -- Oily Blackmouth School -> Oily Blackmouth
+  [108] = { type = F, item = 21071, skill = 1, yield = 2 }, -- Sagefish School -> Raw Sagefish
+  [109] = { type = F, item = 6522, skill = 1, yield = 2 }, -- School of Deviate Fish -> Deviate Fish
+  [110] = { type = F, item = 13422, skill = 1, yield = 2 }, -- Stonescale Eel Swarm -> Stonescale Eel
 }

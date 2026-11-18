@@ -4,7 +4,7 @@ local _, ns = ...
 local N = {}
 ns.Nodes = N
 
-local TYPES = { "Mining", "Herb Gathering" } -- GatherMate2 node types, as in its Constants.lua
+local TYPES = { "Mining", "Herb Gathering", "Fishing" } -- GatherMate2 node types, as in its Constants.lua
 local MAX_MAP_ID = 3000                       -- GatherMate2 has no zone list to ask for, so every map ID is tried
 
 function N.Installed() return GatherMate2 ~= nil and GatherMate2.GetNodesForZone ~= nil end
