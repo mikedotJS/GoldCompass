@@ -1087,7 +1087,7 @@ describe("profession leveling tab", function()
     local text = lineTexts(ns)
     assert.matches("Alchimie  50/75", text)
     assert.matches("Monte avec", text)
-    assert.matches("estimation", text)
+    assert.matches("ingrédients par point", text); assert.matches("fabrications par point", text)
     assert.matches("À apprendre maintenant", text)
     assert.matches("Meilleure à apprendre", text)
     assert.matches("Bientôt %(dans les 25 prochains points%)", text)
@@ -1284,7 +1284,7 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
     local ns = start({ on = true, counts = { [2447] = 5 } }) -- recipe 1: floor(5/2) = 2 ; recipe 2 lacks 2448
     ns.Window.Toggle(); ns.Window.SetTab("job")
     local text = lineTexts(ns)
-    assert.matches("Monte avec Potion de soins : ×2, ~2 points attendus, coûte ~", text)   -- 2 orange crafts: 2 points
+    assert.matches("Monte avec Potion de soins : ×2, ton sac donne ~2 points", text)   -- 2 orange crafts: 2 points
     assert.matches("Sac valorisé au prix du marché", ns.Window.Footer().text)
   end)
 
@@ -2065,7 +2065,7 @@ describe("Métier tab: objective toggle", function()
   it("defaults to Monter le métier and remembers the choice per character", function()
     local ns = start()
     assert.are.equal("level", ns.Goal())
-    assert.matches("Monte avec Potion de soins : ×2, ~2 points attendus", lineTexts(ns))     -- 2 orange crafts beat 5 green ones (1.25)
+    assert.matches("Monte avec Potion de soins : ×2, ton sac donne ~2 points", lineTexts(ns))     -- 2 orange crafts beat 5 green ones (1.25)
     assert.matches("Objectif : monter le métier", ns.Window.Footer().text)
     ns.Window.SetGoal("gold")
     assert.are.equal("gold", ns.char.goal)                                                     -- saved with the character
@@ -2838,7 +2838,8 @@ describe("Métier tab, 'Monter le métier': no AH resale note, the chance is exa
     for _, l in ipairs(ns.Window.Lines()) do text[#text + 1] = ((l.left.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
     local all = table.concat(text, "\n")
     assert.matches("Monte avec ", all)
-    assert.matches("coûte ~", all)
+    assert.matches("ingrédients par point %(6 Item2318, 2 Item2320%)", all)
+    assert.matches("coût en or ~", all)
     assert.matches("chance d'un point ~100 %%\n", all .. "\n")                   -- thresholds known (orange): exact, no "(estimation)"
     assert.is_nil(all:find("rentable seulement", 1, true))
     assert.is_nil(all:find("prix HV du jour", 1, true))

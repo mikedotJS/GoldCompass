@@ -80,16 +80,32 @@ function V.Evaluate(rec, ctx, mode, skill, th)
   if th and th[1] and th[3] and skill then d = V.ColorAt(skill, th) end
   local chance, exact = V.Chance(d, skill, th and (th.y or th[2]), th and (th.gr or th[4]))
   local cost, missing, floor, subs = 0, {}, false, {}
+  -- Ingredients: the units of reagents one craft takes, a reagent any trade-goods vendor sells (ctx.buy: thread, salt, vials...) counts half
+  -- (easy to get), the rest 1. An intermediate reagent the player lacks and knows how to make counts as the units of its own reagents.
+  -- `gather` = the same, the units the bags do not already hold.
+  local units, gather = 0, 0
+  local function weight(id) return (ctx.buy and ctx.buy(id)) and 0.5 or 1 end
   for _, m in ipairs(rec.mats or {}) do
     local unit, isFloor = buyCost(m[1], ctx)
     local sub = ctx.sub and ctx.sub(m[1])
+    local owned = ctx.owned and ctx.owned(m[1]) or 0
+    local lacking = math.max(0, m[2] - owned)
     if sub and sub ~= rec then
       local made = craftCost(sub, ctx)
-      if made and (not unit or isFloor or made < unit) then
-        unit, isFloor = made, false
-        local need = m[2] - (ctx.owned and ctx.owned(m[1]) or 0)
-        if need > 0 then subs[#subs + 1] = { item = m[1], need = need, rec = sub, unit = made } end
+      if made and (not unit or isFloor or made < unit) then unit, isFloor = made, false end
+      if lacking > 0 then
+        local subUnits = 0
+        for _, sm in ipairs(sub.mats or {}) do subUnits = subUnits + sm[2] * weight(sm[1]) end
+        subUnits = subUnits / math.max(sub.oq or 1, 1)
+        subs[#subs + 1] = { item = m[1], need = lacking, rec = sub, unit = made }
+        units = units + lacking * subUnits + (m[2] - lacking) * weight(m[1])
+        gather = gather + lacking * subUnits
+      else
+        units = units + m[2] * weight(m[1])
       end
+    else
+      units = units + m[2] * weight(m[1])
+      gather = gather + lacking * weight(m[1])
     end
     if unit then cost = cost + unit * m[2]; floor = floor or isFloor else missing[#missing + 1] = m[1] end
   end
@@ -106,6 +122,9 @@ function V.Evaluate(rec, ctx, mode, skill, th)
   local net = cost - result
   return { rec = rec, chance = chance, exact = exact, d = d, color = V.COLOR[d] or "?", cost = cost, result = result, net = net,
     perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale, floor = floor, subs = subs,
+    -- levelling effort: ingredients and crafts per skill point (the gold figure `perPoint` is only a last tie-break)
+    units = units, gather = gather, unitsPerPoint = chance > 0 and units / chance or nil,
+    gatherPerPoint = chance > 0 and gather / chance or nil, craftsPerPoint = chance > 0 and 1 / chance or nil,
     resale = net < 0 and ahSale, ahSale = ahSale, saleAge = saleAge, profit = -net,
     oldAh = oldAh, noAge = ahSale and ctx.ageKnown == false,
     -- the figure rests on an AH price of the crafted item that is undated or past the "fresh" days: "prix HV incertain". (Auctionator
@@ -124,6 +143,38 @@ function V.Craftable(rec, count)
   end
   if times == math.huge then times = 0 end -- no known reagents: nothing can be said, so nothing is craftable
   return times, short
+end
+
+-- Levelling order: fewer ingredients per skill point; ties: fewer crafts per point (higher chance), craftable now, no intermediate craft to make
+-- first, then the gold cost per point, then the id.
+function V.EasierThan(a, b)
+  local ua, ub = math.floor(a.unitsPerPoint * 100 + 0.5), math.floor(b.unitsPerPoint * 100 + 0.5)
+  if ua ~= ub then return ua < ub end
+  if math.abs(a.chance - b.chance) > 1e-9 then return a.chance > b.chance end
+  if (a.craftNow or false) ~= (b.craftNow or false) then return a.craftNow or false end
+  if (#a.subs == 0) ~= (#b.subs == 0) then return #a.subs == 0 end
+  local pa, pb = math.floor(a.perPoint + 0.5), math.floor(b.perPoint + 0.5)
+  if pa ~= pb then return pa < pb end
+  return a.rec.id < b.rec.id
+end
+
+-- Best of the rows (sorted by V.EasierThan) without the bag filter: among the recipes within 15 % of the fewest ingredients per point, the ones
+-- that can be crafted right now come first, then fewer crafts per point (orange before yellow before green), then no intermediate craft, then gold.
+function V.EasiestWithin(rows)
+  local top = rows[1]
+  if not top then return end
+  local limit = top.unitsPerPoint * 1.15
+  local best
+  local function better(a, b)
+    if (a.craftNow or false) ~= (b.craftNow or false) then return a.craftNow or false end
+    if math.abs(a.chance - b.chance) > 1e-9 then return a.chance > b.chance end
+    if (#a.subs == 0) ~= (#b.subs == 0) then return #a.subs == 0 end
+    return V.EasierThan(a, b)
+  end
+  for _, e in ipairs(rows) do
+    if e.unitsPerPoint <= limit and (not best or better(e, best)) then best = e end
+  end
+  return best
 end
 
 -- prof = { skill, max, recipes = { [id] = rec } }. Returns { rows = ranked, best, unpriced = { evaluations with a reagent without
@@ -186,26 +237,15 @@ function V.Plan(prof, ctx, limit, count, thresholds, goal)
       return a.rec.id < b.rec.id
     end
     if count and math.abs(a.points - b.points) > 1e-9 then return a.points > b.points end
-    -- the cost per point (reagents minus the vendor sale, over the chance of a point); ties: higher chance, craftable now, cheaper craft
-    local pa, pb = math.floor(a.perPoint + 0.5), math.floor(b.perPoint + 0.5)
-    if pa ~= pb then return pa < pb end
-    if math.abs(a.chance - b.chance) > 1e-9 then return a.chance > b.chance end
-    if (a.craftNow or false) ~= (b.craftNow or false) then return a.craftNow or false end
-    if a.net ~= b.net then return a.net < b.net end
-    return a.rec.id < b.rec.id
+    return V.EasierThan(a, b)
   end)
   table.sort(unpriced, function(a, b) return a.rec.id < b.rec.id end)
   while limit and #rows > limit do rows[#rows] = nil end
   local best, second = rows[1], nil
-  if best and not gold and not count and not best.craftNow then
-    -- no bag filter: at about the same cost per point (within 10 %) the recipe that can be crafted right now is preferred
-    local tolerance = math.abs(best.perPoint) * 0.1
-    for i, e in ipairs(rows) do
-      if e.craftNow and e.perPoint <= best.perPoint + tolerance then
-        table.remove(rows, i); table.insert(rows, 1, e); best = e
-        break
-      end
-    end
+  if best and not gold and not count then
+    best = V.EasiestWithin(rows)                                  -- levelling: the easiest recipe (ingredients, then ease)
+    for i, e in ipairs(rows) do if e == best then table.remove(rows, i); break end end
+    table.insert(rows, 1, best)
   end
   if gold then                                                    -- money: nothing earning, or priced from an undated AH price, wins
     best = nil

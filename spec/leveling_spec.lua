@@ -51,10 +51,10 @@ describe("Leveling.Evaluate", function()
 end)
 
 describe("Leveling.Plan", function()
-  it("ranks by cost per point (reagents minus the vendor sale, over the chance), ties to the higher chance; gray and unpriced recipes left out", function()
+  it("ranks by ingredients per point (a vendor-sold reagent counts half, over the chance); gray and unpriced recipes left out", function()
     -- A: 10 x reagent 20 (30c) = 300, out 31 sells 200 -> net 100, orange -> 100 per point
     -- B: 8 x 30 = 240, out 32 sells 180 -> net 60, yellow -> 60 / 0.75 = 80
-    -- C: 5 x 30 = 150, out 33 sells 130 -> net 20, green -> 20 / 0.25 = 80: same cost per point as B, B has the higher chance
+    -- reagent 20 is sold by a vendor (half a unit): A 5 units / 1 = 5, B 4 / 0.75 = 5.33, C 2.5 / 0.25 = 10
     -- D: gray (never listed). E: reagent 99 has no price -> unpriced.
     local prof = { skill = 50, recipes = {
       [1] = { id = 1, d = 0, out = 31, oq = 1, mats = { { 20, 10 } } },
@@ -66,10 +66,10 @@ describe("Leveling.Plan", function()
     local plan = V.Plan(prof, ctx())
     local order = {}
     for i, e in ipairs(plan.rows) do order[i] = e.rec.id end
-    assert.are.same({ 2, 3, 1 }, order)
-    assert.are.equal(80, plan.rows[1].perPoint)
-    assert.are.equal(100, plan.rows[3].perPoint)
-    assert.are.equal(2, plan.best.rec.id)
+    assert.are.same({ 1, 2, 3 }, order)
+    assert.are.equal(5, plan.rows[1].unitsPerPoint); assert.are.equal(100, plan.rows[1].perPoint)
+    assert.is_near(5.33, plan.rows[2].unitsPerPoint, 0.01); assert.are.equal(10, plan.rows[3].unitsPerPoint)
+    assert.are.equal(1, plan.best.rec.id)
     assert.are.equal(1, #plan.unpriced)
     assert.are.same({ 99 }, plan.unpriced[1].missing)
     assert.are.equal(5, plan.known)
@@ -714,16 +714,16 @@ describe("Leveling: skill points first, money second (the owner's Leatherworking
     assert.are.equal(2, plan.best.rec.id)
   end)
 
-  it("without the bag the cost per point decides, not the colour: gray never, an unpriced recipe last", function()
+  it("without the bag the ingredients per point decide, not the colour: gray never, an unpriced recipe last", function()
     local p = { skill = 61, recipes = {
-      [1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 10, 1 } } },    -- green: (100 - 50) / 0.25 = 200 per point
-      [2] = { id = 2, d = 1, out = 32, oq = 1, mats = { { 20, 10 } } },   -- yellow: (300 - 180) / 0.75 = 160
-      [3] = { id = 3, d = 0, out = 32, oq = 1, mats = { { 20, 20 } } },   -- orange, costs more: 420
+      [1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 10, 1 } } },    -- green: 1 unit / 0.25 = 4 per point
+      [2] = { id = 2, d = 1, out = 32, oq = 1, mats = { { 20, 10 } } },   -- yellow: 10 x 0.5 (vendor-sold) / 0.75 = 6.67
+      [3] = { id = 3, d = 0, out = 32, oq = 1, mats = { { 20, 20 } } },   -- orange, more units: 10
       [4] = { id = 4, d = 3, out = 30, oq = 1, mats = { { 10, 1 } } },    -- gray
     } }
     local order = {}
     for i, e in ipairs(V.Plan(p, ctx()).rows) do order[i] = e.rec.id end
-    assert.are.same({ 2, 1, 3 }, order)
+    assert.are.same({ 1, 2, 3 }, order)
     p.recipes[2].mats, p.recipes[3].mats = { { 99, 1 } }, { { 99, 1 } }
     assert.are.equal(1, V.Plan(p, ctx()).best.rec.id)
   end)
@@ -793,7 +793,7 @@ describe("Leveling: Gagner de l'or (goal gold)", function()
     assert.are.equal("gold", gold.goal)
     local level = V.Plan(prof(), ctx())
     assert.are.equal(2, #level.rows)                                                        -- the gray Cape is not there
-    assert.are.equal(2, level.best.rec.id)
+    assert.are.equal(1, level.best.rec.id)                                                  -- 1 ingredient / 0.25 = 4 per point beats 5
   end)
 
   it("with the bag: total profit = times x profit per craft", function()
@@ -1103,16 +1103,17 @@ describe("Leveling: how 'Monter le métier' reasons (the owner's belt and pants,
     for _, row in ipairs(plan("level", { [2] = pants }, market()).rows) do assert.are.equal(406, row.cost) end
   end)
 
-  it("at about the same cost per point (within 10 %) the recipe that can be crafted now is preferred", function()
-    local a = { id = 1, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 }, { 2320, 2 } } }        -- 174 per point, no thread carried
-    local b = { id = 2, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 }, { 9999, 1 } } }        -- 177 per point (+1.7 %), craftable now
+  it("a recipe craftable now wins within 15 % of the fewest ingredients per point", function()
+    local a = { id = 1, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 }, { 2320, 2 } } }        -- 8 ingredients per point, no thread carried
+    local b = { id = 2, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 }, { 9999, 3 } } }        -- 9 (+12.5 %), craftable now
     local c = market()
     c.price = function(id) if id == 9999 then return 65, 0 end local p = PRICES[id]; if p then return p, 0 end end
-    c.owned = function(id) return (id == 2318 and 6) or (id == 9999 and 1) or 0 end
+    c.owned = function(id) return (id == 2318 and 6) or (id == 9999 and 3) or 0 end
     local p = V.Plan({ skill = 75, recipes = { [1] = a, [2] = b } }, c, nil, nil, nil, "level")
     assert.are.equal(2, p.best.rec.id); assert.are.equal(2, p.rows[1].rec.id); assert.is_true(p.best.craftNow)
-    -- more than 10 % dearer: the cheaper recipe stays best although it cannot be crafted now
-    c.price = function(id) if id == 9999 then return 200, 0 end local p2 = PRICES[id]; if p2 then return p2, 0 end end
+    -- more than 15 % more ingredients: the leaner recipe stays best although it cannot be crafted now
+    b.mats = { { 2318, 6 }, { 9999, 4 } }                                                        -- 10 (+25 %)
+    c.owned = function(id) return (id == 2318 and 6) or (id == 9999 and 4) or 0 end
     p = V.Plan({ skill = 75, recipes = { [1] = a, [2] = b } }, c, nil, nil, nil, "level")
     assert.are.equal(1, p.best.rec.id)
   end)
@@ -1123,5 +1124,90 @@ describe("Leveling: how 'Monter le métier' reasons (the owner's belt and pants,
     local y = { id = 4, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 } } }
     local p = V.Plan({ skill = 75, recipes = { [5] = x, [4] = y } }, c, nil, nil, nil, "level")
     assert.are.equal(4, p.rows[1].rec.id)                          -- all equal: the lower id keeps the order stable
+  end)
+end)
+
+describe("Leveling: 'Monter le métier' = the fewest ingredients and the least effort", function()
+  local PRICES = { [2318] = 20, [2320] = 31, [4231] = 224 }
+  local function ctx(over)
+    local c = { price = function(id) local p = PRICES[id]; if p then return p, 0 end end,
+      vendor = function() return 5 end, buy = function() end }
+    for k, v in pairs(over or {}) do c[k] = v end
+    return c
+  end
+  local belt = { id = 1, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 }, { 2320, 2 } } }
+  local pants = { id = 2, d = 0, out = 7002, oq = 1, mats = { { 4231, 1 }, { 2318, 6 }, { 2320, 2 } } }
+  local function plan(recipes, c, th, count)
+    return V.Plan({ skill = 75, max = 150, recipes = recipes }, c or ctx(), nil, count, th, "level")
+  end
+
+  it("the owner's photo: the belt (8 ingredients) beats the pants (9), though both are orange and priced", function()
+    local p = plan({ [1] = belt, [2] = pants })
+    assert.are.equal(1, p.best.rec.id)
+    assert.are.equal(8, p.best.unitsPerPoint); assert.are.equal(9, p.rows[2].unitsPerPoint)
+    assert.are.equal(1, p.best.craftsPerPoint)
+  end)
+
+  it("an orange recipe with the same ingredients beats a green one", function()
+    local green = { id = 3, d = 2, out = 7001, oq = 1, mats = { { 2318, 6 }, { 2320, 2 } } }
+    local p = plan({ [1] = belt, [3] = green })
+    assert.are.equal(1, p.best.rec.id)
+    assert.are.equal(4, p.rows[2].craftsPerPoint)                    -- 1 / 0.25: four crafts for a point
+    assert.are.equal(32, p.rows[2].unitsPerPoint)
+  end)
+
+  it("a reagent a vendor sells counts half a unit", function()
+    local c = ctx({ buy = function(id) if id == 2320 then return 31 end end })
+    local e = plan({ [1] = belt }, c).best
+    assert.are.equal(7, e.units)                                     -- 6 Light Leather + 2 thread x 0.5
+    assert.are.equal(7, e.unitsPerPoint)
+  end)
+
+  it("an intermediate reagent the player lacks and can make counts as its own reagents, and is said", function()
+    local hide = { id = 9, d = 3, out = 4231, oq = 1, mats = { { 4232, 2 }, { 4233, 1 } } }
+    local p = plan({ [2] = pants, [9] = hide })
+    local e
+    for _, row in ipairs(p.rows) do if row.rec.id == 2 then e = row end end
+    assert.are.equal(8 + 3, e.units)                                 -- 6 + 2 + the 3 units of the Cured Light Hide
+    assert.are.equal(1, #e.subs); assert.are.equal(4231, e.subs[1].item); assert.are.equal(1, e.subs[1].need)
+    -- carried: counts as one unit and nothing is to be made
+    e = nil
+    for _, row in ipairs(plan({ [2] = pants, [9] = hide }, ctx({ owned = function(id) return id == 4231 and 1 or 0 end })).rows) do
+      if row.rec.id == 2 then e = row end
+    end
+    assert.are.equal(9, e.units); assert.are.equal(0, #e.subs)
+  end)
+
+  it("a recipe needing no intermediate craft comes first at equal ingredients; gold is the last tie-break", function()
+    local hide = { id = 9, d = 3, out = 4231, oq = 1, mats = { { 4232, 1 } } }
+    local a = { id = 1, d = 0, out = 7001, oq = 1, mats = { { 2318, 2 } } }                -- 2 ingredients
+    local b = { id = 2, d = 0, out = 7001, oq = 1, mats = { { 4231, 2 } } }                -- 2 units of the hide, each made from 1: 2 as well
+    local p = plan({ [1] = a, [2] = b, [9] = hide })
+    assert.are.equal(1, p.best.rec.id)
+    local c1 = { id = 5, d = 0, out = 7001, oq = 1, mats = { { 2318, 3 } } }              -- same ingredients, same chance, no sub:
+    local c2 = { id = 4, d = 0, out = 7001, oq = 1, mats = { { 2320, 3 } } }              -- thread is dearer (31 vs 20): gold decides
+    p = plan({ [5] = c1, [4] = c2 })
+    assert.are.equal(5, p.best.rec.id)
+  end)
+
+  it("the bag: ingredients already carried are not left to gather; the figure says what is still missing", function()
+    local owned = function(id) return id == 2318 and 6 or 0 end
+    local e = plan({ [1] = belt }, ctx({ owned = owned })).best
+    assert.are.equal(8, e.units)                                     -- the recipe itself still takes 8
+    assert.are.equal(2, e.gather)                                    -- only the 2 threads are to gather
+    assert.are.equal(2, e.gatherPerPoint)
+  end)
+
+  it("recipes craftable from the bags come first within 15 % of the fewest ingredients", function()
+    local lean = { id = 1, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 }, { 2320, 2 } } }     -- 8
+    local near = { id = 2, d = 0, out = 7001, oq = 1, mats = { { 2318, 7 }, { 2320, 2 } } }     -- 9 (+12.5 %)
+    local far = { id = 3, d = 0, out = 7001, oq = 1, mats = { { 2318, 9 }, { 2320, 2 } } }      -- 11 (+37 %)
+    local c = ctx({ owned = function(id) return (id == 2318 and 9) or (id == 2320 and 2) or 0 end })
+    -- everything craftable: the leanest
+    assert.are.equal(1, plan({ [1] = lean, [2] = near, [3] = far }, c).best.rec.id)
+    -- only `near` and `far` craftable (7 and 9 leather carried, `lean` lacks thread): near wins, far is out of the 15 %
+    c = ctx({ owned = function(id) return (id == 2318 and 9) or (id == 2320 and 2) or 0 end })
+    local lack = { id = 1, d = 0, out = 7001, oq = 1, mats = { { 2318, 6 }, { 2320, 3 } } }     -- 9 units here: needs 3 thread, 2 carried
+    assert.are.equal(2, plan({ [1] = lack, [2] = near, [3] = far }, c).best.rec.id)
   end)
 end)

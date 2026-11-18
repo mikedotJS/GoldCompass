@@ -954,9 +954,16 @@ local function renderJob(res)
       elseif plan.best then
         local e = plan.best
         local name, gain, money = e.name or ns.Fmt.RecipeName(e.rec), e.perPoint < 0, ns.Money(math.abs(e.perPoint))
+        -- the effort first: ingredients and crafts per skill point; the gold cost is a dim secondary figure
+        local ingredients = {}
+        for i, m in ipairs(e.rec.mats or {}) do
+          if i > 3 then ingredients[#ingredients + 1] = "..."; break end
+          ingredients[#ingredients + 1] = ("%d %s"):format(m[2], ns.ItemName(m[1]))
+        end
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (p.filtered
-          and (gain and S.job_best_bag_gain or S.job_best_bag):format(name, e.times or 0, fmtPoints(e.points or 0), money)
-          or (gain and S.job_best_gain or S.job_best):format(name, money)) .. "|r" }
+          and S.job_best_bag:format(name, e.times or 0, fmtPoints(e.points or 0), fmtPoints(e.unitsPerPoint), fmtPoints(e.craftsPerPoint))
+          or S.job_best:format(name, fmtPoints(e.unitsPerPoint), table.concat(ingredients, ", "), fmtPoints(e.craftsPerPoint))) .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (gain and S.job_gain_dim or S.job_cost_dim):format(money) .. "|r" }
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.d or e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
           e.exact and "" or S.chance_estimate, ((e.d or e.rec.d) == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
         for _, sub in ipairs(e.subs or {}) do      -- an intermediate reagent to make first (or buy): "Peau légère traitée"
@@ -974,9 +981,8 @@ local function renderJob(res)
           entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_others .. "|r" }
           for i = 2, #plan.rows do
             local o = plan.rows[i]
-            local ogain = o.perPoint < 0
             entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.d or o.rec.d] or "?"),
-              right = (ogain and S.learn_pp_gain or S.learn_pp):format(ns.Money(math.abs(o.perPoint))) }
+              right = S.job_ingr_row:format(fmtPoints(o.unitsPerPoint)) }
           end
         end
       elseif p.filtered and plan.known > 0 and (plan.craftable or 0) == 0 then
