@@ -70,7 +70,7 @@ function ns.Spike()
   end
   -- S5: APIs the tooltip, bags and here tabs rely on
   out("S5 TooltipDataProcessor:", tostring(TooltipDataProcessor ~= nil), " C_Container:", tostring(C_Container ~= nil),
-    " IsPlayerSpell:", tostring(IsPlayerSpell ~= nil), " OpenWorldMap:", tostring(OpenWorldMap ~= nil), " ForeverLedger loaded:",
+    " IsPlayerSpell:", tostring(IsPlayerSpell ~= nil), " C_Map.OpenWorldMap:", tostring(C_Map ~= nil and C_Map.OpenWorldMap ~= nil), " ForeverLedger loaded:",
     tostring((C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("ForeverLedger")) or false))
   if IsPlayerSpell then
     try("S5 IsPlayerSpell(2329 Elixir of Minor Strength; true only if you know it):", IsPlayerSpell, 2329)

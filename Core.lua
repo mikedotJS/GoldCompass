@@ -64,11 +64,24 @@ local function gatherSkills(only)
   local supposed = math.min(300, 5 * UnitLevel("player"))
   if only then
     if real[only] then return { [only] = real[only] } end
-    return { [only] = supposed }, supposed
+    return { [only] = supposed }, supposed, { only }
   end
-  local skills = { ["Mining"] = real["Mining"], ["Herb Gathering"] = real["Herb Gathering"], ["Fishing"] = real["Fishing"] }
-  if next(skills) then return skills end
-  return { ["Mining"] = supposed, ["Herb Gathering"] = supposed, ["Fishing"] = supposed }, supposed
+  -- Per node type: Mining and Herbalism use the real skill, or the supposed one when the character lacks the profession.
+  -- Fishing counts only with a real skill (and only recorded pools exist anyway). Having Fishing alone must not hide
+  -- the other two: that was the "Tous says GatherMate has no data" bug.
+  local skills, missing = { ["Fishing"] = real["Fishing"] }, {}
+  for _, t in ipairs({ "Mining", "Herb Gathering" }) do
+    if real[t] then skills[t] = real[t] else skills[t] = supposed; missing[#missing + 1] = t end
+  end
+  return skills, #missing > 0 and supposed or nil, missing
+end
+
+-- "Si tu apprends Minage (niveau de métier supposé : 80)" for the professions the character lacks.
+function ns.SupposedText(res)
+  if not res.supposed then return nil end
+  local names = {}
+  for i, t in ipairs(res.supposedTypes or {}) do names[i] = S.prof_names[t] or t end
+  return S.hypothetical:format(table.concat(names, " / "), res.supposed)
 end
 
 -- Context for the pure Advice module, read from the game.
@@ -98,7 +111,7 @@ local function compute(opts)
   if not ns.Nodes.Installed() then return { state = "no_gathermate_addon" } end
   if not ns.Prices.Installed() then return { state = "no_auctionator_addon" } end
   local zones = ns.Nodes.Counts()
-  local skills, supposed = gatherSkills(opts and opts.profession)
+  local skills, supposed, supposedTypes = gatherSkills(opts and opts.profession)
   local cache = {}
   local function price(id)
     if not cache[id] then cache[id] = { ns.Prices.Get(id) } end
@@ -120,7 +133,7 @@ local function compute(opts)
   -- all = every ranked zone (Here tab); rows = the best ns.TOP (map tab, chat)
   local top = {}
   for i = 1, math.min(ns.TOP, #result.rows) do top[i] = result.rows[i] end
-  return { state = "ok", rows = top, all = result.rows, input = input, supposed = supposed,
+  return { state = "ok", rows = top, all = result.rows, input = input, supposed = supposed, supposedTypes = supposedTypes,
     fishing = opts and opts.profession == "Fishing",
     ageUnknown = not ns.Prices.HasAge() }
 end
@@ -161,6 +174,12 @@ local function ageText(age)
   return age < 1 and S.age_fresh or S.age_days:format(math.floor(age))
 end
 ns.AgeText = ageText
+
+-- Price freshness for a ranking row, worded so it cannot be read as a price.
+function ns.PriceAgeText(age)
+  if not age then return S.price_unknown_age end
+  return age < 1 and S.price_today or S.price_days:format(math.floor(age))
+end
 
 local STATE_TEXT = {
   nogather = { S.nogather_t, S.nogather_p }, noscan = { S.noscan_t, S.noscan_p },
@@ -243,7 +262,7 @@ function ns.RunHere(done)
     ns.LoadItems(ids, function()
       local ok, here = pcall(function()
         local ctx = ns.Context()
-        local out = { state = "ok", cmp = cmp, level = ctx.level, supposed = res.supposed, nodes = {} }
+        local out = { state = "ok", cmp = cmp, level = ctx.level, supposed = res.supposed, supposedTypes = res.supposedTypes, nodes = {} }
         for i = 1, math.min(4, #cmp.row.detail) do
           local d = cmp.row.detail[i]
           out.nodes[i] = { name = ns.ItemName(d.item), unit = d.unit }
@@ -251,15 +270,15 @@ function ns.RunHere(done)
         out.pickups = info and ns.Here.Pickups(info[1], ns.QuestItems, ctx) or {}
         while #out.pickups > 4 do out.pickups[#out.pickups] = nil end
         for _, p in ipairs(out.pickups) do p.name = ns.ItemName(p.item) end
-        -- the gathering profession the character lacks, and what it would add here
-        local skills = ns.Skills()
-        if not res.supposed then
-          for _, prof in ipairs({ "Mining", "Herb Gathering" }) do
-            if not skills[prof] then
-              local gain = ns.Here.ProfessionGain(res.input, cmp.row.zone, prof, math.min(300, 5 * ctx.level))
-              if gain then out.hint = { prof = prof, gain = gain } end
-            end
-          end
+        -- what each profession the character lacks would add here, on top of the skills it has
+        for _, prof in ipairs(res.supposedTypes or {}) do
+          local without = {}
+          for k, v in pairs(res.input) do without[k] = v end
+          without.skills = {}
+          for k, v in pairs(res.input.skills) do without.skills[k] = v end
+          without.skills[prof] = nil
+          local gain = ns.Here.ProfessionGain(without, cmp.row.zone, prof, res.supposed)
+          if gain and (not out.hint or gain > out.hint.gain) then out.hint = { prof = prof, gain = gain } end
         end
         return out
       end)
@@ -291,7 +310,7 @@ local function printMap()
       local title, text = ns.StateText(res)
       return ns.Print(title .. " : " .. text)
     end
-    ns.Print(res.supposed and S.hypothetical:format(res.supposed) or S.mine)
+    ns.Print(ns.SupposedText(res) or S.mine)
     for i, row in ipairs(res.rows) do
       local tags = (row.old and (" (" .. S.tag_old .. ")") or "") .. (row.partial and (" (" .. S.tag_partial .. ")") or "")
       ns.Say(("%d. %s  %s  %s  [%s]%s"):format(i, row.name, S.per_hour:format(money(row.copperPerHour)),

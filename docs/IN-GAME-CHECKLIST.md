@@ -67,3 +67,15 @@ Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in 
 2. Type `/reload` (the game only writes the log to disk on reload or logout).
 3. Tell Claude "logs". Claude runs `scripts/fetch-logs.sh`, which reads over ssh, without changing anything: the GoldCompass log (chat output, Lua errors, blocked-action events with addon and function, a login header) and the last 40 lines of `taint.log`.
 4. In game, `/gc log` shows the last 20 entries and `/gc log clear` empties the log.
+
+## Map window layout and filters (after the first photos)
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 33 | `/gc` on the Carte tab | The window is about 460 px wide, on the right side of the screen, clear of the unit frames, the action bars and the minimap. Tabs hang below the frame without touching it | Screenshot |
+| 34 | Look at the rows | Zone name on one line (cut with `...` if long), a dim second line with nodes and level, the figure `~Xs/h (estimation)` on the right with `prix d'aujourd'hui` or `prix de N j` under it, nothing wrapping onto the next row | Screenshot |
+| 35 | Move the mouse over the rows | The row text stays readable (soft gold highlight behind the text). A tooltip appears to the LEFT of the window: full zone name, nodes with value per point, price age, the assumptions | Screenshot |
+| 36 | `Métier : Tous` on a character with Fishing but no Mining or Herbalism | A ranking, not `Aucune donnée de ressources`; subtitle `Si tu apprends Minage / Herboristerie (niveau de métier supposé : N)` | Screenshot |
+| 37 | Tick and untick `Mon niveau seulement` | A green box with a check mark when on, an empty dark box when off | Yes / no |
+| 38 | Wait for loading, then hover `Voir sur la carte` while it is grey | The line next to it says why (`Indisponible pendant la lecture...`, `Indisponible en combat.`); when ready it says `Les points restent affichés par GatherMate.` | What you saw |
+| 39 | Click a zone row (out of combat) | The world map opens on that zone through `C_Map.OpenWorldMap`; if the Blizzard "action bloquée" popup appears, `/reload` and tell Claude "logs" | The popup text, then the logs |

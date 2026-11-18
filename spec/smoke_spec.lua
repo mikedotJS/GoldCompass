@@ -6,10 +6,21 @@ local function proxy()
   local p = { scripts = {} }
   return setmetatable(p, { __index = function(t, k)
     if type(k) ~= "string" or not k:match("^%u") then return nil end
-    return function(self, a, b)
+    return function(self, a, b, c, d)
       if k == "SetScript" then self.scripts[a] = b end
+      if k == "CreateTexture" or k == "CreateFontString" then
+        local child = proxy()
+        child.layer, child.sublevel, child.kind = b, d or 0, k
+        self.children = self.children or {}
+        self.children[#self.children + 1] = child
+        return child
+      end
       if k == "RegisterEvent" then self.events = self.events or {}; self.events[a] = true end
       if k == "SetText" then self.text = a end
+      if k == "Show" then self.shown = true end
+      if k == "Hide" then self.shown = false end
+      if k == "SetShown" then self.shown = a and true or false end
+      if k == "IsShown" then return self.shown == true end
       if k:match("^Create") then return proxy() end
       return self
     end
@@ -25,6 +36,8 @@ local function setup(opts)
   _G.UISpecialFrames = {}
   _G.tinsert = table.insert
   _G.UIParent = proxy()
+  UIParent.GetWidth = function() return opts.screenW or 1366 end
+  UIParent.GetHeight = function() return opts.screenH or 768 end
   _G.CreateFrame = function() local p = proxy(); frames[#frames + 1] = p; return p end
   _G.C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
   _G.date = os.date
@@ -47,6 +60,14 @@ local function setup(opts)
   if opts.alchemy then
     _G.GetProfessions = function() return 1 end
     _G.GetProfessionInfo = function() return "Alchemy", nil, 50, nil, nil, nil, 171 end
+  end
+  if opts.profs then -- { { skillLine, skill }, ... } in slot order
+    _G.GetProfessions = function() local t = {}; for i = 1, #opts.profs do t[i] = i end; return table.unpack(t) end
+    _G.GetProfessionInfo = function(i) local p = opts.profs[i]; return "Prof", nil, p[2], nil, nil, nil, p[1] end
+  end
+  if opts.onlyFishing then
+    _G.GetProfessions = function() return nil, nil, nil, 1 end
+    _G.GetProfessionInfo = function() return "Fishing", nil, 30, nil, nil, nil, 356 end
   end
   if opts.fishingSkill then
     _G.GetProfessions = function() return 1, 2 end
@@ -428,7 +449,8 @@ describe("review fixes, group B", function()
     setup({ scanned = true })
     local ns = loadAddon()
     local opened
-    _G.OpenWorldMap = function(zone) opened = zone end
+    _G.OpenWorldMap = function() error("the FrameXML route must never be used") end
+    _G.C_Map.OpenWorldMap = function(zone) opened = zone end
     ns.Window.OpenMap(1411)
     assert.are.equal(1411, opened)
     printed = {}
@@ -437,15 +459,15 @@ describe("review fixes, group B", function()
     assert.are.equal(1411, opened)                        -- not called in combat
     assert.matches("en combat", table.concat(printed, "\n"))
     _G.InCombatLockdown = function() return false end
-    _G.OpenWorldMap = nil
+    _G.C_Map.OpenWorldMap = nil
     printed = {}
     ns.Window.OpenMap(1411)
     assert.matches("Impossible d'ouvrir la carte", table.concat(printed, "\n"))
-    _G.OpenWorldMap = function() error("ADDON_ACTION_BLOCKED") end
+    _G.C_Map.OpenWorldMap = function() error("ADDON_ACTION_BLOCKED") end
     printed = {}
     ns.Window.OpenMap(1411)
     assert.matches("bloqué", table.concat(printed, "\n"))
-    _G.OpenWorldMap = nil
+    _G.C_Map.OpenWorldMap = nil
   end)
 
   it("marks the four Forever-only zones as level unknown", function()
@@ -488,15 +510,32 @@ describe("fishing", function()
     assert.has_no.errors(function() ns.Window.Toggle() end)
   end)
 
-  it("includes fishing in the All ranking only for a character that fishes", function()
+  it("keeps Mining and Herbalism zones in the All ranking when the character only has Fishing (owner bug)", function()
+    -- the character has Fishing (skill line 356) but no gathering profession: the old code ranked Fishing only,
+    -- found no pool and answered "GatherMate has no data" while the Mining filter worked
+    setup({ scanned = true, onlyFishing = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.Run(function(r) res = r end)
+    assert.are.equal("ok", res.state)
+    assert.is_true(#res.all >= 2)            -- Durotar (Mining) and Elwynn (Mining + Herbalism)
+    assert.are.equal(100, res.supposed)      -- "if you learn" mode: no Mining or Herbalism yet
+    ns.Run(function(r) res = r end, { profession = "Mining" })
+    assert.are.equal("ok", res.state)        -- the Mining filter worked before and still does
+  end)
+
+  it("includes fishing in the All ranking for a character that fishes and has no gathering profession", function()
     setup({ scanned = true, pools = true, fishingSkill = true })
     local ns = loadAddon()
     ns.db = {}
     local res
     ns.Run(function(r) res = r end)
     assert.are.equal("ok", res.state)
-    assert.are.equal(1411, res.all[1].zone)
-    assert.is_nil(res.supposed) -- real Fishing skill 75
+    local zones = {}
+    for _, row in ipairs(res.all) do zones[row.zone] = true end
+    assert.is_true(zones[1411] and zones[1429])  -- pools and mining zones together
+    assert.are.equal(100, res.supposed)
     setup({ scanned = true, pools = true, alchemy = true })
     ns = loadAddon()
     ns.db = {}
@@ -649,5 +688,144 @@ describe("diagnostic log", function()
     _G.date = os.date
     ns.Log("test", "back")
     assert.are.equal("back", ns.db.log[#ns.db.log].text)
+  end)
+end)
+
+describe("skill profiles for the All ranking", function()
+  local function rank(opts)
+    opts.scanned, opts.level = true, 16
+    setup(opts)
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.Run(function(r) res = r end)
+    return res, ns
+  end
+
+  it("owner profile: Fishing 150, no Mining or Herbalism, level 16, data present -> ranked zones", function()
+    local res, ns = rank({ profs = { { 356, 150 } } })
+    assert.are.equal("ok", res.state)
+    assert.are.equal(80, res.supposed) -- 5 x 16
+    assert.are.same({ "Mining", "Herb Gathering" }, res.supposedTypes)
+    local zones = {}
+    for _, row in ipairs(res.all) do zones[row.zone] = true end
+    assert.is_true(zones[1411] and zones[1429]) -- Mining zones and the Mining/Herbalism zone
+    assert.are.equal("Si tu apprends Minage / Herboristerie (niveau de métier supposé : 80)", ns.SupposedText(res))
+  end)
+
+  it("Mining only: Herbalism is supposed, Mining uses the real skill", function()
+    local res = rank({ profs = { { 186, 40 } } })
+    assert.are.equal("ok", res.state)
+    assert.are.same({ "Herb Gathering" }, res.supposedTypes)
+    assert.are.equal(80, res.supposed)
+    local spots = {}
+    for _, row in ipairs(res.all) do spots[row.zone] = row.spots end
+    assert.are.equal(100, spots[1429]) -- zone 1429 only has Herbalism spots: it is ranked because Herbalism is supposed
+    assert.are.equal(100, spots[1411]) -- and Durotar's Mining spots use the real skill (Copper needs skill 1)
+  end)
+
+  it("all three professions: nothing is supposed", function()
+    local res = rank({ profs = { { 186, 40 }, { 182, 30 }, { 356, 20 } }, pools = true })
+    assert.are.equal("ok", res.state)
+    assert.is_nil(res.supposed)
+    assert.are.same({}, res.supposedTypes)
+    local zones = {}
+    for _, row in ipairs(res.all) do zones[row.zone] = true end
+    assert.is_true(zones[1411] and zones[1429])
+  end)
+end)
+
+describe("window layout and drawing", function()
+  local ORDER = { BACKGROUND = 1, BORDER = 2, ARTWORK = 3, OVERLAY = 4, HIGHLIGHT = 5 }
+  local function overlap(a, b) return a.l < b.r and b.l < a.r and a.t < b.b and b.t < a.b end
+
+  local function assertNoOverlap(groups, L)
+    local all = {}
+    for _, g in ipairs(groups) do
+      for name, r in pairs(g) do
+        assert.is_true(r.l >= L.frame.l and r.t >= L.frame.t and r.r <= L.frame.r and r.b <= L.frame.b, name .. " leaves the frame")
+        all[#all + 1] = { name = name, r = r }
+      end
+    end
+    for i = 1, #all do
+      for j = i + 1, #all do
+        assert.is_false(overlap(all[i].r, all[j].r), all[i].name .. " overlaps " .. all[j].name)
+      end
+    end
+  end
+
+  it("keeps every slot inside the frame and never over another, for each group that can be visible together", function()
+    setup({})
+    local L = loadAddon().Window.Layout
+    assert.is_true(L.frame.r <= 460 and L.frame.b <= 520) -- about 460 wide, at most about 520 tall
+    local controls = { levelBox = L.map.levelBox, profBtn = L.map.profBtn, toMap = L.map.toMap, note = L.map.note }
+    assertNoOverlap({ L.common, L.map }, L)
+    assertNoOverlap({ L.common, L.list }, L)
+    assertNoOverlap({ L.common, L.panel, controls }, L)
+  end)
+
+  it("keeps the parts of a row and of a list line apart and inside their slot", function()
+    setup({})
+    local W = loadAddon().Window
+    local row = { l = 0, t = 0, r = 432, b = 30 }
+    assertNoOverlap({ W.RowParts }, { frame = row })
+    assertNoOverlap({ W.LineParts }, { frame = { l = 0, t = 0, r = 432, b = 17 } })
+  end)
+
+  it("fits the frame on screen whatever the UI scale makes of UIParent's size", function()
+    setup({})
+    local W = loadAddon().Window
+    for _, size in ipairs({ { 1366, 768 }, { 1138, 640 }, { 1707, 960 }, { 800, 480 }, { 640, 400 } }) do
+      -- UI scale 1.0, 1.2 and 0.8 on a 768 high screen give 768, 640 and 960; the smaller ones are small screens
+      local s = W.FitScale(size[1], size[2])
+      assert.is_true(s <= 1)
+      assert.is_true(500 * s <= size[2] * 0.9 + 1e-9, "taller than the screen at " .. size[2])
+      assert.is_true(460 * s <= size[1] * 0.9 + 1e-9)
+    end
+    assert.are.equal(1, W.FitScale(1366, 768))
+  end)
+
+  it("draws row decorations (selection, hover, bar) below every font string of the row", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = {}
+    ns.Window.Toggle()
+    local rows = ns.Window.Rows()
+    assert.are.equal(10, #rows)
+    for _, row in ipairs(rows) do
+      local textRank
+      for _, child in ipairs(row.children) do
+        if child.kind == "CreateFontString" then
+          assert.are.equal("OVERLAY", child.layer)
+          textRank = ORDER[child.layer]
+        end
+      end
+      assert.is_not_nil(textRank)
+      for _, tex in ipairs({ row.sel, row.hover, row.bar }) do
+        assert.is_true(ORDER[tex.layer] < textRank, "decoration layer " .. tostring(tex.layer) .. " is not below the text")
+      end
+      assert.is_true(ORDER[row.hover.layer] < ORDER["HIGHLIGHT"]) -- not the HIGHLIGHT layer, which draws over the text
+    end
+  end)
+
+  it("shows a clean figure and a separate price freshness, and builds the details tooltip", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = {}
+    ns.Window.Toggle()
+    local row = ns.Window.Rows()[1]
+    assert.matches("^~%d+s/h", row.gph.text)
+    assert.matches("%(estimation%)", row.gph.text)
+    assert.is_nil(row.gph.text:find("prix", 1, true))
+    assert.matches("prix", row.age.text)
+    assert.are.equal("prix d'aujourd'hui", ns.PriceAgeText(0))
+    assert.are.equal("prix de 3 j", ns.PriceAgeText(3))
+    assert.are.equal("âge du prix inconnu", ns.PriceAgeText(nil))
+    local tip = table.concat(ns.Window.RowTooltipLines({ zone = 1411, name = "Durotar", spots = 100, maxAge = 1,
+      detail = { { item = 2770, unit = 38 } } }), "\n")
+    assert.matches("Durotar", tip)
+    assert.matches("Item2770 : ~", tip)
+    assert.matches("prix de 1 j", tip)
+    assert.matches("60 points de récolte par heure, 2 objets chacun, taxe HV de 5 %%.", tip)
   end)
 end)

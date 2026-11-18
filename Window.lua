@@ -1,13 +1,48 @@
--- The window (PLAN.md steps 2, 5, 6), styled after docs/mockup.html: gold frame, bottom tabs, red buttons.
--- Thin glue: all numbers come from Core.lua (ns.Run, ns.RunBags) and the pure modules.
+-- The window (PLAN.md steps 2, 5, 6), styled after docs/mockup.html: gold frame, tabs hanging below, red buttons.
+-- Thin glue: all numbers come from Core.lua (ns.Run, ns.RunBags, ns.RunHere) and the pure modules.
+-- Every element is placed from the rectangles in W.Layout (frame coordinates, y downward), so a test can check that
+-- nothing overlaps and nothing leaves the frame. The frame is a child of UIParent, so it follows the UI scale.
 local _, ns = ...
 local S = ns.S
 
 local W = {}
 ns.Window = W
 
-local ROWS, ROW_H, LINES, LINE_H = 10, 34, 20, 17
-local GOLD, MUTED = { 1, 0.82, 0 }, { 0.62, 0.62, 0.62 }
+local FRAME_W, FRAME_H, PAD = 460, 500, 14
+local ROWS, ROW_H, LINES, LINE_H = 10, 30, 19, 17
+local GOLD, MUTED, WHITE = { 1, 0.82, 0 }, { 0.62, 0.62, 0.62 }, { 0.96, 0.96, 0.96 }
+
+local function rect(l, t, r, b) return { l = l, t = t, r = r, b = b } end
+
+-- Rectangles { l, t, r, b } from the frame's top-left corner. Groups that can be visible together:
+-- common + map, common + list (bags, here), common + panel (+ the map controls and button).
+W.Layout = {
+  frame = rect(0, 0, FRAME_W, FRAME_H),
+  common = {
+    title = rect(30, 8, 430, 26), close = rect(436, 6, 454, 24), subtitle = rect(PAD, 34, FRAME_W - PAD, 48),
+    banner = rect(PAD, 394, FRAME_W - PAD, 420), footer = rect(PAD, 424, FRAME_W - PAD, 462),
+    refresh = rect(356, 468, 446, 490),
+  },
+  map = {
+    levelBox = rect(PAD, 52, 230, 70), profBtn = rect(296, 50, 446, 72),
+    rows = rect(PAD, 76, FRAME_W - PAD, 76 + ROWS * ROW_H),
+    toMap = rect(PAD, 468, 144, 490), note = rect(152, 466, 348, 492),
+  },
+  list = { lines = rect(PAD, 52, FRAME_W - PAD, 52 + LINES * LINE_H) },
+  panel = { panel = rect(PAD, 80, FRAME_W - PAD, 300) },
+}
+
+-- Inside one map row (432 x 30) and one list line (432 x 17).
+W.RowParts = {
+  rank = rect(0, 2, 18, 28), zone = rect(24, 2, 284, 15), sub = rect(24, 16, 284, 28),
+  gph = rect(290, 2, 432, 15), bar = rect(290, 19, 360, 24), age = rect(364, 16, 432, 28),
+}
+W.LineParts = { left = rect(0, 0, 250, LINE_H), right = rect(256, 0, 432, LINE_H) }
+
+-- Scale that keeps the whole frame on screen whatever the UI scale makes of UIParent's size.
+function W.FitScale(parentWidth, parentHeight)
+  return math.min(1, parentHeight * 0.9 / FRAME_H, parentWidth * 0.9 / FRAME_W)
+end
 
 local function solid(parent, layer, r, g, b, a)
   local t = parent:CreateTexture(nil, layer)
@@ -15,14 +50,24 @@ local function solid(parent, layer, r, g, b, a)
   return t
 end
 
-local function text(parent, template, color, justify)
+-- A font string that never wraps outside its slot: one line, cut with an ellipsis when too long.
+local function text(parent, template, color, justify, wrap)
   local fs = parent:CreateFontString(nil, "OVERLAY", template or "GameFontNormalSmall")
   if color then fs:SetTextColor(color[1], color[2], color[3]) end
   fs:SetJustifyH(justify or "LEFT")
+  fs:SetJustifyV("TOP")
+  fs:SetWordWrap(wrap or false)
+  if not wrap then fs:SetMaxLines(1) end
   return fs
 end
 
--- Red game-style button; SetBusy(true) greys it out and makes it unclickable.
+local function place(region, r, parent)
+  region:ClearAllPoints()
+  region:SetPoint("TOPLEFT", parent, "TOPLEFT", r.l, -r.t)
+  region:SetSize(r.r - r.l, r.b - r.t)
+end
+
+-- Red game-style button. SetBusy(true): flat dark grey with dim text, clearly not clickable.
 local function button(parent, label, width)
   local b = CreateFrame("Button", nil, parent)
   b:SetSize(width, 22)
@@ -36,8 +81,15 @@ local function button(parent, label, width)
   b.label:SetText(label)
   function b:SetBusy(busy)
     self:SetEnabled(not busy)
-    self.fill:SetColorTexture(busy and 0.2 or 0.35, busy and 0.2 or 0.06, busy and 0.2 or 0.04)
-    self.label:SetTextColor(busy and 0.5 or GOLD[1], busy and 0.5 or GOLD[2], busy and 0.5 or GOLD[3])
+    if busy then
+      self.edge:SetColorTexture(0.25, 0.25, 0.25)
+      self.fill:SetColorTexture(0.13, 0.13, 0.13)
+      self.label:SetTextColor(0.45, 0.45, 0.45)
+    else
+      self.edge:SetColorTexture(0.6, 0.23, 0.17)
+      self.fill:SetColorTexture(0.35, 0.06, 0.04)
+      self.label:SetTextColor(GOLD[1], GOLD[2], GOLD[3])
+    end
   end
   return b
 end
@@ -51,26 +103,58 @@ local TABS = {
 local f, rows, lines, panel, selected, titleFS
 local current, token = "map", 0
 local lastMap, renderMap
+local mapState = "loading" -- loading | off | ready: drives the "Voir sur la carte" button
 
--- Opening the map is protected in combat; say so instead of failing silently.
+-- Opening the map is a protected UI-panel operation when done through Blizzard's FrameXML (ShowUIPanel is protected in
+-- combat). C_Map.OpenWorldMap is the restricted API meant to open it without tainting it; it cannot run in combat.
+-- No fallback to the FrameXML OpenWorldMap: a failure is reported, never worked around.
 local function openMap(zone)
   if InCombatLockdown() then return ns.Print(S.map_combat) end
-  if not OpenWorldMap then return ns.Print(S.map_fail) end
-  ns.LogOnce("openmap", "frame", "calling OpenWorldMap from a click (first time)")
-  if not pcall(OpenWorldMap, zone) then ns.Print(S.map_blocked) end
+  local open = C_Map and C_Map.OpenWorldMap
+  if not open then return ns.Print(S.map_fail) end
+  ns.LogOnce("openmap", "frame", "calling C_Map.OpenWorldMap from a click (first time)")
+  if not pcall(open, zone) then ns.Print(S.map_blocked) end
 end
-
 W.OpenMap = openMap -- exposed for tests
+function W.Rows() return rows end
+
+-- Lines of the row tooltip: full name, level range, nodes with their value, price freshness, assumptions.
+function W.RowTooltipLines(row)
+  local out = { row.name }
+  local info = ns.Zones[row.zone]
+  out[#out + 1] = S.tt_spots:format(row.spots, info and info[2] and S.far_tag:format(info[2], info[3]) or S.unknown_level_tag)
+  out[#out + 1] = S.tt_nodes
+  for _, d in ipairs(row.detail or {}) do
+    out[#out + 1] = S.tt_per_node:format(ns.ItemName(d.item), ns.Money(d.unit * 2))
+  end
+  out[#out + 1] = ns.PriceAgeText(row.maxAge)
+  local partial = ns.PartialText({ row })
+  if partial ~= "" then out[#out + 1] = partial end
+  out[#out + 1] = S.tt_assume
+  out[#out + 1] = S.tt_estimate
+  return out
+end
 
 local function selectRow(i)
   selected = i
   for n, row in ipairs(rows) do row.sel:SetShown(n == i) end
 end
 
+local function updateMapButton()
+  if not f then return end
+  local reason
+  if mapState == "loading" then reason = S.map_off_loading
+  elseif mapState == "off" then reason = S.map_off_state
+  elseif InCombatLockdown() then reason = S.map_off_combat end
+  f.toMap:SetBusy(reason ~= nil)
+  f.note:SetText(reason or S.map_note)
+end
+
 local function build()
   ns.LogOnce("frame-main", "frame", "creating GoldCompassFrame (own frame, parent UIParent, no secure template)")
   f = CreateFrame("Frame", "GoldCompassFrame", UIParent)
-  f:SetSize(480, 520)
+  f:SetSize(FRAME_W, FRAME_H)
+  f:SetScale(W.FitScale(UIParent:GetWidth(), UIParent:GetHeight()))
   f:SetFrameStrata("HIGH")
   f:SetClampedToScreen(true)
   f:SetMovable(true)
@@ -82,8 +166,9 @@ local function build()
     local point, _, relPoint, x, y = self:GetPoint()
     if ns.db then ns.db.pos = { point, relPoint, x, y } end
   end)
+  -- default: right side of the screen, away from the unit frames (left), the action bars (bottom) and the minimap (top)
   local pos = ns.db and ns.db.pos
-  if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("CENTER") end
+  if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("RIGHT", UIParent, "RIGHT", -130, -40) end
   f:Hide()
   ns.LogOnce("uispecial", "frame", "inserting GoldCompassFrame in UISpecialFrames (Escape closes it)")
   tinsert(UISpecialFrames, "GoldCompassFrame") -- Escape closes it
@@ -94,78 +179,95 @@ local function build()
   bg:SetPoint("TOPLEFT", 1, -1)
   bg:SetPoint("BOTTOMRIGHT", -1, 1)
 
+  local L = W.Layout
   titleFS = text(f, "GameFontNormal", GOLD, "CENTER")
-  titleFS:SetPoint("TOP", 0, -9)
+  place(titleFS, L.common.title, f)
   local line = solid(f, "ARTWORK", 0.227, 0.184, 0.078)
   line:SetPoint("TOPLEFT", 1, -30)
   line:SetPoint("TOPRIGHT", -1, -30)
   line:SetHeight(1)
-  local close = button(f, "X", 20)
-  close:SetPoint("TOPRIGHT", -5, -5)
+  local close = button(f, "X", 18)
+  place(close, L.common.close, f)
   close:SetScript("OnClick", function() f:Hide() end)
 
   f.subtitle = text(f, "GameFontNormalSmall", { 0.79, 0.73, 0.54 })
-  f.subtitle:SetPoint("TOPLEFT", 14, -38)
+  place(f.subtitle, L.common.subtitle, f)
 
-  -- map tab: ranked rows
+  -- map tab: ranked rows. Line 1 = zone name and figure, line 2 = nodes and level (dim), price age and bar.
   rows = {}
+  local P = W.RowParts
   for i = 1, ROWS do
     local r = CreateFrame("Button", nil, f)
-    r:SetSize(452, ROW_H)
-    r:SetPoint("TOPLEFT", 14, -82 - (i - 1) * ROW_H)
-    r.sel = solid(r, "BACKGROUND", 0.165, 0.129, 0.063)
+    place(r, rect(L.map.rows.l, L.map.rows.t + (i - 1) * ROW_H, L.map.rows.r, L.map.rows.t + i * ROW_H), f)
+    -- decorations live in BACKGROUND (below the BORDER bar and the OVERLAY text), translucent, never over the text
+    r.sel = r:CreateTexture(nil, "BACKGROUND", nil, 0)
+    r.sel:SetColorTexture(0.165, 0.129, 0.063, 0.8)
     r.sel:SetAllPoints()
     r.sel:Hide()
-    r.hover = solid(r, "HIGHLIGHT", 0.125, 0.102, 0.055)
+    r.hover = r:CreateTexture(nil, "BACKGROUND", nil, 1)
+    r.hover:SetColorTexture(1, 0.82, 0, 0.1)
     r.hover:SetAllPoints()
+    r.hover:Hide()
     r.rank = text(r, "GameFontNormalSmall", MUTED, "RIGHT")
-    r.rank:SetPoint("LEFT", 0, 5)
-    r.rank:SetWidth(18)
-    r.zone = text(r, "GameFontNormal", { 0.96, 0.96, 0.96 })
-    r.zone:SetPoint("LEFT", 26, 7)
-    r.zone:SetWidth(210)
+    place(r.rank, P.rank, r)
+    r.zone = text(r, "GameFontNormalSmall", WHITE)
+    place(r.zone, P.zone, r)
     r.sub = text(r, "GameFontHighlightSmall", MUTED)
-    r.sub:SetPoint("LEFT", 26, -8)
-    r.sub:SetWidth(250)
-    r.bar = solid(r, "ARTWORK", 0.12, 0.8, 0.1)
-    r.bar:SetHeight(5)
-    r.bar:SetPoint("BOTTOMRIGHT", -4, 3)
+    place(r.sub, P.sub, r)
     r.gph = text(r, "GameFontNormalSmall", { 0.12, 1, 0 }, "RIGHT")
-    r.gph:SetPoint("RIGHT", -4, 5)
+    place(r.gph, P.gph, r)
+    r.bar = solid(r, "BORDER", 0.12, 0.8, 0.1)
+    r.bar:SetPoint("TOPLEFT", r, "TOPLEFT", P.bar.l, -P.bar.t)
+    r.bar:SetHeight(P.bar.b - P.bar.t)
     r.age = text(r, "GameFontHighlightSmall", MUTED, "RIGHT")
-    r.age:SetPoint("RIGHT", -110, 5)
+    place(r.age, P.age, r)
     r.index = i
     r:SetScript("OnClick", function(self)
       selectRow(self.index)
       if self.zoneID then openMap(self.zoneID) end
     end)
+    -- the full zone name and details, since the row cuts long text
+    r:SetScript("OnEnter", function(self)
+      self.hover:Show()
+      if not self.tip then return end
+      -- to the left of the row: the window sits on the right of the screen, and the hovered row stays visible
+      GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+      GameTooltip:SetText(self.tip[1], 1, 1, 1)
+      for j = 2, #self.tip do GameTooltip:AddLine(self.tip[j], 0.8, 0.8, 0.8, true) end
+      GameTooltip:Show()
+    end)
+    r:SetScript("OnLeave", function(self)
+      self.hover:Hide()
+      GameTooltip:Hide()
+    end)
     r:Hide()
     rows[i] = r
   end
 
-  -- map controls: "my level only" checkbox and a profession selector that cycles All / Herbalism / Mining
+  -- map controls: "my level only" checkbox (box + check mark) and a profession selector that cycles
   f.levelBox = CreateFrame("Button", nil, f)
-  f.levelBox:SetSize(220, 16)
-  f.levelBox:SetPoint("TOPLEFT", 14, -58)
+  place(f.levelBox, L.map.levelBox, f)
   local boxEdge = solid(f.levelBox, "BACKGROUND", 0.54, 0.455, 0.22)
-  boxEdge:SetSize(12, 12)
+  boxEdge:SetSize(16, 16)
   boxEdge:SetPoint("LEFT")
-  local boxFill = solid(f.levelBox, "BORDER", 0.04, 0.03, 0.016)
-  boxFill:SetPoint("TOPLEFT", boxEdge, 1, -1)
-  boxFill:SetPoint("BOTTOMRIGHT", boxEdge, -1, 1)
-  f.levelBox.mark = solid(f.levelBox, "ARTWORK", 1, 0.82, 0)
-  f.levelBox.mark:SetPoint("TOPLEFT", boxEdge, 3, -3)
-  f.levelBox.mark:SetPoint("BOTTOMRIGHT", boxEdge, -3, 3)
-  local boxLabel = text(f.levelBox, "GameFontHighlightSmall", { 0.79, 0.73, 0.54 })
-  boxLabel:SetPoint("LEFT", 18, 0)
-  boxLabel:SetText(S.only_level)
+  f.levelBox.boxFill = solid(f.levelBox, "BORDER", 0.04, 0.03, 0.016)
+  f.levelBox.boxFill:SetPoint("TOPLEFT", boxEdge, 1, -1)
+  f.levelBox.boxFill:SetPoint("BOTTOMRIGHT", boxEdge, -1, 1)
+  f.levelBox.check = f.levelBox:CreateTexture(nil, "OVERLAY")
+  f.levelBox.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+  f.levelBox.check:SetSize(26, 26)
+  f.levelBox.check:SetPoint("CENTER", boxEdge, "CENTER", 0, 0)
+  f.levelBox.label = text(f.levelBox, "GameFontHighlightSmall", { 0.79, 0.73, 0.54 })
+  f.levelBox.label:SetPoint("LEFT", 22, 0)
+  f.levelBox.label:SetSize(190, 16)
+  f.levelBox.label:SetText(S.only_level)
   f.levelBox:SetScript("OnClick", function()
     ns.db.onlyLevel = not ns.db.onlyLevel
     W.UpdateControls()
     if lastMap then renderMap(lastMap) end
   end)
-  f.profBtn = button(f, "", 170)
-  f.profBtn:SetPoint("TOPRIGHT", -14, -55)
+  f.profBtn = button(f, "", L.map.profBtn.r - L.map.profBtn.l)
+  place(f.profBtn, L.map.profBtn, f)
   f.profBtn:SetScript("OnClick", function()
     local order = { [false] = "Herb Gathering", ["Herb Gathering"] = "Mining", ["Mining"] = "Fishing", ["Fishing"] = false }
     ns.db.profession = order[ns.db.profession or false] or nil
@@ -176,23 +278,20 @@ local function build()
   -- bags and here tabs: plain lines, left text and right text
   lines = {}
   for i = 1, LINES do
+    local top = L.list.lines.t + (i - 1) * LINE_H
     local l = { left = text(f, "GameFontHighlightSmall"), right = text(f, "GameFontHighlightSmall", nil, "RIGHT") }
-    l.left:SetPoint("TOPLEFT", 14, -58 - (i - 1) * LINE_H)
-    l.left:SetWidth(300)
-    l.right:SetPoint("TOPRIGHT", -14, -58 - (i - 1) * LINE_H)
-    l.right:SetWidth(150)
+    place(l.left, rect(L.list.lines.l + W.LineParts.left.l, top, L.list.lines.l + W.LineParts.left.r, top + LINE_H), f)
+    place(l.right, rect(L.list.lines.l + W.LineParts.right.l, top, L.list.lines.l + W.LineParts.right.r, top + LINE_H), f)
     lines[i] = l
   end
 
   -- loading / empty / error panel
   panel = CreateFrame("Frame", nil, f)
-  panel:SetPoint("TOPLEFT", 14, -80)
-  panel:SetPoint("TOPRIGHT", -14, -80)
-  panel:SetHeight(220)
+  place(panel, L.panel.panel, f)
   panel.title = text(panel, "GameFontNormal", GOLD, "CENTER")
   panel.title:SetPoint("TOP", 0, -30)
   panel.title:SetWidth(400)
-  panel.body = text(panel, "GameFontHighlightSmall", { 0.85, 0.8, 0.64 }, "CENTER")
+  panel.body = text(panel, "GameFontHighlightSmall", { 0.85, 0.8, 0.64 }, "CENTER", true)
   panel.body:SetPoint("TOP", panel.title, "BOTTOM", 0, -12)
   panel.body:SetWidth(360)
   panel.retry = button(panel, S.retry, 120)
@@ -206,32 +305,33 @@ local function build()
   alpha:SetDuration(0.8)
   panel:Hide()
 
-  f.banner = text(f, "GameFontNormalSmall", GOLD)
-  f.banner:SetPoint("BOTTOMLEFT", 14, 88)
-  f.banner:SetWidth(452)
-  f.footer = text(f, "GameFontHighlightSmall", MUTED)
-  f.footer:SetPoint("BOTTOMLEFT", 14, 52)
-  f.footer:SetWidth(452)
+  -- banner (causes of a partial estimate) and footer: own slots, wrapped inside the width, never under a button
+  f.banner = text(f, "GameFontNormalSmall", GOLD, "LEFT", true)
+  place(f.banner, L.common.banner, f)
+  f.banner:SetMaxLines(2)
+  f.footer = text(f, "GameFontHighlightSmall", MUTED, "LEFT", true)
+  place(f.footer, L.common.footer, f)
+  f.footer:SetMaxLines(3)
 
-  f.toMap = button(f, S.to_map, 130)
-  f.toMap:SetPoint("BOTTOMLEFT", 14, 26)
+  f.toMap = button(f, S.to_map, L.map.toMap.r - L.map.toMap.l)
+  place(f.toMap, L.map.toMap, f)
   f.toMap:SetScript("OnClick", function()
     local row = selected and rows[selected]
     if row and row.zoneID then openMap(row.zoneID) end
   end)
-  f.note = text(f, "GameFontHighlightSmall", MUTED)
-  f.note:SetPoint("LEFT", f.toMap, "RIGHT", 10, 0)
-  f.note:SetText(S.map_note)
-  f.refresh = button(f, S.refresh, 100)
-  f.refresh:SetPoint("BOTTOMRIGHT", -14, 26)
+  f.note = text(f, "GameFontHighlightSmall", MUTED, "LEFT", true)
+  place(f.note, L.map.note, f)
+  f.note:SetMaxLines(2)
+  f.refresh = button(f, S.refresh, L.common.refresh.r - L.common.refresh.l)
+  place(f.refresh, L.common.refresh, f)
   f.refresh:SetScript("OnClick", function() W.Refresh() end)
 
-  -- bottom tabs
+  -- tabs hang below the frame, side by side, touching neither the body nor the border
   f.tabs = {}
   for i, def in ipairs(TABS) do
     local tab = CreateFrame("Button", nil, f)
     tab:SetSize(70, 20)
-    tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 10 + (i - 1) * 72, 1)
+    tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 10 + (i - 1) * 74, 0)
     tab.edge = solid(tab, "BACKGROUND", 0.416, 0.333, 0.149)
     tab.edge:SetAllPoints()
     tab.fill = solid(tab, "BORDER", 0.114, 0.09, 0.047)
@@ -270,7 +370,7 @@ local function setLines(entries, tail)
     if i <= shown then e = entries[i]
     elseif i == shown + 1 and shown < #entries then e = { left = S.bags_more:format(#entries - shown) }
     elseif i > LINES - #tail then e = tail[i - (LINES - #tail)] end
-    l.left:SetFontObject(e and e.head and GameFontNormal or GameFontHighlightSmall)
+    l.left:SetFontObject(e and e.head and GameFontNormalSmall or GameFontHighlightSmall)
     l.left:SetText(e and e.left or "")
     l.right:SetText(e and e.right or "")
   end
@@ -278,7 +378,8 @@ end
 
 local function render(res, kind)
   f.refresh:SetBusy(false)
-  f.toMap:SetBusy(kind ~= "map" or res.state ~= "ok")
+  mapState = (kind == "map" and res.state == "ok") and "ready" or "off"
+  updateMapButton()
 end
 
 function renderMap(res)
@@ -291,7 +392,7 @@ function renderMap(res)
   for _, l in ipairs(lines) do l.left:SetText(""); l.right:SetText("") end
   panel:Hide()
   panel.pulse:Stop()
-  f.subtitle:SetText(res.supposed and S.hypothetical:format(res.supposed) or S.mine)
+  f.subtitle:SetText(ns.SupposedText(res) or S.mine)
   local shown, hidden = ns.VisibleZones(res.all, ns.db.onlyLevel)
   local banner = {}
   local partial = ns.PartialText(shown)
@@ -300,24 +401,31 @@ function renderMap(res)
   if res.fishing then banner[#banner + 1] = S.fish_note end
   if res.ageUnknown then banner[#banner + 1] = S.age_unknown end
   f.banner:SetText(table.concat(banner, " "))
-  if #shown == 0 then return showPanel(S.nolevel_t, S.nolevel_p, true) end
+  if #shown == 0 then
+    mapState = "off"
+    updateMapButton()
+    return showPanel(S.nolevel_t, S.nolevel_p, true)
+  end
   local best = shown[1].copperPerHour
+  local level = UnitLevel("player")
   for i, r in ipairs(rows) do
     local row = shown[i]
     if row then
-      r.zoneID = row.zone
-      r.rank:SetText(i)
-      r.zone:SetText(row.name)
       local info = ns.Zones[row.zone]
       local lo = info and info[2]
       local tags = (row.old and (" · " .. S.tag_old) or "") .. (row.partial and (" · " .. S.tag_partial) or "")
         .. (info and not lo and (" · " .. S.unknown_level_tag) or "")
-        .. (lo and lo > UnitLevel("player") and (" · " .. S.far_tag:format(lo, info[3])) or "")
-      r:SetAlpha(lo and lo - UnitLevel("player") > 3 and 0.45 or 1)
-      r.sub:SetText(table.concat(row.itemNames, ", ") .. tags)
-      r.gph:SetText(S.per_hour:format(ns.Money(row.copperPerHour)))
-      r.age:SetText(S.price_age:format(ns.AgeText(row.maxAge)))
-      r.bar:SetWidth(math.max(2, 90 * row.copperPerHour / best))
+        .. (lo and lo > level and (" · " .. S.far_tag:format(lo, info[3])) or "")
+      local sub = table.concat(row.itemNames, ", ") .. tags
+      r.zoneID = row.zone
+      r.tip = W.RowTooltipLines(row)
+      r:SetAlpha(lo and lo - level > 3 and 0.45 or 1)
+      r.rank:SetText(i)
+      r.zone:SetText(row.name)
+      r.sub:SetText(sub)
+      r.gph:SetText(S.per_hour_row:format(ns.Money(row.copperPerHour)))
+      r.age:SetText(ns.PriceAgeText(row.maxAge))
+      r.bar:SetWidth(math.max(2, (W.RowParts.bar.r - W.RowParts.bar.l) * row.copperPerHour / best))
       r:Show()
     else
       r:Hide()
@@ -358,7 +466,7 @@ local function renderHere(res)
     return showPanel(title, body, true)
   end
   local cmp = res.cmp
-  f.subtitle:SetText(res.supposed and S.hypothetical:format(res.supposed) or "")
+  f.subtitle:SetText(ns.SupposedText(res) or "")
   f.banner:SetText(ns.PartialText({ cmp.row }))
   local entries = {
     { head = true, left = cmp.row.name, right = S.here_level:format(res.level) },
@@ -381,7 +489,10 @@ local function renderHere(res)
 end
 
 function W.UpdateControls()
-  f.levelBox.mark:SetShown(ns.db.onlyLevel and true or false)
+  local on = ns.db.onlyLevel and true or false
+  f.levelBox.check:SetShown(on)
+  if on then f.levelBox.boxFill:SetColorTexture(0.1, 0.35, 0.1) else f.levelBox.boxFill:SetColorTexture(0.04, 0.03, 0.016) end
+  f.levelBox.label:SetTextColor(on and 1 or 0.79, on and 1 or 0.73, on and 1 or 0.54)
   f.profBtn.label:SetText(S.prof_label:format(ns.db.profession and S.prof_names[ns.db.profession] or S.prof_all))
 end
 
@@ -390,7 +501,8 @@ function W.Refresh()
   token = token + 1
   local mine = token
   f.refresh:SetBusy(true)
-  f.toMap:SetBusy(true)
+  mapState = "loading"
+  updateMapButton()
   local function guard(fn) return function(res) if mine == token then fn(res) end end end
   if current == "map" then
     showPanel(S.loading_t, S.loading_p, false, true)
@@ -430,11 +542,13 @@ function W.Toggle()
   W.SetTab(current)
 end
 
--- The bags tab follows the bags and the here tab follows the zone, while the window is open.
+-- The bags tab follows the bags and the here tab follows the zone while the window is open; the map button follows combat.
 local watcher = CreateFrame("Frame")
-watcher:RegisterEvent("BAG_UPDATE_DELAYED")
-watcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+for _, e in ipairs({ "BAG_UPDATE_DELAYED", "ZONE_CHANGED_NEW_AREA", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
+  watcher:RegisterEvent(e)
+end
 watcher:SetScript("OnEvent", function(_, event)
   if not (f and f:IsShown()) then return end
+  if event:sub(1, 13) == "PLAYER_REGEN_" then return updateMapButton() end
   if (event == "BAG_UPDATE_DELAYED" and current == "bags") or (event == "ZONE_CHANGED_NEW_AREA" and current == "here") then W.Refresh() end
 end)

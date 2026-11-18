@@ -52,7 +52,7 @@ local function addSection(tt, id)
     if unconfirmed then tt:AddLine(S.tip_unconfirmed, MUTE[1], MUTE[2], MUTE[3]) end
   end
   local _, age = ctx.price(id)
-  tt:AddLine(age and S.tip_estimate:format(ns.AgeText(age)) or S.tip_estimate_nodate, MUTE[1], MUTE[2], MUTE[3])
+  tt:AddLine(age and (age < 1 and S.tip_estimate_today or S.tip_estimate:format(ns.AgeText(age))) or S.tip_estimate_nodate, MUTE[1], MUTE[2], MUTE[3])
 end
 
 local function onItem(tt, id)
