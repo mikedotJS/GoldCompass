@@ -10,9 +10,16 @@
 
 Strings.lua
 Data\GatherNodes.lua
+Data\Zones.lua
+Data\Recipes.lua
+Data\QuestItems.lua
 ZoneRank.lua
+Advice.lua
+Here.lua
+Format.lua
 Prices.lua
 Nodes.lua
 Core.lua
 Spike.lua
+Tooltip.lua
 Window.lua

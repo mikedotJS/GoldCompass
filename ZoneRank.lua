@@ -16,7 +16,7 @@ ZR.DEFAULTS = {
 
 -- Value in copper of one unit of an item, and how it was obtained.
 -- Returns value, kind, age where kind is "fresh", "old", "vendor" (stale or missing AH price) or "none".
-local function unitValue(itemID, price, vendor, c, ageKnown)
+function ZR.UnitValue(itemID, price, vendor, c, ageKnown)
   local copper, age = price(itemID)
   if copper then
     if not ageKnown or (age and age <= c.freshDays) then return copper * (1 - c.ahCut), "fresh", age end
@@ -46,17 +46,18 @@ function ZR.Rank(input)
   for zoneID, spotsByNode in pairs(input.zones) do
     local spots, total = 0, 0
     local old, partial, maxAge = false, false, nil
-    local contribution = {}
+    local contribution, unitOf = {}, {}
     for nodeID, count in pairs(spotsByNode) do
       local node = input.nodes[nodeID]
       if not (node and node.item) then
         unknownSpots = unknownSpots + count
       elseif (input.skills[node.type] or -1) >= node.skill then
-        local unit, kind, age = unitValue(node.item, input.price, input.vendor, c, ageKnown)
+        local unit, kind, age = ZR.UnitValue(node.item, input.price, input.vendor, c, ageKnown)
         local value = node.yield * unit
         spots = spots + count
         total = total + count * value
         contribution[node.item] = (contribution[node.item] or 0) + count * value
+        unitOf[node.item] = unit
         if kind == "fresh" or kind == "old" then anyAhPrice = true end
         if kind == "old" then old = true end
         if kind == "vendor" or kind == "none" then partial = true end
@@ -71,11 +72,13 @@ function ZR.Rank(input)
         if contribution[a] ~= contribution[b] then return contribution[a] > contribution[b] end
         return a < b
       end)
+      local detail = {}
+      for i, item in ipairs(items) do detail[i] = { item = item, unit = unitOf[item] } end
       while #items > 2 do items[#items] = nil end
       anyOld = anyOld or old
       rows[#rows + 1] = {
         zone = zoneID, copperPerHour = pace * total / spots, spots = spots,
-        items = items, old = old, partial = partial, maxAge = maxAge,
+        items = items, detail = detail, old = old, partial = partial, maxAge = maxAge,
       }
     end
   end

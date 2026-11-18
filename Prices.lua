@@ -31,3 +31,11 @@ function P.Vendor(itemID)
   local sell = select(11, getInfo(itemID))
   if sell and sell > 0 then return sell end
 end
+
+-- Disenchant value in copper, or nil when Auctionator cannot say (the call is unverified, spike S3).
+function P.Disenchant(itemID)
+  local a = api()
+  if not (a and a.GetDisenchantPriceByItemID) then return end
+  local ok, v = pcall(a.GetDisenchantPriceByItemID, CALLER, itemID)
+  if ok and v and v > 0 then return v end
+end

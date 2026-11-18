@@ -39,4 +39,48 @@ ns.S = {
   age_days = "%d j",
   age_fresh = "du jour",
   none = "—",
+
+  -- tooltip and bags
+  gc_header = "|cff3fe0c5GOLD COMPASS|r",
+  act_ah = "Vendre à l'HV", act_vendor = "Vendre au marchand", act_de = "Désenchanter", act_none = "Aucune valeur connue",
+  act_craft = "Fabriquer : %s", act_craft_n = "Fabriquer : %s ×%d",
+  act_keep = "Garder %d", act_keep_rest = "Garder %d, %s",
+  sub_craft = "puis vendre le résultat (~%s de plus qu'en vendant l'objet)",
+  sub_keep = "sert à la quête « %s »",
+  sub_vendor = "pas de prix HV récent",
+  sub_none = "aucun prix : scanne l'hôtel des ventes",
+  uses = "Sert à %d usage%s", uses_price = "prix du résultat", uses_more = "+ %d autres (Maj pour tout voir)",
+  st_known = "|cff1eff00✓ connue|r", st_learn = "|cffffd100à apprendre : %s|r", st_quest = "|cffffd100à faire : quête|r",
+  st_locked = "|cff9d9d9dniveau de métier %d requis|r", st_noprof = "|cff9d9d9dmétier requis : %s|r",
+  where_v = "marchand", where_m = "butin de monstre", where_d = "butin", where_q = "quête", where_trainer = "entraîneur, niv. %d",
+  tip_estimate = "~ estimation · prix HV vus il y a %s",
+  tip_estimate_nodate = "~ estimation · prix HV inconnus",
+  tip_unconfirmed = "recettes : données Classic, non confirmées sur Forever",
+  tip_error = "Erreur dans l'infobulle : %s",
+
+  -- bags tab
+  tab_bags = "Sac", title_bags = "Gold Compass · Mon sac",
+  bags_empty_t = "Ton sac est vide", bags_empty_p = "Aucun objet à valoriser dans tes sacs.",
+  bags_noscan = "Pas de scan HV : valeurs au prix marchand seulement.",
+  bags_loading = "Lecture de ton sac...",
+  g_ah = "Vendre à l'HV", g_craft = "Fabriquer / désenchanter", g_keep = "Garder", g_vendor = "Vendre au marchand", g_none = "Sans valeur connue",
+  bags_total = "Ton sac vaut environ", bags_total_note = "~ estimation, hors objets gardés",
+  bags_more = "… et %d autres",
+
+  -- here tab
+  tab_here = "Ici", title_here = "Gold Compass · Ici",
+  here_nodata_t = "Pas de données pour cette zone", here_nodata_p = "Ville, donjon ou zone sans point de récolte connu pour tes métiers.",
+  here_you = "~%s/h pour toi", here_level = "niveau %d",
+  here_best = "C'est la meilleure zone pour toi : environ %s fois plus que %s.",
+  here_behind = "%s rapporte environ %s fois plus (~%s/h).",
+  here_nodes = "À récolter ici", here_pickups = "À ramasser pour les quêtes d'ici",
+  here_hint = "Avec %s, cette zone rapporterait environ %s/h de plus.",
+  prof_Mining = "Minage", prof_Herb = "Herboristerie",
+  prof_names = { ["Alchemy"] = "Alchimie", ["Blacksmithing"] = "Forge", ["Enchanting"] = "Enchantement", ["Engineering"] = "Ingénierie",
+    ["Leatherworking"] = "Travail du cuir", ["Tailoring"] = "Couture", ["Cooking"] = "Cuisine", ["First Aid"] = "Premiers soins",
+    ["Mining"] = "Minage", ["Herb Gathering"] = "Herboristerie" },
+
+  -- map controls
+  only_level = "Mon niveau seulement", prof_label = "Métier : %s",
+  prof_all = "Tous", far_tag = "niveau %d-%d",
 }

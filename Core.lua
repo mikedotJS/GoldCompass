@@ -1,15 +1,16 @@
 -- Startup, saved settings, data pipeline and the /gc command.
 local addonName, ns = ...
 local S = ns.S
+ns.TOP = 10
 
 function ns.Print(msg) print(S.prefix .. " : " .. msg) end
 
--- Request item data from the game for every item in the node table, then call cb. Gives up after 5 seconds
--- (PLAN.md step 1): items that did not load show as "objet #id".
-local function loadItems(cb)
+-- Request item data from the game for these item IDs, then call cb. Gives up after 5 seconds (PLAN.md step 1):
+-- items that did not load show as "objet #id".
+function ns.LoadItems(list, cb)
   local ids, seen = {}, {}
-  for _, node in pairs(ns.GatherNodes) do
-    if node.item and not seen[node.item] then seen[node.item] = true; ids[#ids + 1] = node.item end
+  for _, id in ipairs(list) do
+    if not seen[id] then seen[id] = true; ids[#ids + 1] = id end
   end
   local pending, finished = #ids, false
   local function finish() if not finished then finished = true; cb() end end
@@ -23,14 +24,23 @@ local function loadItems(cb)
   end
 end
 
-local function itemName(id)
+local function nodeItems()
+  local ids = {}
+  for _, node in pairs(ns.GatherNodes) do
+    if node.item then ids[#ids + 1] = node.item end
+  end
+  return ids
+end
+
+function ns.ItemName(id)
   local name = ((C_Item and C_Item.GetItemInfo) or GetItemInfo)(id)
   return name or S.item_unknown:format(id)
 end
 
--- Gathering skills of the character, or a supposed skill (5 per level, max 300) when it has neither profession.
-local SKILL_LINES = { [182] = "Herb Gathering", [186] = "Mining" } -- Classic skill line IDs, unverified on Forever (spike S4)
-local function playerSkills()
+-- Skills of the character by profession (English names, as in Data/Recipes.lua and the node types).
+local SKILL_LINES = { [182] = "Herb Gathering", [186] = "Mining", [171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting",
+  [202] = "Engineering", [165] = "Leatherworking", [197] = "Tailoring", [185] = "Cooking", [129] = "First Aid" } -- Classic skill line IDs, unverified on Forever (spike S4)
+function ns.Skills()
   local skills = {}
   if GetProfessions and GetProfessionInfo then
     for _, index in pairs({ GetProfessions() }) do
@@ -38,41 +48,78 @@ local function playerSkills()
       if SKILL_LINES[skillLine] then skills[SKILL_LINES[skillLine]] = skill end
     end
   end
-  if next(skills) then return skills, false end
-  local supposed = math.min(300, 5 * UnitLevel("player"))
-  return { ["Mining"] = supposed, ["Herb Gathering"] = supposed }, supposed
+  return skills
+end
+
+-- Gathering skills for the ranking: the real ones, or a supposed skill (5 per level, max 300) when the character has
+-- neither gathering profession. `only` restricts to one node type ("Mining" or "Herb Gathering").
+local function gatherSkills(only)
+  local real = ns.Skills()
+  local skills = { ["Mining"] = real["Mining"], ["Herb Gathering"] = real["Herb Gathering"] }
+  local supposed
+  if not next(skills) then
+    supposed = math.min(300, 5 * UnitLevel("player"))
+    skills = { ["Mining"] = supposed, ["Herb Gathering"] = supposed }
+  end
+  if only then
+    for k in pairs(skills) do if k ~= only then skills[k] = nil end end
+  end
+  return skills, supposed
+end
+
+-- Context for the pure Advice module, read from the game.
+local function safePrice(id)
+  local ok, price, age = pcall(ns.Prices.Get, id)
+  if ok then return price, age end
+end
+function ns.Context()
+  local skills = ns.Skills()
+  ns.index = ns.index or ns.Advice.NewIndex(ns.RecipeRows)
+  local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
+  return {
+    price = safePrice, vendor = ns.Prices.Vendor, ageKnown = ns.Prices.HasAge(), skills = skills,
+    known = function(id) return IsPlayerSpell ~= nil and IsPlayerSpell(id) or false end,
+    quests = function(id) return ns.QuestItems[id] end, level = UnitLevel("player"), faction = faction,
+    disenchant = function(id) return skills["Enchanting"] and ns.Prices.Disenchant(id) or nil end,
+    index = ns.index,
+  }
 end
 
 -- Runs the whole pipeline. Always returns a table { state = ... }, never raises.
 -- states: ok, nogather, noscan, no_gathermate_addon, no_auctionator_addon, price_error, error
-local function compute()
+local function compute(opts)
   if not ns.Nodes.Installed() then return { state = "no_gathermate_addon" } end
   if not ns.Prices.Installed() then return { state = "no_auctionator_addon" } end
   local zones = ns.Nodes.Counts()
-  local skills, supposed = playerSkills()
+  local skills, supposed = gatherSkills(opts and opts.profession)
   local cache = {}
   local function price(id)
     if not cache[id] then cache[id] = { ns.Prices.Get(id) } end
     return cache[id][1], cache[id][2]
   end
-  local result = ns.ZoneRank.Rank({
+  local input = {
     zones = zones, nodes = ns.GatherNodes, skills = skills, price = price,
-    vendor = ns.Prices.Vendor, ageKnown = ns.Prices.HasAge(),
-  })
+    vendor = ns.Prices.Vendor, ageKnown = ns.Prices.HasAge(), constants = { maxRows = math.huge },
+  }
+  local result = ns.ZoneRank.Rank(input)
   if result.status == "no_nodes" then return { state = "nogather" } end
   if result.status == "no_scan" then return { state = "noscan" } end
   for _, row in ipairs(result.rows) do
     row.name = ns.Nodes.ZoneName(row.zone)
     row.itemNames = {}
-    for i, id in ipairs(row.items) do row.itemNames[i] = itemName(id) end
+    for i, id in ipairs(row.items) do row.itemNames[i] = ns.ItemName(id) end
   end
-  return { state = "ok", rows = result.rows, supposed = supposed, anyPartial = false, ageUnknown = not ns.Prices.HasAge() }
+  -- all = every ranked zone (Here tab); rows = the best ns.TOP (map tab, chat)
+  local top = {}
+  for i = 1, math.min(ns.TOP, #result.rows) do top[i] = result.rows[i] end
+  return { state = "ok", rows = top, all = result.rows, input = input, supposed = supposed, anyPartial = false,
+    ageUnknown = not ns.Prices.HasAge() }
 end
 
 -- done(result) is called once the data is read. Keeps the last result for /gc dump.
-function ns.Run(done)
-  loadItems(function()
-    local ok, res = pcall(compute)
+function ns.Run(done, opts)
+  ns.LoadItems(nodeItems(), function()
+    local ok, res = pcall(compute, opts)
     if not ok then
       res = res == "price_api" and { state = "price_error" } or { state = "error", message = tostring(res) }
     end

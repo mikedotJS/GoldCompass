@@ -5,7 +5,7 @@ exclude_files = { "spec/**" }
 read_globals = {
   "C_AddOns", "C_Item", "C_Map", "C_Timer", "CreateFrame", "GameFontNormal", "GameFontNormalSmall",
   "GameFontHighlightSmall", "GetBuildInfo", "GetAddOnMetadata", "GetItemInfo", "GetProfessionInfo", "GetProfessions",
-  "Item", "OpenWorldMap", "UIParent", "UISpecialFrames", "UnitLevel", "WOW_PROJECT_ID",
+  "Item", "IsAddOnLoaded", "InCombatLockdown", "IsShiftKeyDown", "GameTooltip", "TooltipDataProcessor", "Enum", "IsPlayerSpell", "UnitFactionGroup", "C_Container", "BackdropTemplateMixin", "IsAddOnLoaded", "OpenWorldMap", "UIParent", "UISpecialFrames", "UnitLevel", "WOW_PROJECT_ID",
   "Auctionator", "GatherMate2", "date", "time", "tinsert", "wipe",
 }
 globals = { "GoldCompassDB", "SLASH_GOLDCOMPASS1", "SlashCmdList" }

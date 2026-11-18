@@ -30,6 +30,23 @@ local function setup(opts)
   _G.C_Map = { GetMapInfo = function(id) return { name = "Zone" .. id } end }
   _G.UnitLevel = function() return 20 end
   _G.GetProfessions, _G.GetProfessionInfo = nil, nil
+  if opts.alchemy then
+    _G.GetProfessions = function() return 1 end
+    _G.GetProfessionInfo = function() return "Alchemy", nil, 50, nil, nil, nil, 171 end
+  end
+  _G.IsPlayerSpell = function(id) return id == 2329 end -- Elixir of Minor Strength
+  _G.UnitFactionGroup = function() return "Alliance" end
+  _G.InCombatLockdown = function() return opts.combat or false end
+  _G.IsShiftKeyDown = function() return false end
+  _G.IsAddOnLoaded = function() return false end
+  _G.Enum = { TooltipDataType = { Item = 0 } }
+  _G.C_Item = { GetItemCount = function() return 4 end, GetItemInfoInstant = function() return 0, "", "", "", 0, 7 end,
+    GetItemQualityByID = function() return 1 end }
+  _G.GameTooltip = { lines = {} }
+  GameTooltip.AddLine = function(self, t) self.lines[#self.lines + 1] = t end
+  GameTooltip.AddDoubleLine = function(self, l, r) self.lines[#self.lines + 1] = l .. " | " .. r end
+  GameTooltip.IsShown = function() return false end
+  _G.TooltipDataProcessor = { AddTooltipPostCall = function(_, fn) handlers.item = fn end }
   _G.time = os.time
   -- 100 Copper Veins (201) in zone 1411, 100 Peacebloom (401) in zone 1429; 3 spots of an unknown node
   local db = {
@@ -48,7 +65,8 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Data/GatherNodes", "ZoneRank", "Prices", "Nodes", "Core", "Spike", "Window" }) do
+  for _, f in ipairs({ "Strings", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Format",
+    "Prices", "Nodes", "Core", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
   return ns
@@ -83,6 +101,21 @@ describe("addon glue (stubbed WoW API)", function()
       SlashCmdList["GOLDCOMPASS"]("map")
       assert.matches(case[2], table.concat(printed, "\n"))
     end
+  end)
+
+  it("adds the tooltip section under an item that is an ingredient, and nothing in combat", function()
+    setup({ scanned = true, alchemy = true })
+    loadAddon()
+    handlers.item(GameTooltip, { id = 2449 }) -- Earthroot, an ingredient of the known Elixir of Minor Strength
+    local text = table.concat(GameTooltip.lines, "\n")
+    assert.matches("GOLD COMPASS", text)
+    assert.matches("Elixir of Minor Strength", text)
+    assert.matches("connue", text)
+    assert.matches("estimation", text)
+    setup({ scanned = true, alchemy = true, combat = true })
+    loadAddon()
+    handlers.item(GameTooltip, { id = 2449 })
+    assert.are.equal(0, #GameTooltip.lines)
   end)
 
   it("opens the window and renders without error", function()
