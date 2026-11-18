@@ -212,7 +212,9 @@ function Wh.Target(rec, prof, env)
       local ids, top = {}, neededTop(rec)
       local listed = env.fdbTrainers and env.fdbTrainers[prof]   -- ForeverDB's trainers of the profession: the others are not proposed
       for _, t in ipairs(env.ntrainers and env.ntrainers[prof] or {}) do
-        if t[2] >= top and (not listed or listed[t[1]]) then ids[#ids + 1] = t[1] end
+        -- a "Journeyman" by its Forever title (0) teaches Apprentice recipes only, whatever the Classic list says of its rank
+        local rank = listed and listed[t[1]] == 0 and 0 or t[2]
+        if rank >= top and (not listed or listed[t[1]]) then ids[#ids + 1] = t[1] end
       end
       local cands, other = fromDb(ids, env)
       local best = pick(cands, env)

@@ -169,9 +169,12 @@ def main():
     for spell in sorted(quests):
         out.append(f"  [{spell}] = {{ " + ", ".join(
             f"{{ {q}, {lua_str(side)}, {g}, {lua_str(name)}, {m}, {x:g}, {y:g} }}" for q, side, g, name, m, x, y in quests[spell]) + " },")
-    out += ["}", "-- ns.FdbTrainers[English profession] = { [npcID] = true }: the trainers of the profession", "ns.FdbTrainers = {"]
+    out += ["}", "-- ns.FdbTrainers[English profession] = { [npcID] = true | 0 }: the trainers of the profession; 0 = a \"Journeyman ...\" by its Forever",
+            "--   title: such a trainer taught nothing from skill 50 up when seen in game (Kamari), so it is proposed for Apprentice recipes only",
+            "ns.FdbTrainers = {"]
     for prof in sorted(trainers):
-        out.append(f"  [{lua_str(prof)}] = {{ " + ", ".join(f"[{v}] = true" for v in trainers[prof]) + " },")
+        out.append(f"  [{lua_str(prof)}] = {{ " + ", ".join(
+            f"[{v}] = {'0' if v in npcs and npcs[v][1].startswith('Journeyman') else 'true'}" for v in trainers[prof]) + " },")
     out.append("}")
     text = "\n".join(out) + "\n"
     text.encode("latin-1")                                  # the game font draws Latin-1 only: fail loudly on anything else

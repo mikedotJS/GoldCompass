@@ -342,6 +342,13 @@ describe("Where.Target: positions seen on Forever first, Classic ones flagged, F
     e.fdbTrainers = { Cooking = {} }
     local t = Wh.Target(learn, "Cooking", fenv(e))
     assert.are.equal("text", t.kind); assert.is_true(t.unverified)
+    -- a "Journeyman" by its Forever title (0) is proposed for Apprentice recipes only, whatever rank the Classic list gives it
+    e.fdbTrainers = { Cooking = { [2] = true, [4] = 0 } }
+    assert.are.equal("Far Cook", Wh.Target(learn, "Cooking", fenv(e)).name)
+    assert.are.equal("Far Cook", Wh.Target({ id = 2, learn = 80, src = nil, way = { rank = "Journeyman" } }, "Cooking", fenv(e)).name)
+    e.ntrainers = { Cooking = { { 4, 3 } } }
+    assert.are.equal("Old Cook", Wh.Target(learn, "Cooking", fenv(e)).name)
+    assert.are.equal("text", Wh.Target({ id = 2, learn = 80, src = nil, way = { rank = "Journeyman" } }, "Cooking", fenv(e)).kind)
   end)
 
   it("a quest recipe pins where Forever players were offered the quest, for the player's faction only", function()
