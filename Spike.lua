@@ -71,5 +71,8 @@ function ns.Spike()
   if IsPlayerSpell then
     try("S5 IsPlayerSpell(2329 Elixir of Minor Strength; true only if you know it):", IsPlayerSpell, 2329)
   end
+  out("S5 profession window API:", tostring(C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs ~= nil), " merchant API:",
+    tostring(GetMerchantNumItems ~= nil), tostring(C_MerchantFrame ~= nil), " vendor buy price of item 3371 (Auctionator):",
+    tostring(ns.Prices.VendorBuy(3371)))
   out("done. Send back every [spike] line.")
 end

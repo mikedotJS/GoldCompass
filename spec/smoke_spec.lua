@@ -92,6 +92,7 @@ local function setup(opts)
       if opts.scanned then return id == 2770 and 40 or 35 end
     end,
     GetAuctionAgeByItemID = function() return 1 end,
+    GetVendorPriceByItemID = function(_, id) if id == 3371 then return 40 end end,
   } } }
   if opts.noGM then _G.GatherMate2 = nil end
   if opts.noAuc then _G.Auctionator = nil end
@@ -356,6 +357,16 @@ describe("review fixes (stubbed WoW API)", function()
     local res
     ns.RunBags(function(r) res = r end)
     assert.are.equal("empty", res.state)
+  end)
+
+  it("takes ingredient buy prices from the merchant memory first, then from Auctionator", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = { buy = { [3372] = 90 } }
+    local ctx = ns.Context()
+    assert.are.equal(90, ctx.buy(3372))   -- recorded at a merchant
+    assert.are.equal(40, ctx.buy(3371))   -- Auctionator's vendor price cache
+    assert.is_nil(ctx.buy(5))
   end)
 
   it("never prints 0 as a price", function()

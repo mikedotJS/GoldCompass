@@ -80,7 +80,7 @@ function ns.Context()
     known = function(id)
       return (ns.char and ns.char.learned[id]) or (IsPlayerSpell ~= nil and IsPlayerSpell(id)) or false
     end,
-    buy = function(id) return ns.db and ns.db.buy and ns.db.buy[id] end,
+    buy = function(id) return (ns.db and ns.db.buy and ns.db.buy[id]) or ns.Prices.VendorBuy(id) end,
     quests = function(id) return ns.QuestItems[id] end, level = UnitLevel("player"), faction = faction,
     disenchant = function(id) return skills["Enchanting"] and ns.Prices.Disenchant(id) or nil end,
     index = ns.index,

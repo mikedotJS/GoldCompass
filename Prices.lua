@@ -39,3 +39,12 @@ function P.Disenchant(itemID)
   local ok, v = pcall(a.GetDisenchantPriceByItemID, CALLER, itemID)
   if ok and v and v > 0 then return v end
 end
+
+-- What merchants charge for one unit, as recorded by Auctionator while visiting vendors (verified in its source:
+-- GetVendorPriceByItemID reads AUCTIONATOR_VENDOR_PRICE_CACHE). nil when never seen.
+function P.VendorBuy(itemID)
+  local a = api()
+  if not (a and a.GetVendorPriceByItemID) then return end
+  local ok, v = pcall(a.GetVendorPriceByItemID, CALLER, itemID)
+  if ok and v and v > 0 then return v end
+end
