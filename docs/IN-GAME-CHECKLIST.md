@@ -117,4 +117,4 @@ Sources (`entraîneur`, `vendeur`, `butin de monstre`, `butin`, `quête`) come f
 | 58 | `Bientôt (dans les 25 prochains points)` | At most 3 recipes whose learn skill is within 25 points above yours | Screenshot |
 | 59 | Tick `Avec mon sac` | Only recipes to learn whose reagents you carry; with none, `Rien à apprendre qui soit fabricable avec ton sac.` and the `Voir sans filtre` button | Screenshot |
 | 60 | Footer, and a profession with nothing left to learn | Footer says `données Classic, non confirmées sur Forever` and `Coût d'apprentissage non inclus`; the empty profession says `Aucune recette à apprendre pour ce métier.`; Fishing, Herbalism, Skinning keep `Pas de recettes` | Screenshot |
-| 61 | A lot of professions or rows | The list is cut with `+ N de plus` (never overflows the frame, never overlaps the footer) | Screenshot |
+| 61 | A lot of professions or rows | The list is cut with `... et N autres` (never overflows the frame, never overlaps the footer) | Screenshot |
