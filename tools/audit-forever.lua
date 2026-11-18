@@ -116,6 +116,12 @@ for id, ft in pairs(ns.ForeverTrainers) do
     band((ft.rank or "Apprentice") == expected, ("%d: skill %d, rank %s"):format(id, ft.learn, tostring(ft.rank)))
   end
 end
+-- the faction of the NPCs the addon can point to: pfQuest's (Classic) against ForeverDB's side, where both know it
+local side = tally("2/3 NPCs: faction (pfQuest vs ForeverDB's side, NPCs both know)")
+for id, f in pairs(ns.FdbNpcs) do
+  local n = ns.Npcs[id]
+  if n and (f[5] == "A" or f[5] == "H") and (n[2] == "A" or n[2] == "H") then side(n[2] == f[5], ("%d %s: %s vs %s"):format(id, f[1], n[2], f[5])) end
+end
 local listed, tListed = tally("2 trainers: NPC of the addon's trainer list is a trainer of that profession for ForeverDB")
 local placed = tally("2 trainers: listed trainer has a place seen in Forever")
 for english, list in pairs(ns.NpcTrainers) do
@@ -128,10 +134,13 @@ for english, list in pairs(ns.NpcTrainers) do
 end
 
 -- 3. Vendors ----------------------------------------------------------------------------------------------------------
-local soldBy = {}                                      -- [item][npc] = copper
+local soldBy, unitBy = {}, {}                          -- [item][npc] = copper for the stack sold; unitBy: for one unit of it
 for it, list in pairs(F.sold) do
-  soldBy[it] = {}
-  for i = 1, #list, 4 do soldBy[it][list[i]] = list[i + 1] end
+  soldBy[it], unitBy[it] = {}, {}
+  for i = 1, #list, 4 do
+    soldBy[it][list[i]] = list[i + 1]
+    unitBy[it][list[i]] = list[i + 1] / math.max(1, list[i + 2] or 1)
+  end
 end
 local vname = tally("3 vendors: vendor named by the site sells the recipe for ForeverDB")
 local vside = tally("3 vendors: the site's first list is the Alliance's, the second the Horde's (ForeverDB sides)")
@@ -295,11 +304,16 @@ if sv then
       end
     end
   end
-  local buy = tally("game: what a merchant charged the owner for an item (ForeverDB vs the recorded price)")
+  local buy = tally("game: what a merchant charged the owner for one unit of an item (ForeverDB vs the recorded price)")
   for itemID, copper in pairs(db.buy or {}) do
     local any, same = false, false
-    for _, p in pairs(soldBy[itemID] or {}) do any = true; same = same or p == copper end
-    if any then buy(same, ("item %d: recorded %d"):format(itemID, copper)) end
+    -- the addon records the price of one unit; ForeverDB gives the price of the stack the vendor sells (vials and spices: 5)
+    for _, p in pairs(unitBy[itemID] or {}) do any = true; same = same or p == copper end
+    if any then
+      local list = {}
+      for _, p in pairs(unitBy[itemID] or {}) do list[#list + 1] = tostring(p) end
+      buy(same, ("item %d: recorded %d, ForeverDB %s"):format(itemID, copper, table.concat(list, "/")))
+    end
   end
   -- where the owner stood when a trainer, merchant or auction window opened: the ground truth for the places the addon pins
   local fPos = tally("game: place of an NPC the owner opened (ForeverDB's place seen in Forever, within 2 map units)")
