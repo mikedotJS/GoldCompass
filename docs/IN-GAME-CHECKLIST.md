@@ -222,3 +222,5 @@ The Forever recipe data of LibProfessionDB v1.10.1 (MIT, by Pimptasty) is inside
 | 123 | After a trainer window was recorded (Leatherworking 61/75) | `Meilleure à apprendre` is never a Journeyman recipe; a recipe the trainer shows greyed is not the best | Screenshot |
 | 124 | Tab Métier, each profession | Learnable rows on two lines (name + figure, then dim details), nothing cut; `Au-delà de 75 : il faut le rang Compagnon` with a map button; `Pour dépasser <max> : <livre>` near the cap, also with `Avec mon sac` | Screenshot |
 | 125 | Cast a Hearthstone or mount with the Métier tab open | The craft button stays enabled, the tab does not redraw | Observation |
+| 126 | Cooking, Horde, `Meilleure à apprendre` | A recipe with a place to pin (never an Alliance-only one); the Alliance-only recipes appear only on the dim line `Réservé à l'Alliance : ...` | Screenshot |
+| 127 | Rank book lines (`Pour dépasser 150`) | The book's name (client language, else English: `Expert Cookbook`), its price, and the pin on the vendor | Screenshot |

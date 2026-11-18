@@ -42,6 +42,14 @@ function ns.ItemName(id)
   return name or S.item_unknown:format(id)
 end
 
+-- Name of a rank book or rank quest: the teaching item in the client's language when the game has it cached, else its English name
+-- (pfQuest, Data/Npcs.lua), else the name of the recipe it teaches.
+function ns.BookName(rec)
+  local item = rec.teachItem
+  local name = item and ((C_Item and C_Item.GetItemInfo) or GetItemInfo)(item)
+  return name or (item and ns.ItemNames and ns.ItemNames[item]) or ns.Fmt.RecipeName(rec)
+end
+
 -- Skills of the character by profession (English names, as in Data/Recipes.lua and the node types).
 local SKILL_LINES = { [182] = "Herb Gathering", [186] = "Mining", [171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting",
   [202] = "Engineering", [165] = "Leatherworking", [197] = "Tailoring", [185] = "Cooking", [129] = "First Aid",
@@ -378,16 +386,17 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}   -- trainer windows recorded in game
   local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end,
     offer = function(id) return offers[id] end, maxSkill = p.max, goal = ns.Goal() }, { __index = ctx })
-  local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
   -- where to go to learn each one (a pin, or a text only): recorded trainer, library NPC, Classic coordinates, text
   local env = whereEnv(ctx)
+  own.place = function(rec) return ns.Where.Target(rec, english, env) end
+  local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
   if result.beyond and result.beyond.rank then   -- where to train the rank that lifts the cap
     local b = result.beyond
     b.target = ns.Where.Target({ id = 0, learn = b.max + 1, src = nil, way = { rank = b.rank } }, english, env)
   end
   for _, bucket in ipairs({ result.now, result.soon, result.gray, result.books }) do
     for _, row in ipairs(bucket) do
-      row.target = ns.Where.Target(row.rec, english, env)
+      row.target = row.target or ns.Where.Target(row.rec, english, env)
       -- never an empty answer: the source itself ("butin", "conteneur", ...) when no place is known
       local t, way = row.target, row.rec.way
       if not t.mapID or t.dropZone then
@@ -501,6 +510,8 @@ function ns.RunLeveling(done)
             for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {}, entry.learn.books or {} }) do
               for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end
             end
+            for _, row in ipairs(entry.learn.otherFaction or {}) do row.name = ns.Fmt.RecipeName(row.rec) end
+            for _, row in ipairs(entry.learn.books or {}) do row.name = ns.BookName(row.rec) end
           end
           local seen, names = {}, {}
           for i = 1, math.min(3, #entry.plan.unpriced) do

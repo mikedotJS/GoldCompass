@@ -2763,3 +2763,62 @@ describe("/gc pnj lists the NPCs recorded in game", function()
     assert.matches("Kamari · [^\n]- 63%.2, 45%.0", text); assert.matches("Naal Mistrunner · [^\n]- 50%.8, 52%.2", text)
   end)
 end)
+
+describe("Cooking 124 for a Horde player (real Forever data)", function()
+  local function learn()
+    setup({ scanned = true, faction = "Horde", profs = { { 185, 124, "Cuisine", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Cuisine = { skill = 124, max = 150, recipes = { [2538] = { id = 2538, name = "x", d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } } } } }
+    -- no pattern is sold at the auction house here (an AH price would give the Horde a way to an Alliance vendor's recipe)
+    local teach = {}
+    for id in pairs(ns.ForeverDB:GetRecipes(185)) do local it = ns.ForeverDB:GetRecipeItem(id); if it then teach[it] = true end end
+    _G.Auctionator.API.v1.GetAuctionPriceByItemID = function(_, id) if not teach[id] then return 35 end end
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    return ns, res.profs[1].learn
+  end
+
+  it("Alliance-only recipes (Crocolisk Gumbo, Crocolisk Steak) are never listed nor best: one dim line names them", function()
+    local ns, lr = learn()
+    for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do
+      for _, e in ipairs(bucket) do assert.is_nil(e.target.onlyFaction, e.rec.name) end
+    end
+    local seen = {}
+    for _, o in ipairs(lr.otherFaction) do seen[o.rec.id] = o end
+    local ids = {}
+    for id in pairs(seen) do ids[#ids + 1] = id end
+    table.sort(ids)
+    assert.is_not_nil(seen[3373], table.concat(ids, ","))
+    assert.is_not_nil(seen[3370])             -- Crocolisk Gumbo, Crocolisk Steak: Kendor Kabonka / Stormwind quests only
+    assert.is_not_nil(lr.best, ("now %d unpriced %d candidates %d"):format(#lr.now, lr.unpriced, lr.candidates)); assert.are_not.equal(3373, lr.best.rec.id); assert.is_nil(lr.best.target.onlyFaction)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = {}
+    for _, l in ipairs(ns.Window.Lines()) do text[#text + 1] = (l.left.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") end
+    local all = table.concat(text, "\n")
+    assert.matches("Réservé à l'Alliance : ", all)
+    local count = 0
+    for _, t in ipairs(text) do if t:find("Réservé à l'Alliance", 1, true) then count = count + 1 end end
+    assert.are.equal(1, count)
+  end)
+
+  it("the best recipe to learn has a place we can pin when one exists", function()
+    local _, lr = learn()
+    assert.is_not.equal("text", lr.best.target.kind)
+  end)
+
+  it("rank books are named by the book: the cached item name, else its English name; with price and place", function()
+    local ns, lr = learn()
+    assert.are.equal(1, #lr.books)
+    assert.are.equal("Item16072", lr.books[1].name)                          -- the stub client has every item cached
+    _G.GetItemInfo = function() end
+    assert.are.equal("Expert Cookbook", ns.BookName(lr.books[1].rec))
+    assert.is_not_nil(lr.books[1].target)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = {}
+    for _, l in ipairs(ns.Window.Lines()) do text[#text + 1] = (l.left.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") end
+    assert.matches("Pour dépasser 150 : Expert Cookbook", table.concat(text, "\n"))     -- the item is not cached any more: the English name
+    assert.matches("vendeur · 1g", table.concat(text, "\n"))                          -- its price
+    assert.is_nil(table.concat(text, "\n"):find("Pour dépasser 150 : Cooking", 1, true))
+  end)
+end)

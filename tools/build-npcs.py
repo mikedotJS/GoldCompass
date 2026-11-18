@@ -3,7 +3,7 @@
 Gold Compass can point to.
 
 Run: python3 tools/build-npcs.py <pfq folder>
-The folder holds units.lua, units-fr.lua (French names), enUS-units.lua (English names), enUS-zones.lua and frFR-zones.lua, the
+The folder holds units.lua, units-fr.lua (French names), enUS-units.lua (English names), enUS-items.lua, meta.lua, enUS-zones.lua and frFR-zones.lua, the
 db/ files of pfQuest (db/enUS/units.lua saved as enUS-units.lua, ...). Standard library only.
 
 NPCs kept: every trainer of Data/Locations.lua (ProfessionsTracker trainer list), every vendor and quest-giver id of the sources in
@@ -159,6 +159,10 @@ def main():
         ids = resolved_ids.get((name, zone), [])
         if ids and ids[0] in wanted_ids:
             npc_trainers[prof].append((ids[0], rank))
+    # English names of the teaching items (books, patterns, plans) of the Forever recipes: db/enUS/items.lua saved as enUS-items.lua
+    items_en = parse_names(PFQ / "enUS-items.lua")
+    teach_ids = {int(m) for m in re.findall(r'^\s+\{ \d+, \d+, \d+, \d+, \d+, \d+, \d+, "[^"]*", (\d+), "\w*" \},?$', fr_src, re.M) if int(m) > 0}
+    item_names = {i: items_en[i] for i in sorted(teach_ids) if i in items_en}
     names = collections.defaultdict(list)
     for i in sorted(wanted_ids):
         names[en[i]].append(i)
@@ -171,6 +175,7 @@ def main():
         "-- ns.Npcs[npcID] = { English name, faction (\"A\" | \"H\" | \"AH\"), { { uiMapID, x, y }, ... up to 3 spawns }, French name | nil }",
         "-- ns.NpcTrainers[English profession] = { { npcID, top rank (0 Apprentice only, 1 Journeyman, 2 Expert, 3 Artisan) }, ... }",
         "-- ns.NpcAuctioneers = { npcID, ... }: the auctioneers of pfQuest's meta list (faction \"AH\" = neutral goblin auction houses)",
+        "-- ns.ItemNames[itemID] = English name of a teaching item (book, pattern, plan) of the Forever recipes that pfQuest knows",
         "-- ns.NpcByName[English name] = { npcID, ... }",
         "local _, ns = ...",
         "ns.Npcs = {",
@@ -178,7 +183,10 @@ def main():
     tail = ["}", "ns.NpcTrainers = {"]
     for prof in sorted(npc_trainers):
         tail.append(f"  [{lua_str(prof)}] = {{ " + ", ".join(f"{{ {i}, {r} }}" for i, r in npc_trainers[prof]) + " },")
-    tail += ["}", "ns.NpcAuctioneers = { " + ", ".join(str(i) for i in sorted(auctioneers)) + " }", "ns.NpcByName = {"]
+    tail += ["}", "ns.NpcAuctioneers = { " + ", ".join(str(i) for i in sorted(auctioneers)) + " }", "ns.ItemNames = {"]
+    for i, n in item_names.items():
+        tail.append(f"  [{i}] = {lua_str(n)},")
+    tail += ["}", "ns.NpcByName = {"]
     for n in sorted(names):
         tail.append(f"  [{lua_str(n)}] = {{ {', '.join(str(i) for i in names[n])} }},")
     tail.append("}")

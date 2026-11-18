@@ -796,7 +796,20 @@ end
 
 -- Recipes to learn of one profession (Leveling.Learnable result): best one, then the others, then the "soon" ones.
 -- Returns true when the bag filter left nothing to show (the empty state with its way out).
+local addLearnMain
 local function addLearn(entries, p)
+  local result = addLearnMain(entries, p)
+  -- the recipes only the other faction can get: one dim line at the end, never a recipe to learn
+  local other = p.learn.otherFaction or {}
+  if #other > 0 then
+    local names, shown = {}, math.min(#other, 5)
+    for i = 1, shown do names[i] = other[i].name or ns.Fmt.RecipeName(other[i].rec) end
+    local list = table.concat(names, ", ") .. (#other > shown and (" (+" .. (#other - shown) .. ")") or "")
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (other[1].faction == "A" and S.learn_other_a or S.learn_other_h):format(list) .. "|r" }
+  end
+  return result
+end
+function addLearnMain(entries, p)
   local lr, L, gold = p.learn, ns.Leveling, p.goal == "gold"
   -- a dim sentence on as many lines as it needs: a line holds about 68 characters (the slot is ~5.5 px a character), none is cut
   local function grey(msg)

@@ -141,6 +141,7 @@ ns.S = {
   craft_opening = "Ouverture de %s...", craft_fail = "Fabrication impossible pour l'instant : ouvre la fenêtre du métier.",
   craft_open_fail = "Impossible d'ouvrir %s : ouvre la fenêtre du métier à la main.",
   learn_row_seen = "%s chez %s", learn_row2 = "  |cff9d9d9d%s, niv. %d|r",
+  learn_other_a = "Réservé à l'Alliance : %s", learn_other_h = "Réservé à la Horde : %s",
   learn_book = "Pour dépasser %d : %s", learn_book2 = "  |cff9d9d9d%s (niv. %d)|r",
   learn_beyond = "Au-delà de %d : il faut le rang %s", learn_beyond_trainer = " (entraîneur)", learn_detail_seen = "%s chez %s, niv. %d · %s ~%d %% (estimation)",
   where_source = "Source : %s.",

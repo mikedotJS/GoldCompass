@@ -446,7 +446,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   limits = limits or {}
   local gold = ctx.goal == "gold"
   local now, soon, gray, candidates, unpriced, nowTotal, soonTotal = {}, {}, {}, 0, 0, 0, 0
-  local books, beyond = {}, nil
+  local books, beyond, otherFaction = {}, nil, {}
   local maxSkill = ctx.maxSkill
   local nearCap = not maxSkill or skill >= maxSkill - 2 * V.SOON
   for _, c in ipairs(crafts) do
@@ -480,10 +480,15 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats, way = way,
         d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = fee, feeAge = feeAge,
         npcNames = way and way.npcs, teachItem = way and way.itemID }
-      if not c.out and #c.mats == 0 then
+      -- where to go (ctx.place -> Where.Target): a recipe whose every way belongs to the other faction is no recipe for this player
+      local place = ctx.place and ctx.place(rec)
+      if place and place.onlyFaction then
+        if isNow then nowTotal = nowTotal - 1 else soonTotal = soonTotal - 1 end
+        otherFaction[#otherFaction + 1] = { rec = rec, faction = place.onlyFaction }
+      elseif not c.out and #c.mats == 0 then
         -- a rank book or a rank quest (no crafted item, no reagents): never a craft. Near the cap it gets its own line.
         if isNow then nowTotal = nowTotal - 1 else soonTotal = soonTotal - 1 end
-        if nearCap then books[#books + 1] = { rec = rec, book = true, recommend = false } end
+        if nearCap then books[#books + 1] = { rec = rec, book = true, recommend = false, target = place } end
       else
       local own = setmetatable({
         vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
@@ -491,6 +496,9 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       }, { __index = ctx })
       local e = V.Evaluate(rec, own)
       e.recommend = recommend
+      e.target = place
+      -- how sure the place is: 0 a position seen on Forever, 1 a hint (Classic position or a zone), 2 text only
+      e.placeRank = place and ((place.kind == "pin" and place.confirmed) and 0 or ((place.kind == "pin" or place.kind == "zone") and 1 or 2)) or 2
       e.priceKnown = (way and way.kind == "quest") or fee ~= nil          -- the price of learning it is known in gold
       e.useful = math.max(1, (c.gr or at + 60) - math.max(skill, at))      -- skill points it stays useful for from now
       -- a trainer recipe whose rank the character has not trained yet (ctx.maxSkill = profession maximum)
@@ -538,6 +546,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
     if a.uncertain ~= b.uncertain then return not a.uncertain end   -- an uncertain AH price never decides
     if gold then return byCost(a, b) end
     if (a.rec.d <= 1) ~= (b.rec.d <= 1) then return a.rec.d <= 1 end
+    if a.placeRank ~= b.placeRank then return (a.placeRank or 2) < (b.placeRank or 2) end   -- a place we can send you to beats a text
     if a.useful ~= b.useful then return a.useful > b.useful end
     return byCost(a, b)
   end
@@ -553,7 +562,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   end
   local gain = (best and not best.floor and knownBest and rankValue(best) < knownBest) and (knownBest - rankValue(best)) or nil
   return { now = now, soon = soon, gray = gray, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
-    nowTotal = nowTotal, soonTotal = soonTotal, books = books, beyond = beyond }
+    nowTotal = nowTotal, soonTotal = soonTotal, books = books, beyond = beyond, otherFaction = otherFaction }
 end
 
 -- State of the "Fabriquer" button of the recommended recipe. s = { times = how many can be crafted from the bags,

@@ -989,3 +989,38 @@ describe("Leveling.Learnable: ranks, caps and rank books", function()
     assert.are.equal(0, #V.Learnable({ book }, 124, lc({ maxSkill = 300 })).books)
   end)
 end)
+
+describe("Leveling.Learnable: the place decides (ctx.place)", function()
+  local function lc(places)
+    local c = ctx()
+    c.known = function() return false end
+    c.price = function(id) local p = ({ [10] = { 100, 0 }, [30] = { 5000, 0 } })[id]; if p then return p[1], p[2] end end
+    c.place = function(rec) return places[rec.id] end
+    return c
+  end
+  local function craft(id, learn, over)
+    local c = { id = id, learn = learn, y = learn + 30, g = learn + 45, gr = learn + 60, out = 30, oq = 1, mats = { { 10, 1 } },
+      how = { kind = "trainer", cost = 100, rank = "Apprentice", npcs = {} } }
+    for k, v in pairs(over or {}) do c[k] = v end
+    return c
+  end
+
+  it("a recipe whose every way is the other faction's is no recipe to learn: not listed, not best, counted apart", function()
+    local places = { [1] = { kind = "text", onlyFaction = "A" }, [2] = { kind = "pin", confirmed = true } }
+    local r = V.Learnable({ craft(1, 50), craft(2, 60) }, 100, lc(places))
+    assert.are.equal(1, #r.now); assert.are.equal(2, r.now[1].rec.id); assert.are.equal(2, r.best.rec.id)
+    assert.are.equal(1, r.nowTotal)
+    assert.are.equal(1, #r.otherFaction); assert.are.equal(1, r.otherFaction[1].rec.id); assert.are.equal("A", r.otherFaction[1].faction)
+    -- nothing else: nothing to learn at all
+    r = V.Learnable({ craft(1, 50) }, 100, lc(places))
+    assert.is_nil(r.best); assert.are.equal(0, r.nowTotal + r.soonTotal)
+  end)
+
+  it("at the same colour a recipe with a confirmed place beats a text-only one, though the text-only one is cheaper", function()
+    local places = { [1] = { kind = "text" }, [2] = { kind = "pin", confirmed = false }, [3] = { kind = "pin", confirmed = true } }
+    local r = V.Learnable({ craft(1, 50, { out = 30 }), craft(2, 50, { how = { kind = "trainer", cost = 100, npcs = {} } }), craft(3, 50) }, 100, lc(places))
+    assert.are.equal(3, r.best.rec.id)
+    r = V.Learnable({ craft(1, 50), craft(2, 50) }, 100, lc(places))
+    assert.are.equal(2, r.best.rec.id)         -- a hint (unconfirmed pin) still beats a text
+  end)
+end)
