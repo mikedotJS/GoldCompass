@@ -1,12 +1,12 @@
--- The map window (PLAN.md step 2), styled after docs/mockup.html: gold frame, bottom tab, red buttons.
--- Only the map tab exists; the Bags and Here tabs are later steps.
+-- The window (PLAN.md steps 2, 5, 6), styled after docs/mockup.html: gold frame, bottom tabs, red buttons.
+-- Thin glue: all numbers come from Core.lua (ns.Run, ns.RunBags) and the pure modules.
 local _, ns = ...
 local S = ns.S
 
 local W = {}
 ns.Window = W
 
-local ROWS, ROW_H = 10, 34
+local ROWS, ROW_H, LINES, LINE_H = 10, 34, 20, 17
 local GOLD, MUTED = { 1, 0.82, 0 }, { 0.62, 0.62, 0.62 }
 
 local function solid(parent, layer, r, g, b, a)
@@ -22,7 +22,7 @@ local function text(parent, template, color, justify)
   return fs
 end
 
--- Red game-style button; disabled = greyed out and not clickable.
+-- Red game-style button; SetBusy(true) greys it out and makes it unclickable.
 local function button(parent, label, width)
   local b = CreateFrame("Button", nil, parent)
   b:SetSize(width, 22)
@@ -42,7 +42,13 @@ local function button(parent, label, width)
   return b
 end
 
-local f, rows, panel, selected
+local TABS = {
+  { key = "map", label = S.tab_map, title = S.title, footer = S.footer },
+  { key = "bags", label = S.tab_bags, title = S.title_bags, footer = S.bags_total_note },
+}
+
+local f, rows, lines, panel, selected, titleFS
+local current, token = "map", 0
 
 local function openMap(zone)
   local ok = OpenWorldMap and pcall(OpenWorldMap, zone)
@@ -56,7 +62,7 @@ end
 
 local function build()
   f = CreateFrame("Frame", "GoldCompassFrame", UIParent)
-  f:SetSize(480, 440)
+  f:SetSize(480, 470)
   f:SetFrameStrata("HIGH")
   f:SetClampedToScreen(true)
   f:SetMovable(true)
@@ -79,9 +85,8 @@ local function build()
   bg:SetPoint("TOPLEFT", 1, -1)
   bg:SetPoint("BOTTOMRIGHT", -1, 1)
 
-  local title = text(f, "GameFontNormal", GOLD, "CENTER")
-  title:SetPoint("TOP", 0, -9)
-  title:SetText(S.title)
+  titleFS = text(f, "GameFontNormal", GOLD, "CENTER")
+  titleFS:SetPoint("TOP", 0, -9)
   local line = solid(f, "ARTWORK", 0.227, 0.184, 0.078)
   line:SetPoint("TOPLEFT", 1, -30)
   line:SetPoint("TOPRIGHT", -1, -30)
@@ -93,6 +98,7 @@ local function build()
   f.subtitle = text(f, "GameFontNormalSmall", { 0.79, 0.73, 0.54 })
   f.subtitle:SetPoint("TOPLEFT", 14, -38)
 
+  -- map tab: ranked rows
   rows = {}
   for i = 1, ROWS do
     local r = CreateFrame("Button", nil, f)
@@ -128,6 +134,17 @@ local function build()
     rows[i] = r
   end
 
+  -- bags and here tabs: plain lines, left text and right text
+  lines = {}
+  for i = 1, LINES do
+    local l = { left = text(f, "GameFontHighlightSmall"), right = text(f, "GameFontHighlightSmall", nil, "RIGHT") }
+    l.left:SetPoint("TOPLEFT", 14, -58 - (i - 1) * LINE_H)
+    l.left:SetWidth(300)
+    l.right:SetPoint("TOPRIGHT", -14, -58 - (i - 1) * LINE_H)
+    l.right:SetWidth(150)
+    lines[i] = l
+  end
+
   -- loading / empty / error panel
   panel = CreateFrame("Frame", nil, f)
   panel:SetPoint("TOPLEFT", 14, -80)
@@ -156,7 +173,6 @@ local function build()
   f.footer = text(f, "GameFontHighlightSmall", MUTED)
   f.footer:SetPoint("BOTTOMLEFT", 14, 52)
   f.footer:SetWidth(452)
-  f.footer:SetText(S.footer)
 
   f.toMap = button(f, S.to_map, 130)
   f.toMap:SetPoint("BOTTOMLEFT", 14, 26)
@@ -171,21 +187,28 @@ local function build()
   f.refresh:SetPoint("BOTTOMRIGHT", -14, 26)
   f.refresh:SetScript("OnClick", function() W.Refresh() end)
 
-  local tab = CreateFrame("Frame", nil, f)
-  tab:SetSize(70, 20)
-  tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 10, 1)
-  local tabEdge = solid(tab, "BACKGROUND", 0.416, 0.333, 0.149)
-  tabEdge:SetAllPoints()
-  local tabFill = solid(tab, "BORDER", 0.114, 0.09, 0.047)
-  tabFill:SetPoint("TOPLEFT", 1, 0)
-  tabFill:SetPoint("BOTTOMRIGHT", -1, 1)
-  local tabLabel = text(tab, "GameFontNormalSmall", GOLD, "CENTER")
-  tabLabel:SetPoint("CENTER")
-  tabLabel:SetText(S.tab_map)
+  -- bottom tabs
+  f.tabs = {}
+  for i, def in ipairs(TABS) do
+    local tab = CreateFrame("Button", nil, f)
+    tab:SetSize(70, 20)
+    tab:SetPoint("TOPLEFT", f, "BOTTOMLEFT", 10 + (i - 1) * 72, 1)
+    tab.edge = solid(tab, "BACKGROUND", 0.416, 0.333, 0.149)
+    tab.edge:SetAllPoints()
+    tab.fill = solid(tab, "BORDER", 0.114, 0.09, 0.047)
+    tab.fill:SetPoint("TOPLEFT", 1, 0)
+    tab.fill:SetPoint("BOTTOMRIGHT", -1, 1)
+    tab.label = text(tab, "GameFontNormalSmall", GOLD, "CENTER")
+    tab.label:SetPoint("CENTER")
+    tab.label:SetText(def.label)
+    tab:SetScript("OnClick", function() W.SetTab(def.key) end)
+    f.tabs[def.key] = tab
+  end
 end
 
 local function showPanel(title, body, canRetry, loading)
   for _, r in ipairs(rows) do r:Hide() end
+  for _, l in ipairs(lines) do l.left:SetText(""); l.right:SetText("") end
   f.subtitle:SetText("")
   f.banner:SetText("")
   panel:Show()
@@ -195,13 +218,37 @@ local function showPanel(title, body, canRetry, loading)
   if loading then panel.pulse:Play() else panel.pulse:Stop() panel.title:SetAlpha(1) end
 end
 
-local function render(res)
+-- Fills the plain lines. entries = { { left, right, head = bool }, ... }; extra entries beyond the pool are summarised.
+local function setLines(entries, tail)
+  for _, r in ipairs(rows) do r:Hide() end
+  panel:Hide()
+  panel.pulse:Stop()
+  local room = LINES - #tail
+  local shown = #entries
+  if shown > room then shown = room - 1 end
+  for i = 1, LINES do
+    local l, e = lines[i], nil
+    if i <= shown then e = entries[i]
+    elseif i == shown + 1 and shown < #entries then e = { left = S.bags_more:format(#entries - shown) }
+    elseif i > LINES - #tail then e = tail[i - (LINES - #tail)] end
+    l.left:SetFontObject(e and e.head and GameFontNormal or GameFontHighlightSmall)
+    l.left:SetText(e and e.left or "")
+    l.right:SetText(e and e.right or "")
+  end
+end
+
+local function render(res, kind)
   f.refresh:SetBusy(false)
-  f.toMap:SetBusy(res.state ~= "ok")
+  f.toMap:SetBusy(kind ~= "map" or res.state ~= "ok")
+end
+
+local function renderMap(res)
+  render(res, "map")
   if res.state ~= "ok" then
     local title, body = ns.StateText(res)
     return showPanel(title, body, true)
   end
+  for _, l in ipairs(lines) do l.left:SetText(""); l.right:SetText("") end
   panel:Hide()
   panel.pulse:Stop()
   f.subtitle:SetText(res.supposed and S.hypothetical:format(res.supposed) or S.mine)
@@ -229,17 +276,70 @@ local function render(res)
   selectRow(1)
 end
 
+local GROUPS = { { "ah", S.g_ah }, { "craft", S.g_craft }, { "keep", S.g_keep }, { "vendor", S.g_vendor }, { "none", S.g_none } }
+
+local function renderBags(res)
+  render(res, "bags")
+  if res.state ~= "ok" then
+    local title, body = ns.StateText(res)
+    return showPanel(title, body, true)
+  end
+  f.subtitle:SetText("")
+  f.banner:SetText(res.anyAh and "" or S.bags_noscan)
+  local entries = {}
+  for _, g in ipairs(GROUPS) do
+    local list = res.groups[g[1]]
+    if #list > 0 then
+      entries[#entries + 1] = { head = true, left = g[2], right = g[1] ~= "keep" and g[1] ~= "none" and ns.Money(res.totals[g[1]]) or "" }
+      for _, e in ipairs(list) do
+        entries[#entries + 1] = { left = ("%s ×%d"):format(e.item.name, e.item.count), right = "|cff9d9d9d" .. ns.Fmt.Action(e.decision, true) .. "|r" }
+      end
+    end
+  end
+  setLines(entries, { { head = true, left = S.bags_total, right = ns.Money(res.total) } })
+end
+
 function W.Refresh()
   if not f then return end
+  token = token + 1
+  local mine = token
   f.refresh:SetBusy(true)
   f.toMap:SetBusy(true)
-  showPanel(S.loading_t, S.loading_p, false, true)
-  ns.Run(render)
+  local function guard(fn) return function(res) if mine == token then fn(res) end end end
+  if current == "map" then
+    showPanel(S.loading_t, S.loading_p, false, true)
+    ns.Run(guard(renderMap))
+  else
+    showPanel(S.loading_t, S.bags_loading, false, true)
+    ns.RunBags(guard(renderBags))
+  end
+end
+
+function W.SetTab(key)
+  current = key
+  for _, def in ipairs(TABS) do
+    if def.key == key then
+      titleFS:SetText(def.title)
+      f.footer:SetText(def.footer)
+    end
+    local on = def.key == key
+    f.tabs[def.key].fill:SetColorTexture(on and 0.114 or 0.07, on and 0.09 or 0.056, on and 0.047 or 0.03)
+  end
+  f.toMap:SetShown(key == "map")
+  f.note:SetShown(key == "map")
+  W.Refresh()
 end
 
 function W.Toggle()
   if not f then build() end
   if f:IsShown() then return f:Hide() end
   f:Show()
-  W.Refresh()
+  W.SetTab(current)
 end
+
+-- The bags tab follows the bags while it is open.
+local watcher = CreateFrame("Frame")
+watcher:RegisterEvent("BAG_UPDATE_DELAYED")
+watcher:SetScript("OnEvent", function()
+  if f and f:IsShown() and current == "bags" then W.Refresh() end
+end)

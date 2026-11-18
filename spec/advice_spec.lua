@@ -90,6 +90,13 @@ describe("Advice.Decide", function()
     assert.are.equal(0, A.Decide({ id = 100, count = 5 }, ctx({ quests = horde, known = function() return false end })).keep)
   end)
 
+  it("never recommends the AH for a soulbound item", function()
+    -- item 100 is worth 95c on the AH and 10c at the vendor; bound -> vendor, 3 x 10 = 30
+    local d = A.Decide({ id = 100, count = 3, bound = true }, ctx({ known = function() return false end }))
+    assert.are.equal("vendor", d.action)
+    assert.are.equal(30, d.total)
+  end)
+
   it("recommends disenchanting gear when it beats selling", function()
     -- item 500: AH 50c -> 47.5 net, vendor 20. Disenchant 1000c -> 950 net. 950 > 47.5
     local d = A.Decide({ id = 500, count = 1, gear = true }, ctx({ disenchant = function() return 1000 end }))

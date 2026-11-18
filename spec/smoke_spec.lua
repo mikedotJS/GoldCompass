@@ -42,6 +42,13 @@ local function setup(opts)
   _G.Enum = { TooltipDataType = { Item = 0 } }
   _G.C_Item = { GetItemCount = function() return 4 end, GetItemInfoInstant = function() return 0, "", "", "", 0, 7 end,
     GetItemQualityByID = function() return 1 end }
+  _G.C_Container = {
+    GetContainerNumSlots = function(bag) return bag == 0 and 3 or 0 end,
+    GetContainerItemInfo = function(_, slot)
+      if opts.emptyBags then return nil end
+      return ({ { itemID = 2449, stackCount = 3 }, { itemID = 2449, stackCount = 2 }, { itemID = 2770, stackCount = 10, isBound = true } })[slot]
+    end,
+  }
   _G.GameTooltip = { lines = {} }
   GameTooltip.AddLine = function(self, t) self.lines[#self.lines + 1] = t end
   GameTooltip.AddDoubleLine = function(self, l, r) self.lines[#self.lines + 1] = l .. " | " .. r end
@@ -116,6 +123,29 @@ describe("addon glue (stubbed WoW API)", function()
     loadAddon()
     handlers.item(GameTooltip, { id = 2449 })
     assert.are.equal(0, #GameTooltip.lines)
+  end)
+
+  it("runs the bags tab: groups, total, empty state and missing Auctionator", function()
+    setup({ scanned = true, alchemy = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.RunBags(function(r) res = r end)
+    assert.are.equal("ok", res.state)
+    -- Earthroot x5 (3 + 2 merged) and Copper Ore x10: 2 items, a total above 0
+    local n = 0
+    for _, list in pairs(res.groups) do n = n + #list end
+    assert.are.equal(2, n)
+    assert.is_true(res.total > 0)
+    assert.has_no.errors(function() ns.Window.Toggle(); ns.Window.SetTab("bags") end)
+    setup({ scanned = true, emptyBags = true })
+    ns = loadAddon()
+    ns.RunBags(function(r) res = r end)
+    assert.are.equal("empty", res.state)
+    setup({ noAuc = true })
+    ns = loadAddon()
+    ns.RunBags(function(r) res = r end)
+    assert.are.equal("no_auctionator_addon", res.state)
   end)
 
   it("opens the window and renders without error", function()

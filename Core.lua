@@ -142,10 +142,61 @@ local STATE_TEXT = {
   nogather = { S.nogather_t, S.nogather_p }, noscan = { S.noscan_t, S.noscan_p },
   no_gathermate_addon = { S.nogm_t, S.nogm_p }, no_auctionator_addon = { S.noauc_t, S.noauc_p },
   price_error = { S.error_t, S.error_p }, error = { S.unexpected_t, "" },
+  empty = { S.bags_empty_t, S.bags_empty_p },
 }
 ns.StateText = function(res)
   local t = STATE_TEXT[res.state]
   return t[1], res.message or t[2]
+end
+
+function ns.IsGear(id)
+  local getQuality = (C_Item and C_Item.GetItemQualityByID) or function(i) return select(3, GetItemInfo(i)) end
+  local _, _, _, _, _, class = C_Item.GetItemInfoInstant(id)
+  return (class == 2 or class == 4) and (getQuality(id) or 0) >= 2
+end
+
+-- Items in the backpack and the four bags, merged by item ID. Returns the list and the IDs, or nil when the API is missing.
+local function scanBags()
+  if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then return end
+  local byId, items = {}, {}
+  for bag = 0, 4 do
+    for slot = 1, C_Container.GetContainerNumSlots(bag) do
+      local info = C_Container.GetContainerItemInfo(bag, slot)
+      if info and info.itemID then
+        local item = byId[info.itemID]
+        if not item then
+          item = { id = info.itemID, count = 0 }
+          byId[info.itemID] = item
+          items[#items + 1] = item
+        end
+        item.count = item.count + (info.stackCount or 1)
+        item.bound = item.bound or info.isBound
+      end
+    end
+  end
+  return items
+end
+
+-- Bags tab data: done({ state = "ok" | "empty" | ..., groups, totals, total, anyAh }) (PLAN.md step 5).
+function ns.RunBags(done)
+  if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
+  local items = scanBags()
+  if not items then return done({ state = "error", message = S.bags_api }) end
+  if #items == 0 then return done({ state = "empty" }) end
+  local ids = {}
+  for i, item in ipairs(items) do ids[i] = item.id end
+  ns.LoadItems(ids, function()
+    local ok, res = pcall(function()
+      for _, item in ipairs(items) do
+        item.name = ns.ItemName(item.id)
+        item.gear = ns.IsGear(item.id)
+      end
+      local bags = ns.Advice.Bags(items, ns.Context())
+      bags.state = "ok"
+      return bags
+    end)
+    done(ok and res or { state = "error", message = tostring(res) })
+  end)
 end
 
 local function printMap()

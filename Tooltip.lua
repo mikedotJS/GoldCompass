@@ -14,17 +14,11 @@ local function ledgerLoaded()
   return isLoaded and isLoaded("ForeverLedger")
 end
 
-local function isGear(id)
-  local getQuality = (C_Item and C_Item.GetItemQualityByID) or function(i) return select(3, GetItemInfo(i)) end
-  local _, _, _, _, _, class = C_Item.GetItemInfoInstant(id)
-  return (class == 2 or class == 4) and (getQuality(id) or 0) >= 2
-end
-
 local function addSection(tt, id)
   if InCombatLockdown() or not (ns.Prices.Installed() and ns.RecipeRows) then return end
   local ctx = ns.Context()
   local count = math.max(1, (C_Item.GetItemCount and C_Item.GetItemCount(id)) or 1)
-  local d = ns.Advice.Decide({ id = id, count = count, gear = isGear(id) }, ctx)
+  local d = ns.Advice.Decide({ id = id, count = count, gear = ns.IsGear(id) }, ctx)
   local uses = ns.Advice.Uses(id, ctx)
   local showVerdict = not ledgerLoaded() and (d.action ~= "none" or d.keep > 0)
   if not showVerdict and uses.total == 0 then return end

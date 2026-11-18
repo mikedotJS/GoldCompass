@@ -62,7 +62,7 @@ ns.S = {
   tab_bags = "Sac", title_bags = "Gold Compass · Mon sac",
   bags_empty_t = "Ton sac est vide", bags_empty_p = "Aucun objet à valoriser dans tes sacs.",
   bags_noscan = "Pas de scan HV : valeurs au prix marchand seulement.",
-  bags_loading = "Lecture de ton sac...",
+  bags_api = "L'API des sacs n'est pas disponible.", bags_loading = "Lecture de ton sac...",
   g_ah = "Vendre à l'HV", g_craft = "Fabriquer / désenchanter", g_keep = "Garder", g_vendor = "Vendre au marchand", g_none = "Sans valeur connue",
   bags_total = "Ton sac vaut environ", bags_total_note = "~ estimation, hors objets gardés",
   bags_more = "… et %d autres",
