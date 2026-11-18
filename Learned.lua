@@ -12,19 +12,64 @@ local function safe(fn, ...)
   if ok then return v end
 end
 
--- Adds every learned recipe of the open profession window to `learned` ([recipeID] = true).
--- Returns the number of recipes added. `T` is C_TradeSkillUI (a parameter so it can be tested).
-function L.Capture(T, learned)
+-- Name, skill and maximum of the open profession window.
+local function readProfession(T)
+  local base = safe(T.GetBaseProfessionInfo)
+  if type(base) == "table" and base.professionName then return base.professionName, base.skillLevel, base.maxSkillLevel end
+  if T.GetTradeSkillLine then
+    local _, name, skill, max = safe(T.GetTradeSkillLine)
+    if name then return name, skill, max end
+  end
+end
+
+-- Reagents and output of one recipe from its schematic (same approach as Forever Ledger's ReadRecipe, MIT, see NOTICE).
+local function readSchematic(T, id)
+  local s = safe(T.GetRecipeSchematic, id, false)
+  if type(s) ~= "table" then return end
+  local basic = Enum and Enum.CraftingReagentType and Enum.CraftingReagentType.Basic
+  local mats = {}
+  for _, slot in ipairs(s.reagentSlotSchematics or {}) do
+    local first = slot.reagents and slot.reagents[1]
+    if (slot.reagentType == nil or basic == nil or slot.reagentType == basic) and first and first.itemID then
+      mats[#mats + 1] = { first.itemID, slot.quantityRequired or 1 }
+    end
+  end
+  local oq = s.quantityMin and ((s.quantityMin or 1) + (s.quantityMax or s.quantityMin or 1)) / 2 or 1
+  return s.outputItemID, oq, mats
+end
+
+-- Adds every learned recipe of the open profession window to `learned` ([recipeID] = true), and, when `profs` is
+-- given, remembers the profession's skill and each learned recipe's difficulty, output and reagents there
+-- (profs[professionName] = { skill, max, updated, recipes = { [id] = { id, name, d, out, oq, mats, greenAt } } }).
+-- Returns the number of recipes added to `learned`. `T` is C_TradeSkillUI (a parameter so it can be tested).
+function L.Capture(T, learned, profs)
   if not (T and T.GetAllRecipeIDs and T.GetRecipeInfo) then return 0 end
   -- skip other players' linked windows, guild windows and NPC crafting
   if safe(T.IsTradeSkillLinked) or safe(T.IsTradeSkillGuild) or safe(T.IsNPCCrafting) then return 0 end
   local ids, added = safe(T.GetAllRecipeIDs), 0
   if type(ids) ~= "table" then return 0 end
+  local profName, skill, max
+  if profs then profName, skill, max = readProfession(T) end
+  local entry = profName and (profs[profName] or { recipes = {} })
+  if entry then
+    profs[profName] = entry
+    entry.skill, entry.max, entry.updated = skill, max, time()
+  end
   for _, id in ipairs(ids) do
     local info = safe(T.GetRecipeInfo, id)
-    if type(info) == "table" and info.learned and not learned[id] then
-      learned[id] = true
-      added = added + 1
+    if type(info) == "table" and info.learned then
+      if not learned[id] then
+        learned[id] = true
+        added = added + 1
+      end
+      if entry then
+        local rec = entry.recipes[id] or { id = id }
+        entry.recipes[id] = rec
+        rec.name, rec.d = info.name, info.relativeDifficulty
+        -- the lowest skill at which the recipe was seen green is when it turns green (or earlier)
+        if rec.d == 2 and skill and (not rec.greenAt or skill < rec.greenAt) then rec.greenAt = skill end
+        if not rec.mats then rec.out, rec.oq, rec.mats = readSchematic(T, id) end
+      end
     end
   end
   return added
@@ -76,6 +121,9 @@ frame:SetScript("OnEvent", function(_, event)
     local api = merchantApi()
     if api then later(function() pcall(L.RecordMerchant, api, ns.db.buy) end) end
   else
-    later(function() pcall(L.Capture, C_TradeSkillUI, ns.char.learned) end)
+    later(function()
+      pcall(L.Capture, C_TradeSkillUI, ns.char.learned, ns.char.profs)
+      if ns.Window and ns.Window.OnData then ns.Window.OnData() end
+    end)
   end
 end)

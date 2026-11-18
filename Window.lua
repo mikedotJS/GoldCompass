@@ -100,6 +100,7 @@ local TABS = {
   { key = "map", label = S.tab_map, title = S.title, footer = S.footer },
   { key = "bags", label = S.tab_bags, title = S.title_bags, footer = S.bags_total_note },
   { key = "here", label = S.tab_here, title = S.title_here, footer = S.footer },
+  { key = "job", label = S.tab_job, title = S.title_job, footer = S.job_footer },
 }
 
 local f, rows, lines, panel, selected, titleFS
@@ -119,6 +120,7 @@ local function openMap(zone)
 end
 W.OpenMap = openMap -- exposed for tests
 function W.Rows() return rows end
+function W.Lines() return lines end
 
 -- Lines of the row tooltip: full name, level range, nodes with their value, price freshness, assumptions.
 function W.RowTooltipLines(row)
@@ -491,6 +493,46 @@ local function renderHere(res)
   setLines(entries, res.hint and { { wide = true, left = "|cff9d9d9d" .. S.here_hint:format(S.prof_names[res.hint.prof], ns.Money(res.hint.gain)) .. "|r" } } or {})
 end
 
+-- Profession leveling tab: per profession the cheapest known recipe per skill point, all labelled as estimates.
+local function renderJob(res)
+  render(res, "job")
+  if res.state ~= "ok" then
+    local title, body = ns.StateText(res)
+    return showPanel(title, body, true)
+  end
+  f.subtitle:SetText("")
+  f.banner:SetText("")
+  local entries = {}
+  for _, p in ipairs(res.profs) do
+    entries[#entries + 1] = { head = true, left = S.job_head:format(p.name, tostring(p.skill or "?"), tostring(p.max or "?")) }
+    if p.status == "unseen" then
+      entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_unseen:format(p.name) .. "|r" }
+    elseif p.status == "norecipes" then
+      entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_norecipes .. "|r" }
+    else
+      local plan = p.plan
+      if plan.best then
+        local e = plan.best
+        local amount = ns.Money(math.abs(e.perPoint))
+        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (e.perPoint < 0 and S.job_best_gain or S.job_best):format(e.name or ns.Fmt.RecipeName(e.rec), amount) .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
+          (e.rec.d == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+      else
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (plan.known == 0 and S.job_none_known or S.job_no_best) .. "|r" }
+      end
+      if #(p.missingNames or {}) > 0 then
+        entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_missing:format(table.concat(p.missingNames, ", ")) .. "|r" }
+      end
+    end
+  end
+  setLines(entries, { { wide = true, left = "|cff9d9d9d" .. S.job_later .. "|r" } })
+end
+
+-- Called by Learned.lua when a profession window was read: refresh the leveling tab if it is the one shown.
+function W.OnData()
+  if f and f:IsShown() and current == "job" then W.Refresh() end
+end
+
 function W.UpdateControls()
   local on = ns.db.onlyLevel and true or false
   f.levelBox.check:SetShown(on)
@@ -513,6 +555,9 @@ function W.Refresh()
   elseif current == "bags" then
     showPanel(S.loading_t, S.bags_loading, false, true)
     ns.RunBags(guard(renderBags))
+  elseif current == "job" then
+    showPanel(S.loading_t, S.loading_p, false, true)
+    ns.RunLeveling(guard(renderJob))
   else
     showPanel(S.loading_t, S.loading_p, false, true)
     ns.RunHere(guard(renderHere))

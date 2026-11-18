@@ -17,6 +17,7 @@ Data\QuestItems.lua
 ZoneRank.lua
 Advice.lua
 Here.lua
+Leveling.lua
 Format.lua
 Prices.lua
 Nodes.lua

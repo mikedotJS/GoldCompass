@@ -79,3 +79,15 @@ Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in 
 | 37 | Tick and untick `Mon niveau seulement` | A green box with a check mark when on, an empty dark box when off | Yes / no |
 | 38 | Wait for loading, then hover `Voir sur la carte` while it is grey | The line next to it says why (`Indisponible pendant la lecture...`, `Indisponible en combat.`); when ready it says `Les points restent affichés par GatherMate.` | What you saw |
 | 39 | Click a zone row (out of combat) | The world map opens on that zone through `C_Map.OpenWorldMap`; if the Blizzard "action bloquée" popup appears, `/reload` and tell Claude "logs" | The popup text, then the logs |
+
+## "Monter un métier" tab (profession leveling advisor)
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 40 | `/gc spike`, read the `S6` lines | `GetRecipeSchematic`, `GetRecipeInfo`, `GetBaseProfessionInfo` and `Enum.TradeskillRelativeDifficulty` all true; the enum reads `Optimal=0 Medium=1 Easy=2 Trivial=3` (if not, the colours are mislabelled: say so) | The S6 lines |
+| 41 | `/gc`, click the `Métier` tab BEFORE opening any profession window | Each profession of the character is listed with its skill, and `Ouvre la fenêtre de <métier> une fois pour que Gold Compass la lise.` Fishing, Herbalism and Skinning say `Pas de recettes à fabriquer pour ce métier.` | Screenshot |
+| 42 | Open a profession window (for example Alchimie), close it, click `Actualiser` on the `Métier` tab | The profession now shows `Monte avec <recette en français> : coût ~<pièces> par point` (or `gain ~...` when crafting earns money), a dim line `couleur orange · chance d'un point ~100 % (estimation)`, and at the bottom `Recettes à apprendre : bientôt` | Screenshot |
+| 43 | Same tab, after `/reload` | The data is still there without reopening the window (remembered per character) | Yes / no |
+| 44 | Compare the proposed recipe with the colours in the profession window | The colour named on the dim line matches the recipe's colour in the window | Yes / no, and the recipe name |
+| 45 | A profession where a reagent has no auction price and no vendor price | A yellow line `Prix manquant : <objets>` instead of a made-up number | Screenshot |
+| 46 | `/gc log` after opening a profession window | No new error entries | The lines |

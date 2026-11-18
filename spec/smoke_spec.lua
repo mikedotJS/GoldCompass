@@ -63,7 +63,7 @@ local function setup(opts)
   end
   if opts.profs then -- { { skillLine, skill }, ... } in slot order
     _G.GetProfessions = function() local t = {}; for i = 1, #opts.profs do t[i] = i end; return table.unpack(t) end
-    _G.GetProfessionInfo = function(i) local p = opts.profs[i]; return "Prof", nil, p[2], nil, nil, nil, p[1] end
+    _G.GetProfessionInfo = function(i) local p = opts.profs[i]; return p[3] or "Prof", nil, p[2], p[4], nil, nil, p[1] end
   end
   if opts.onlyFishing then
     _G.GetProfessions = function() return nil, nil, nil, 1 end
@@ -127,7 +127,7 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Format",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Leveling", "Format",
     "Prices", "Nodes", "Core", "Learned", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
@@ -987,5 +987,118 @@ describe("coins, tooltip rows and spell data loading", function()
       if fr.events and fr.events.SPELL_DATA_LOAD_RESULT then fr.scripts.OnEvent(fr, "SPELL_DATA_LOAD_RESULT", 1) end
     end
     assert.are.equal(0, GameTooltip.refreshed)
+  end)
+end)
+
+describe("profession leveling tab", function()
+  local function lineTexts(ns)
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
+    return table.concat(out, "\n")
+  end
+  local alchemy = { skill = 50, max = 75, recipes = {
+    [1] = { id = 1, name = "Potion de soins", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } },
+    [2] = { id = 2, name = "Elixir vert", d = 2, greenAt = 41, out = 118, oq = 1, mats = { { 2447, 1 } } },
+  } }
+
+  it("renders the whole tab: best recipe, estimate labels, remembered data, 'learn later' note", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    assert.has_no.errors(function() ns.Window.Toggle(); ns.Window.SetTab("job") end)
+    local text = lineTexts(ns)
+    assert.matches("Alchimie  50/75", text)
+    assert.matches("Monte avec", text)
+    assert.matches("estimation", text)
+    assert.matches("Recettes à apprendre : bientôt", text)
+  end)
+
+  it("says to open the profession window once when it has not been read", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    assert.are.equal("unseen", res.profs[1].status)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.matches("Ouvre la fenêtre de Alchimie une fois", lineTexts(ns))
+  end)
+
+  it("says there are no recipes for Fishing, and shows the empty and missing-addon states", function()
+    setup({ scanned = true, profs = { { 356, 150, "Pêche", 300 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    assert.are.equal("norecipes", res.profs[1].status)
+    setup({ scanned = true })
+    ns = loadAddon()
+    ns.char = { learned = {}, profs = {} }
+    ns.RunLeveling(function(r) res = r end)
+    assert.are.equal("empty_prof", res.state)
+    setup({ noAuc = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    ns = loadAddon()
+    ns.RunLeveling(function(r) res = r end)
+    assert.are.equal("no_auctionator_addon", res.state)
+  end)
+
+  it("names the reagents that have no price instead of showing a number", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } }, pickupNoAh = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    -- reagent 9999 has no AH price, no buy price (the stub gives AH prices to everything but pickup items)
+    ns.char = { learned = {}, profs = { Alchimie = { skill = 50, max = 75, recipes = {
+      [1] = { id = 1, name = "Potion", d = 0, out = 118, oq = 1, mats = { { 9999, 2 } } } } } } }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local p = res.profs[1]
+    assert.is_nil(p.plan.best)
+    assert.are.same({ "Item9999" }, p.missingNames)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.matches("Prix manquant : Item9999", lineTexts(ns))
+  end)
+
+  it("uses the game's recipe name and falls back to the remembered one", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local nameNoApi = res.profs[1].plan.best.name
+    assert.is_true(nameNoApi == "Potion de soins" or nameNoApi == "Elixir vert")  -- the remembered (window) name
+    _G.C_Spell = { GetSpellName = function(id) return "Nom du jeu " .. id end }
+    ns.RunLeveling(function(r) res = r end)
+    assert.matches("^Nom du jeu", res.profs[1].plan.best.name)
+    _G.C_Spell = nil
+  end)
+
+  it("remembers a profession window: skill, difficulty, reagents; lowers greenAt; reads each schematic once", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    local reads, skill = 0, 50
+    local T = {
+      GetBaseProfessionInfo = function() return { professionName = "Alchimie", skillLevel = skill, maxSkillLevel = 75 } end,
+      GetAllRecipeIDs = function() return { 1, 2 } end,
+      GetRecipeInfo = function(id) return { learned = true, name = "Recette " .. id, relativeDifficulty = id == 1 and 0 or 2 } end,
+      GetRecipeSchematic = function() reads = reads + 1
+        return { outputItemID = 30, quantityMin = 1, quantityMax = 3, reagentSlotSchematics = { { reagents = { { itemID = 10 } }, quantityRequired = 2 } } } end,
+    }
+    local learned, profs = {}, {}
+    assert.are.equal(2, ns.Learned.Capture(T, learned, profs))
+    local rec = profs.Alchimie.recipes[2]
+    assert.are.equal(50, profs.Alchimie.skill)
+    assert.are.same({ { 10, 2 } }, rec.mats)
+    assert.are.equal(30, rec.out)
+    assert.are.equal(2, rec.oq)               -- (1 + 3) / 2
+    assert.are.equal(50, rec.greenAt)         -- green when first seen at skill 50
+    skill = 42
+    ns.Learned.Capture(T, learned, profs)
+    assert.are.equal(42, profs.Alchimie.recipes[2].greenAt) -- seen green earlier: lowered
+    assert.is_nil(profs.Alchimie.recipes[1].greenAt)        -- orange: unknown
+    assert.are.equal(2, reads)                -- schematics read once per recipe
   end)
 end)

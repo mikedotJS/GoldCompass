@@ -189,7 +189,7 @@ local STATE_TEXT = {
   nogather = { S.nogather_t, S.nogather_p }, noscan = { S.noscan_t, S.noscan_p },
   no_gathermate_addon = { S.nogm_t, S.nogm_p }, no_auctionator_addon = { S.noauc_t, S.noauc_p },
   price_error = { S.error_t, S.error_p }, error = { S.unexpected_t, "" },
-  empty = { S.bags_empty_t, S.bags_empty_p }, nofishing = { S.nofish_t, S.nofish_p }, here_nodata = { S.here_nodata_t, S.here_nodata_p },
+  empty = { S.bags_empty_t, S.bags_empty_p }, nofishing = { S.nofish_t, S.nofish_p }, empty_prof = { S.job_empty_t, S.job_empty_p }, here_nodata = { S.here_nodata_t, S.here_nodata_p },
 }
 ns.StateText = function(res)
   local t = STATE_TEXT[res.state]
@@ -291,6 +291,63 @@ function ns.RunHere(done)
   end)
 end
 
+-- Professions of the character as the game names them (localized), with their skill.
+local NO_WINDOW = { [182] = true, [393] = true, [356] = true } -- Herbalism, Skinning, Fishing: no craft window
+function ns.ProfessionList()
+  local out = {}
+  if GetProfessions and GetProfessionInfo then
+    for _, index in pairs({ GetProfessions() }) do
+      local name, _, skill, max, _, _, line = GetProfessionInfo(index)
+      if name then out[#out + 1] = { name = name, skill = skill, max = max, line = line } end
+    end
+  end
+  return out
+end
+
+-- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).
+function ns.RunLeveling(done)
+  if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
+  local list = ns.ProfessionList()
+  if #list == 0 then return done({ state = "empty_prof" }) end
+  local ids = {}
+  for _, p in ipairs(list) do
+    local data = ns.char and ns.char.profs[p.name]
+    for _, rec in pairs(data and data.recipes or {}) do
+      if rec.out then ids[#ids + 1] = rec.out end
+      for _, m in ipairs(rec.mats or {}) do ids[#ids + 1] = m[1] end
+    end
+  end
+  ns.LoadItems(ids, function()
+    local ok, res = pcall(function()
+      local ctx = ns.Context()
+      local profs = {}
+      for _, p in ipairs(list) do
+        local entry = { name = p.name, skill = p.skill, max = p.max }
+        local data = ns.char.profs[p.name]
+        if NO_WINDOW[p.line] then
+          entry.status = "norecipes"
+        elseif not data then
+          entry.status = "unseen"
+        else
+          entry.status = "plan"
+          entry.plan = ns.Leveling.Plan(data, ctx, 5)
+          for _, row in ipairs(entry.plan.rows) do row.name = ns.Fmt.RecipeName(row.rec) end
+          local seen, names = {}, {}
+          for i = 1, math.min(3, #entry.plan.unpriced) do
+            for _, id in ipairs(entry.plan.unpriced[i].missing) do
+              if not seen[id] then seen[id] = true; names[#names + 1] = ns.ItemName(id) end
+            end
+          end
+          entry.missingNames = names
+        end
+        profs[#profs + 1] = entry
+      end
+      return { state = "ok", profs = profs }
+    end)
+    done(ok and res or { state = "error", message = tostring(res) })
+  end)
+end
+
 -- Zones to show on the map tab, best first, at most ns.TOP. With "my level only", a zone whose lowest level is more than
 -- 4 above the character is left out; a zone whose level is unknown (Data/Zones.lua) is left out too and counted in the
 -- second result so the window can say so. Zones missing from the table (cities) are always shown.
@@ -368,6 +425,8 @@ frame:SetScript("OnEvent", function(_, _, name)
   local key = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
   ns.db.chars[key] = ns.db.chars[key] or { learned = {} }  -- [recipeID] = true, learned from profession windows
   ns.char = ns.db.chars[key]
+  ns.char.learned = ns.char.learned or {}
+  ns.char.profs = ns.char.profs or {}         -- [professionName] = what its window showed (Learned.lua)
   ns.LogInit(ns.db)
   ns.Print("chargé. Tape /gc.")
 end)

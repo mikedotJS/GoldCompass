@@ -101,6 +101,22 @@ ns.S = {
     ["Leatherworking"] = "Travail du cuir", ["Tailoring"] = "Couture", ["Cooking"] = "Cuisine", ["First Aid"] = "Premiers soins",
     ["Mining"] = "Minage", ["Herb Gathering"] = "Herboristerie" },
 
+  -- profession leveling tab
+  tab_job = "Métier", title_job = "Gold Compass · Monter un métier",
+  job_footer = "~ estimation : coût = ingrédients - valeur de revente. Chance de gagner un point : orange 100 %, jaune ~75 %, vert ~25 %, gris 0 %.",
+  job_empty_t = "Aucun métier", job_empty_p = "Tu n'as appris aucun métier : apprends-en un chez un entraîneur.",
+  job_head = "%s  %s/%s",
+  job_unseen = "Ouvre la fenêtre de %s une fois pour que Gold Compass la lise.",
+  job_norecipes = "Pas de recettes à fabriquer pour ce métier.",
+  job_none_known = "Aucune recette connue lue dans la fenêtre.",
+  job_no_best = "Aucune recette chiffrable qui fasse monter ce métier.",
+  job_missing = "Prix manquant : %s",
+  job_best = "Monte avec %s : coût ~%s par point",
+  job_best_gain = "Monte avec %s : gain ~%s par point",
+  job_detail = "couleur %s · chance d'un point ~%d %% (estimation)%s",
+  job_green = " · vert depuis ~%d",
+  job_later = "Recettes à apprendre : bientôt",
+
   -- map controls
   nolevel_t = "Aucune zone à ton niveau", nolevel_p = "Décoche « Mon niveau seulement » pour voir toutes les zones.",
   only_level = "Mon niveau seulement", prof_label = "Métier : %s",

@@ -78,5 +78,20 @@ function ns.Spike()
   out("S5 profession window API:", tostring(C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs ~= nil), " merchant API:",
     tostring(GetMerchantNumItems ~= nil), tostring(C_MerchantFrame ~= nil), " vendor buy price of item 3371 (Auctionator):",
     tostring((ns.Prices.VendorBuy(3371))))
+  local T = C_TradeSkillUI
+  out("S6 leveling APIs: GetRecipeSchematic", tostring(T and T.GetRecipeSchematic ~= nil), " GetRecipeInfo", tostring(T and T.GetRecipeInfo ~= nil),
+    " GetBaseProfessionInfo", tostring(T and T.GetBaseProfessionInfo ~= nil), " Enum.TradeskillRelativeDifficulty",
+    tostring(Enum and Enum.TradeskillRelativeDifficulty ~= nil))
+  if Enum and Enum.TradeskillRelativeDifficulty then
+    local parts = {}
+    for k, v in pairs(Enum.TradeskillRelativeDifficulty) do parts[#parts + 1] = k .. "=" .. tostring(v) end
+    table.sort(parts)
+    out("S6 difficulty enum (expected Optimal=0 Medium=1 Easy=2 Trivial=3):", table.concat(parts, " "))
+  end
+  for name, data in pairs(ns.char and ns.char.profs or {}) do
+    local n, withMats = 0, 0
+    for _, rec in pairs(data.recipes) do n = n + 1; if rec.mats and #rec.mats > 0 then withMats = withMats + 1 end end
+    out(("S6 remembered profession %s: skill %s, %d known recipes, %d with reagents"):format(name, tostring(data.skill), n, withMats))
+  end
   out("done. Send back every [spike] line.")
 end
