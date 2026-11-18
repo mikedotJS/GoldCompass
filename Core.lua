@@ -325,7 +325,7 @@ end
 local function whereEnv(ctx)
   local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = ctx.faction,
     db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, auctioneers = ns.NpcAuctioneers, recorded = ns.db and ns.db.npcs, contOf = {},
-    fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors, fdbTrainers = ns.FdbTrainers }
+    fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors, fdbTrainers = ns.FdbTrainers, fdbQuests = ns.FdbQuests }
   for _, m in pairs(ns.MapIDs) do env.contOf[m[1]] = m[2] end
   local C = C_Map
   local here = C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")
@@ -359,7 +359,9 @@ local function libCrafts(p, faction)
   if not libCache[key] then
     local english, byId = SKILL_LINES[p.line], {}
     for _, c in ipairs(english and ns.Leveling.Crafts(ns.RecipeRows or {}, english) or {}) do byId[c.id] = c end
-    libCache[key] = ns.Leveling.LibCrafts(DB, p.line, faction, function(id) return byId[id] end, ns.ForeverTrainers)
+    libCache[key] = ns.Leveling.LibCrafts(DB, p.line, faction, function(id) return byId[id] end, ns.ForeverTrainers,
+      ns.Where.Who({ db = ns.Npcs or {}, byName = ns.NpcByName, maps = ns.MapIDs, fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors,
+        fdbQuests = ns.FdbQuests, fdbPrice = ns.FdbPrice, fdbFavor = ns.FdbFavor }))
   end
   return libCache[key]
 end
@@ -399,9 +401,12 @@ function ns.LearnFor(p, ctx, count, knownBest)
           t.text = way.kind == "item" and ("%s (%s : %s)"):format(ns.Fmt.Source(row.rec, true), S.src_d, table.concat(zones, ", "))
             or ns.Fmt.Source(row.rec, true) .. " : " .. table.concat(zones, ", ")
         elseif way and way.questName and way.kind == "quest" then
-          t.text = ns.Fmt.Source(row.rec, true) .. " : " .. way.questName
+          t.text = ns.Fmt.Source(row.rec, true) .. " : " .. ns.Fmt.QuestName(way)
         end
         if not t.text then t.text = ns.Fmt.Source(row.rec, true) end
+      end
+      if t.mapID and t.x and not t.text and way and way.kind == "quest" and way.questName then   -- a pinned quest giver: which quest
+        t.text = ns.Fmt.Source(row.rec, true) .. " : " .. ns.Fmt.QuestName(way)
       end
       if t.auction then t.text = ns.Fmt.Source(row.rec, true) end   -- "Patron en vente à l'HV : ~2g (prix HV de 3 j)"
       t.extra = way and way.kind == "item" and ns.Fmt.SiteSources(way) or nil   -- what the site says: butin, pickpocket, pêche, quête

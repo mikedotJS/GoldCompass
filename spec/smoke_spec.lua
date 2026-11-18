@@ -2441,7 +2441,7 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
           if t.confirmed then confirmed = confirmed + 1 end
           local tip = table.concat(ns.Window.TargetTooltipLines(t), "\n")
           assert.are.equal(not t.confirmed, tip:find("position Classic, non confirmée sur Forever", 1, true) ~= nil, row.rec.name)
-          if row.rec.src ~= nil and t.id and not t.auction and ns.FdbVendors[row.rec.id] then   -- a vendor: one of ForeverDB's vendors of this recipe
+          if row.rec.src == "v" and t.id and not t.auction and ns.FdbVendors[row.rec.id] then   -- a vendor: one of ForeverDB's vendors of this recipe
             local listed = false
             for _, id in ipairs(ns.FdbVendors[row.rec.id]) do listed = listed or id == t.id end
             assert.is_true(listed, row.rec.name .. ": " .. tostring(t.name))
@@ -2452,6 +2452,63 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
       assert.is_true(confirmed > 5, p[1])
       report(p[1], ns, list)
     end
+  end)
+
+  it("a vendor or a quest of the other faction is no way to learn a recipe: never the best pick, said as Alliance only", function()
+    local ns, by, list = cooking()
+    -- Crocolisk Steak: Kendor Kabonka (Stormwind) and the quest Crocolisk Hunting (Loch Modan) are the Alliance's
+    local croc = by[3370]
+    assert.is_not_nil(croc)
+    assert.are.equal("A", croc.rec.way.onlyFaction); assert.are.equal("item", croc.rec.way.kind)
+    assert.is_false(croc.recommend and croc.rec.fee == nil)          -- only an auction price could make it worth proposing
+    assert.is_true(croc.target.auction or croc.target.onlyFaction == "A")
+    for _, row in ipairs(list) do
+      local way = row.rec.way
+      if way.kind == "vendor" or way.kind == "quest" then
+        assert.is_nil(way.onlyFaction, row.rec.name)
+        assert.are_not.equal("A", row.target.onlyFaction, row.rec.name .. " is proposed to the Horde but only the Alliance can get it")
+      end
+    end
+    -- Cooking at 10: the Alliance quest Recipe of the Kaldorei (Zarrin, Teldrassil) is not offered to the Horde, nor the best pick
+    local ns10, by10 = rows(185, 10, "Cuisine", 75, { [2538] = { id = 2538, name = "x", d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } })
+    local kabob = by10[6412]                                  -- listed only as a pattern to buy at the auction house, when it has a price there
+    if kabob then
+      assert.are.equal("item", kabob.rec.way.kind); assert.are.equal("A", kabob.rec.way.onlyFaction)
+      assert.is_true(kabob.target.auction); assert.is_not_nil(kabob.rec.fee)
+    end
+    local horde = ns10.Leveling.Way(ns10.ForeverDB, 6412, { requiredSkill = 10 }, "H", ns10.ForeverTrainers,
+      ns10.Where.Who({ db = ns10.Npcs, byName = ns10.NpcByName, maps = ns10.MapIDs, fdb = ns10.FdbNpcs, fdbVendors = ns10.FdbVendors, fdbQuests = ns10.FdbQuests }))
+    assert.are_not.equal("quest", horde.kind); assert.are.equal("A", horde.onlyFaction); assert.is_nil(horde.questID)
+    assert.are.same({ { 4161, "A", 6286, "Zarrin", 1438, 57.1, 61.3 } }, ns10.FdbQuests[6412])
+    local way = ns10.Leveling.Way(ns10.ForeverDB, 6412, { requiredSkill = 10 }, "A", ns10.ForeverTrainers,
+      ns10.Where.Who({ db = ns10.Npcs, byName = ns10.NpcByName, maps = ns10.MapIDs, fdb = ns10.FdbNpcs, fdbVendors = ns10.FdbVendors, fdbQuests = ns10.FdbQuests }))
+    assert.are.equal("quest", way.kind); assert.are.equal(4161, way.questID); assert.is_nil(way.onlyFaction)
+  end)
+
+  it("a Horde quest recipe pins the quest giver where Forever players were offered the quest, with the quest named", function()
+    local ns, by = cooking()
+    local t = by[6417].target                                 -- Dig Rat Stew: Grub, east of the Crossroads
+    assert.are.equal("pin", t.kind); assert.are.equal("Grub", t.name); assert.are.equal(1413, t.mapID)
+    assert.is_true(t.confirmed); assert.are.equal("foreverdb", t.source); assert.are.equal("quête : Dig Rat Stew", t.text)
+    assert.are.equal(862, by[6417].rec.way.questID)
+    _G.C_QuestLog = { GetTitleForQuestID = function(id) return id == 862 and "Ragoût de rat" or nil end }   -- the client's own title
+    assert.are.equal("Ragoût de rat", ns.Fmt.QuestName(by[6417].rec.way))
+    _G.C_QuestLog = nil
+    assert.are.equal("Dig Rat Stew", ns.Fmt.QuestName(by[6417].rec.way))
+  end)
+
+  it("a Merchant's Favor vendor of the site is read as NPC, zone and price: Pawani (The Barrens), 30 Faveur du marchand", function()
+    local ns, by = leather()
+    local row = by[1255139]                                   -- Totemic Leather Belt
+    assert.is_not_nil(row)
+    assert.are.equal("vendor", row.rec.way.kind); assert.are.equal("Pawani (The Barrens)", row.rec.way.where)
+    assert.are.same({ id = 3402, amount = 30 }, row.rec.way.currency)
+    assert.are.equal("Pawani", row.target.name); assert.is_true(row.target.confirmed)
+    assert.matches("30 Faveur du marchand", ns.Fmt.Source(row.rec, true))
+    -- the site's text alone (no ForeverDB data) gives the same reading
+    local way = ns.Leveling.Way(ns.ForeverDB, 1255139, { requiredSkill = 70 }, "H", ns.ForeverTrainers)
+    assert.are.equal("Pawani (The Barrens)", way.where); assert.are.equal("Pawani", way.npcs[1])
+    assert.are.same({ id = 3402, amount = 30 }, way.currency)
   end)
 
   it("the Leatherworking trainer rows pin a Horde trainer ForeverDB lists, at the place it was seen on Forever", function()

@@ -87,6 +87,14 @@ end
 
 -- What the site (wowforever.be) says about where a recipe comes from, as "butin : <zone> / pickpocket / pêche / quête : <nom>"; nil when
 -- it says nothing. `way.kinds` are its source letters (v vendor, q quest, d drop, p pickpocket, f fished).
+-- Name of the quest that gives a recipe: the game's own title in the client's language when the quest id is known (ForeverDB)
+-- and the client has it, else the English name of the site.
+function F.QuestName(way)
+  local get = way.questID and C_QuestLog and C_QuestLog.GetTitleForQuestID
+  local title = get and get(way.questID)
+  return title and title ~= "" and title or way.questName
+end
+
 function F.SiteSources(way)
   local k = way and way.kinds
   if not k or k == "" then return end
@@ -105,7 +113,7 @@ function F.SiteSources(way)
     parts[#parts + 1] = zoneUsed and o[2] or (o[2] .. " : " .. table.concat(zones, ", "))
     zoneUsed = true
   end
-  if k:find("q", 1, true) and way.questName then parts[#parts + 1] = S.site_q .. " : " .. way.questName end
+  if k:find("q", 1, true) and way.questName then parts[#parts + 1] = S.site_q .. " : " .. F.QuestName(way) end
   if k:find("v", 1, true) and way.where then parts[#parts + 1] = S.site_v .. " : " .. way.where end
   return #parts > 0 and table.concat(parts, " / ") or nil
 end

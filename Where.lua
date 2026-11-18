@@ -38,7 +38,8 @@ local function pick(candidates, env)
       mapID, cont = map and map[1], map and map[2]
     end
     if mapID and c.x > 0 and c.y > 0 then
-      local key = { c.confirmed and 0 or 1, (env.continent == nil or cont == nil or cont == env.continent) and 0 or 1,
+      -- continent: the player's own first, then a map whose continent is unknown (the new Forever zones), then the other one
+      local key = { c.confirmed and 0 or 1, (env.continent == nil or cont == env.continent) and 0 or (cont == nil and 1 or 2),
         env.dist and env.dist(mapID, c.x, c.y) or math.huge, c.name }
       local better = not bestKey
       for i = 1, bestKey and 4 or 0 do
@@ -127,6 +128,51 @@ local function fromDb(ids, env)
   return cands, other
 end
 
+-- Side of a quest of ns.FdbQuests ({ questID, side, giver npcID, giver name, mapID, x, y }): ForeverDB's, else the giver's faction.
+local function questSide(q, env)
+  if q[2] ~= "" then return q[2] end
+  local _, fac = spawnsOf(q[3], env)
+  return fac
+end
+
+-- What the Forever NPC data knows about the sources of a recipe, for Leveling.Way (env: db, byName, maps, fdb, fdbVendors, fdbQuests,
+-- fdbPrice, fdbFavor). A verdict is false only when every NPC a source names is known to belong to the other faction; nil = no verdict.
+function Wh.Who(env)
+  local function sideOf(id) local _, fac = spawnsOf(id, env); return fac end
+  return {
+    -- vendors: ForeverDB's vendor list of the recipe, else the NPCs named by the site's text ("NPC (Zone), NPC (Zone)")
+    vendors = function(id, faction, text)
+      local ids = env.fdbVendors and env.fdbVendors[id]
+      if not ids then
+        ids = {}
+        for _, v in ipairs(Wh.ParseVendors(text)) do
+          local found = idsOfName(v.name, v.zone, env)
+          if #found == 0 then return nil end            -- an NPC no data knows: no verdict
+          for _, n in ipairs(found) do ids[#ids + 1] = n end
+        end
+      end
+      if #ids == 0 then return nil end
+      for _, n in ipairs(ids) do if fits(sideOf(n), faction) then return true end end
+      return false
+    end,
+    -- quests: ForeverDB's quests of the recipe (second result: the quest id), else the library's quest givers ({ id, faction })
+    quest = function(id, faction, givers)
+      local list = env.fdbQuests and env.fdbQuests[id]
+      if list then
+        for _, q in ipairs(list) do if fits(questSide(q, env), faction) then return true, q[1] end end
+        return false
+      end
+      if not givers or #givers == 0 then return nil end
+      for _, g in ipairs(givers) do
+        if fits(g.faction and g.faction:sub(1, 1) or sideOf(g.id), faction) then return true end
+      end
+      return false
+    end,
+    -- price of the teaching item at a vendor: copper | nil, Merchant's Favor | nil
+    cost = function(id) return env.fdbPrice and env.fdbPrice[id], env.fdbFavor and env.fdbFavor[id] end,
+  }
+end
+
 -- "uniquement côté <faction>": the faction that CAN use the NPCs, when only the other faction's were found.
 local function onlyFor(env) return env.faction == "H" and "A" or "H" end
 
@@ -198,6 +244,18 @@ function Wh.Target(rec, prof, env)
   local siteVendors = Wh.ParseVendors(rec.way and rec.way.where)
   if not fv then for _, v in ipairs(siteVendors) do names[#names + 1] = v.name end end
   local way = rec.way
+  -- a quest recipe: where Forever players were offered the quest (ForeverDB), for the player's faction
+  local fq = rec.src == "q" and env.fdbQuests and env.db and env.fdbQuests[rec.id]
+  if fq then
+    local cands = {}
+    for _, q in ipairs(fq) do
+      if q[5] > 0 and fits(questSide(q, env), env.faction) then
+        cands[#cands + 1] = { id = q[3], name = q[4], mapID = q[5], x = q[6], y = q[7], confirmed = true, fdb = true }
+      end
+    end
+    local best = pick(cands, env)
+    if best then best.kind = "pin"; return best end
+  end
   if env.db then   -- the NPC database: the NPCs the sources name, by faction
     local ids, taken = {}, {}
     local function add(id) if not taken[id] then taken[id] = true; ids[#ids + 1] = id end end

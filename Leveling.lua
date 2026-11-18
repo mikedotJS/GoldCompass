@@ -211,11 +211,16 @@ end
 -- `forever` (ns.ForeverTrainers, in-game observed data of wowforever.be) is the truth about trainers when given: a recipe
 -- is trainer-taught on Forever only when it has a cost there (way.cost, way.rank); a trainer source of the library that is
 -- not in the table is dropped, the other sources stay. A vendor of the table is used when the library has none.
-function V.Way(DB, id, e, faction, forever)
+-- `who` (optional, Where.Who: the Forever NPC data) says whether the player's faction can use a vendor or a quest of the recipe
+-- (false: every one a source names belongs to the other faction, then it is no way to learn it: way.onlyFaction = "A" | "H"),
+-- which quest it is (way.questID) and what the teaching item costs at a vendor (gold, or Merchant's Favor: way.currency).
+V.FAVOR = 3402                                      -- currency id of Merchant's Favor
+function V.Way(DB, id, e, faction, forever, who)
   local ft = forever and forever[id]
   local own = function(field) return not (DB.IsBorrowed and DB:IsBorrowed(id, field)) end
   local ownSkill = e.requiredSkill ~= nil and own("requiredSkill")
   local src = DB.GetRecipeSources and DB:GetRecipeSources(id)
+  local libQuest = src and src.quest                -- the library's quest givers, kept for the faction check
   -- The site observed in game where the recipe comes from: its kinds (ft.k) win over sources the library borrowed from world
   -- databases (flag "s") or lacks; the library's own Forever sources (vendors seen on live merchants) stay.
   local site = false                                -- the site's kinds replaced the library's (way.site)
@@ -232,6 +237,15 @@ function V.Way(DB, id, e, faction, forever)
   -- where: "NPC (Zone)" of wowforever.be; zone: where it drops; questName: the quest that gives it
   -- the site's vendor list for the player's faction (two lists: Alliance, Horde), or its one list of unknown faction
   local vtext = ft and ((faction == "H" and ft.vh) or (faction ~= "H" and ft.va) or ft.vendor) or nil
+  -- "NPC (Zone) · Merchant's Favor 30 · Honored": the price and the standing asked are not part of the NPC list
+  local favor = vtext and tonumber(vtext:match("Merchant's Favor (%d+)"))
+  if vtext then vtext = vtext:gsub("%s*\194\183[^,]*", "") end
+  local vendorOK, questOK, questID = true, true, nil
+  if who then
+    vendorOK = who.vendors(id, faction, vtext) ~= false
+    local ok, qid = who.quest(id, faction, libQuest)
+    questOK, questID = ok ~= false, qid
+  end
   local way = { npcs = {}, ids = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest,
     kinds = ft and ft.k }          -- the site's source kinds (t v q d p f s c): where the recipe comes from, to show next to a teaching item
   local wanted = faction == "H" and "Horde" or "Alliance"
@@ -254,7 +268,7 @@ function V.Way(DB, id, e, faction, forever)
     way.kind, way.confirmed, way.cost, way.rank = "trainer", true, ft.cost, ft.rank
   elseif not forever and has("trainer") then
     way.kind, way.confirmed = "trainer", ownSkill
-  elseif has("vendor") and vendorUsable() then
+  elseif has("vendor") and vendorOK and vendorUsable() then
     way.kind, way.confirmed = "vendor", own("sources") or (ft ~= nil and ft.k ~= nil and #src.vendor == 0)
     names("vendor")
     if #way.npcs == 0 and vtext then way.npcs[1] = (vtext:gsub("%s*%(.*%)%s*$", "")) end
@@ -275,11 +289,11 @@ function V.Way(DB, id, e, faction, forever)
         end
       end
     end
-  elseif vtext and not has("quest") then
+  elseif vtext and vendorOK and not has("quest") then
     way.kind, way.confirmed = "vendor", true
     way.npcs[1] = vtext:gsub("%s*%(.*%)%s*$", "")
-  elseif has("quest") then
-    way.kind, way.confirmed = "quest", own("sources")
+  elseif has("quest") and questOK then
+    way.kind, way.confirmed, way.questID = "quest", own("sources"), questID
     names("quest")
   elseif has("container") then
     way.kind = "container"
@@ -291,6 +305,17 @@ function V.Way(DB, id, e, faction, forever)
     way.kind, way.confirmed = "trainer", true
   else
     way.kind = "unknown"
+  end
+  -- a vendor or a quest of the other faction only is no way to learn it: said as such, the recipe is left to its other sources
+  if way.kind ~= "trainer" and way.kind ~= "vendor" and way.kind ~= "quest"
+    and ((not vendorOK and (has("vendor") or vtext ~= nil)) or (not questOK and has("quest"))) then
+    way.onlyFaction = faction == "H" and "A" or "H"
+  end
+  if way.kind == "vendor" and not way.vendorCost and not way.currency then   -- the price: ForeverDB's, else the site's Favor amount
+    local price, fav
+    if who then price, fav = who.cost(id) end
+    fav = fav or favor
+    if fav then way.currency = { id = V.FAVOR, amount = fav } else way.vendorCost = price end
   end
   return way
 end
@@ -309,7 +334,7 @@ function V.Difficulty(d, learn, ft)
   return d
 end
 
-function V.LibCrafts(DB, profId, faction, fallback, forever)
+function V.LibCrafts(DB, profId, faction, fallback, forever, who)
   local out = {}
   for id, e in pairs(DB:GetRecipes(profId) or {}) do
     local ft = forever and forever[id]
@@ -326,7 +351,7 @@ function V.LibCrafts(DB, profId, faction, fallback, forever)
       out[#out + 1] = { id = id, name = e.name, learn = ft and ft.learn or e.requiredSkill, borrowed = borrowed and not ft and true or false,
         y = (d and not unanchored) and d[2] or nil, g = (d and not unanchored) and d[3] or nil,
         gr = (d and not unanchored) and d[4] or nil, out = e.craftedItemId or (fb and fb.out),
-        oq = fb and fb.oq or 1, sell = fb and fb.sell, mats = mats, how = V.Way(DB, id, e, faction, forever) }
+        oq = fb and fb.oq or 1, sell = fb and fb.sell, mats = mats, how = V.Way(DB, id, e, faction, forever, who) }
     end
   end
   return out
