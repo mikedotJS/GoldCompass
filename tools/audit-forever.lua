@@ -100,7 +100,9 @@ for id, c in pairs(shown) do
   local f, ft = fdb[id], ns.ForeverTrainers[id]
   if f and ft then
     local info = F.recipeInfo[id] or {}
-    taught((ft.cost ~= nil) == (f.r[10] == "t"), ("%d %s: site %s, ForeverDB learned from %s"):format(id, c.name, tostring(ft.cost), f.r[10]))
+    -- ForeverDB: learned from a trainer, or seen at a Forever trainer (tf), or it has a trainer fee, even when a recipe item exists too
+    local theirs = f.r[10] == "t" or info.tf == 1 or info.tc ~= nil
+    taught((ft.cost ~= nil) == theirs, ("%d %s: site fee %s, ForeverDB learned from %s, seen at a trainer %s"):format(id, c.name, tostring(ft.cost), f.r[10], tostring(info.tf)))
     local ours = c.how and c.how.cost or ft.cost           -- the fee the addon shows: the higher of the two observations
     if ours and info.tc then fee(ours >= info.tc, ("%d %s: %d vs %d"):format(id, c.name, ours, info.tc)) end
   end
