@@ -74,6 +74,23 @@ describe("ZoneRank.Rank", function()
     assert.are.equal("no_scan", oneZone(8).status)
   end)
 
+  it("tells why a zone is partial: stale price, never scanned, or no price at all", function()
+    -- one fresh item (200) so the ranking exists; the other node varies
+    local fresh = { [200] = { 3000, 0 } }
+    local function zoneWith(prices, vendors)
+      local p = { [200] = fresh[200] }
+      for k, v in pairs(prices) do p[k] = v end
+      return run({ [10] = { [1] = 50, [2] = 50 } }, p, vendors).rows[1]
+    end
+    local stale = zoneWith({ [100] = { 1000, 10 } }, { [100] = 50 })
+    assert.is_true(stale.stale); assert.is_false(stale.unseen); assert.is_false(stale.unpriced)
+    local unseen = zoneWith({}, { [100] = 50 })
+    assert.is_true(unseen.unseen); assert.is_false(unseen.stale); assert.is_false(unseen.unpriced)
+    local unpriced = zoneWith({}, {})
+    assert.is_true(unpriced.unpriced); assert.is_false(unpriced.stale); assert.is_false(unpriced.unseen)
+    assert.is_true(unpriced.partial)
+  end)
+
   it("counts an item with no AH price and no vendor price as worth 0 and tags the zone partial", function()
     -- 50 spots node 1 (no price, no vendor -> 0), 50 spots node 2 (5700) -> average 2850 -> 60 x 2850 = 171000
     local r = run({ [10] = { [1] = 50, [2] = 50 } }, { [200] = { 3000, 0 } })

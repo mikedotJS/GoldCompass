@@ -52,10 +52,14 @@ local f, rows, lines, panel, selected, titleFS
 local current, token = "map", 0
 local lastMap, renderMap
 
+-- Opening the map is protected in combat; say so instead of failing silently.
 local function openMap(zone)
-  local ok = OpenWorldMap and pcall(OpenWorldMap, zone)
-  if not ok then ns.Print(S.map_fail) end
+  if InCombatLockdown() then return ns.Print(S.map_combat) end
+  if not OpenWorldMap then return ns.Print(S.map_fail) end
+  if not pcall(OpenWorldMap, zone) then ns.Print(S.map_blocked) end
 end
+
+W.OpenMap = openMap -- exposed for tests
 
 local function selectRow(i)
   selected = i
@@ -285,9 +289,11 @@ function renderMap(res)
   panel:Hide()
   panel.pulse:Stop()
   f.subtitle:SetText(res.supposed and S.hypothetical:format(res.supposed) or S.mine)
-  local shown = ns.VisibleZones(res.all, ns.db.onlyLevel)
+  local shown, hidden = ns.VisibleZones(res.all, ns.db.onlyLevel)
   local banner = {}
-  if res.anyPartial then banner[#banner + 1] = S.stale_banner end
+  local partial = ns.PartialText(shown)
+  if partial ~= "" then banner[#banner + 1] = partial end
+  if hidden > 0 then banner[#banner + 1] = S.unknown_level_hidden:format(hidden) end
   if res.ageUnknown then banner[#banner + 1] = S.age_unknown end
   f.banner:SetText(table.concat(banner, " "))
   if #shown == 0 then return showPanel(S.nolevel_t, S.nolevel_p, true) end
@@ -299,9 +305,11 @@ function renderMap(res)
       r.rank:SetText(i)
       r.zone:SetText(row.name)
       local info = ns.Zones[row.zone]
+      local lo = info and info[2]
       local tags = (row.old and (" · " .. S.tag_old) or "") .. (row.partial and (" · " .. S.tag_partial) or "")
-        .. (info and info[2] > UnitLevel("player") and (" · " .. S.far_tag:format(info[2], info[3])) or "")
-      r:SetAlpha(info and info[2] - UnitLevel("player") > 3 and 0.45 or 1)
+        .. (info and not lo and (" · " .. S.unknown_level_tag) or "")
+        .. (lo and lo > UnitLevel("player") and (" · " .. S.far_tag:format(lo, info[3])) or "")
+      r:SetAlpha(lo and lo - UnitLevel("player") > 3 and 0.45 or 1)
       r.sub:SetText(table.concat(row.itemNames, ", ") .. tags)
       r.gph:SetText(S.per_hour:format(ns.Money(row.copperPerHour)))
       r.age:SetText(S.price_age:format(ns.AgeText(row.maxAge)))
@@ -347,7 +355,7 @@ local function renderHere(res)
   end
   local cmp = res.cmp
   f.subtitle:SetText(res.supposed and S.hypothetical:format(res.supposed) or "")
-  f.banner:SetText(cmp.row.partial and S.stale_banner or "")
+  f.banner:SetText(ns.PartialText({ cmp.row }))
   local entries = {
     { head = true, left = cmp.row.name, right = S.here_level:format(res.level) },
     { left = "|cff1eff00" .. S.here_you:format(ns.Money(cmp.row.copperPerHour)) .. "|r", right = "|cff9d9d9d" .. S.estimate .. "|r" },

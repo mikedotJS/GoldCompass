@@ -18,6 +18,7 @@ end
 
 local function setup(opts)
   printed, handlers, frames, timers = {}, {}, {}, {}
+  local loaded = {}
   _G.print = function(...) printed[#printed + 1] = table.concat({ ... }, " ") end
   _G.GoldCompassDB = nil
   _G.SlashCmdList = {}
@@ -28,11 +29,14 @@ local function setup(opts)
   _G.C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
   _G.UnitName = function() return "Tester" end
   _G.GetRealmName = function() return "Realm" end
-  _G.Item = { CreateFromItemID = function() return { ContinueOnItemLoad = function(_, cb) if not opts.neverLoads then cb() end end } end }
-  _G.GetItemInfo = function(id) return "Item" .. id, nil, nil, nil, nil, nil, nil, nil, nil, nil, (not opts.noVendor) and 25 or nil end
+  _G.Item = { CreateFromItemID = function(_, id) return { ContinueOnItemLoad = function(_, cb) if not opts.neverLoads then loaded[id] = true; cb() end end } end }
+  _G.GetItemInfo = function(id)
+    if opts.lazyItems and not loaded[id] then return nil end
+    return "Item" .. id, nil, nil, nil, nil, nil, nil, nil, nil, nil, (not opts.noVendor) and 25 or nil
+  end
   _G.C_Map = { GetMapInfo = function(id) return { name = "Zone" .. id } end,
     GetBestMapForUnit = function() return opts.zone or 1411 end }
-  _G.UnitLevel = function() return 20 end
+  _G.UnitLevel = function() return opts.level or 20 end
   _G.GetProfessions, _G.GetProfessionInfo = nil, nil
   if opts.alchemy then
     _G.GetProfessions = function() return 1 end
@@ -73,6 +77,7 @@ local function setup(opts)
   _G.Auctionator = { API = { v1 = {
     GetAuctionPriceByItemID = function(_, id)
       if opts.aucFails then error("boom") end
+      if opts.pickupNoAh and id ~= 2770 and id ~= 2447 then return nil end
       if opts.scanned then return id == 2770 and 40 or 35 end
     end,
     GetAuctionAgeByItemID = function() return 1 end,
@@ -189,9 +194,13 @@ describe("addon glue (stubbed WoW API)", function()
     ns.Run(function(r) res = r end, { profession = "Herb Gathering" })
     assert.are.equal(1429, res.all[1].zone)
     -- level filter: Durotar (1-10) stays at level 20; Un'Goro (48-55) is 28 above and goes
-    local rows = { { zone = 1411 }, { zone = 1449 }, { zone = 1 } }
-    assert.are.equal(2, #ns.VisibleZones(rows, true))
-    assert.are.equal(3, #ns.VisibleZones(rows, false))
+    local rows = { { zone = 1411 }, { zone = 1449 }, { zone = 1 }, { zone = 2482 } }
+    local shown, hidden = ns.VisibleZones(rows, true)
+    assert.are.equal(2, #shown)       -- 1411 and the zone missing from the table; 1449 is too high
+    assert.are.equal(1, hidden)       -- 2482 has an unknown level: hidden, and counted
+    shown, hidden = ns.VisibleZones(rows, false)
+    assert.are.equal(4, #shown)
+    assert.are.equal(0, hidden)
     assert.has_no.errors(function() ns.Window.Toggle() end)
   end)
 
@@ -344,5 +353,66 @@ describe("review fixes (stubbed WoW API)", function()
     assert.are.equal("prix inconnu", ns.Money(0))
     assert.are.equal("prix inconnu", ns.Money(nil))
     assert.are.equal("5s", ns.Money(500))
+  end)
+end)
+
+describe("review fixes, group B", function()
+  it("tells the cause of a partial estimate: stale, unseen or unpriced", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    local both = ns.PartialText({ { stale = true }, { unseen = true } })
+    assert.matches("plus de 7 jours", both)
+    assert.matches("jamais vus", both)
+    assert.is_nil(both:find("sans aucun prix", 1, true))
+    assert.matches("sans aucun prix", ns.PartialText({ { unpriced = true } }))
+    assert.are.equal("", ns.PartialText({ {} }))
+  end)
+
+  it("loads quest items before pricing them in the Here tab, and never shows a 0 price", function()
+    setup({ scanned = true, pickupNoAh = true, lazyItems = true, zone = 1429, level = 6 })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {} }
+    local res
+    ns.RunHere(function(r) res = r end)
+    assert.are.equal("ok", res.state)
+    assert.is_true(#res.pickups > 0)
+    for _, p in ipairs(res.pickups) do
+      assert.are.equal(25, p.unit)        -- the vendor price of the loaded item (25 in the stub), not 0
+      assert.is_false(p.name:find("objet #", 1, true) ~= nil)
+    end
+  end)
+
+  it("guards opening the world map: combat, missing call, blocked call", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    local opened
+    _G.OpenWorldMap = function(zone) opened = zone end
+    ns.Window.OpenMap(1411)
+    assert.are.equal(1411, opened)
+    printed = {}
+    _G.InCombatLockdown = function() return true end
+    ns.Window.OpenMap(1412)
+    assert.are.equal(1411, opened)                        -- not called in combat
+    assert.matches("en combat", table.concat(printed, "\n"))
+    _G.InCombatLockdown = function() return false end
+    _G.OpenWorldMap = nil
+    printed = {}
+    ns.Window.OpenMap(1411)
+    assert.matches("Impossible d'ouvrir la carte", table.concat(printed, "\n"))
+    _G.OpenWorldMap = function() error("ADDON_ACTION_BLOCKED") end
+    printed = {}
+    ns.Window.OpenMap(1411)
+    assert.matches("bloqué", table.concat(printed, "\n"))
+    _G.OpenWorldMap = nil
+  end)
+
+  it("marks the four Forever-only zones as level unknown", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    for _, id in ipairs({ 2482, 2521, 2548, 2652 }) do
+      assert.is_not_nil(ns.Zones[id])
+      assert.is_nil(ns.Zones[id][2])
+    end
   end)
 end)

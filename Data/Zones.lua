@@ -45,4 +45,11 @@ ns.Zones = {
   [1450] = { "Moonglade", 55, 60 },
   [1451] = { "Silithus", 55, 60 },
   [1452] = { "Winterspring", 53, 60 },
+
+  -- Forever-only zones found in GatherMate2_Data (forever\HerbalismData.lua and MiningData.lua). Neither the name nor
+  -- the level range could be verified (the Warcraft Wiki UiMapID page does not list these IDs, GatherMate2 has no
+  -- zone names), so they carry no level: the "my level only" filter hides them and the window says so. What the node
+  -- data suggests, NOT verified: 2482 Dreamfoil/Silversage/Demonsage/Heavy Thorium (endgame), 2521 Peacebloom/Silverleaf/
+  -- Copper (starting), 2548 Steelbloom/Khadgar's Whisker/Iron/Mithril (mid), 2652 Bruiseweed/Grave Moss/Mithril (mid).
+  [2482] = { "?" }, [2521] = { "?" }, [2548] = { "?" }, [2652] = { "?" },
 }

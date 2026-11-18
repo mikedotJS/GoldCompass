@@ -113,7 +113,7 @@ local function compute(opts)
   -- all = every ranked zone (Here tab); rows = the best ns.TOP (map tab, chat)
   local top = {}
   for i = 1, math.min(ns.TOP, #result.rows) do top[i] = result.rows[i] end
-  return { state = "ok", rows = top, all = result.rows, input = input, supposed = supposed, anyPartial = false,
+  return { state = "ok", rows = top, all = result.rows, input = input, supposed = supposed,
     ageUnknown = not ns.Prices.HasAge() }
 end
 
@@ -124,10 +124,22 @@ function ns.Run(done, opts)
     if not ok then
       res = res == "price_api" and { state = "price_error" } or { state = "error", message = tostring(res) }
     end
-    for _, row in ipairs(res.rows or {}) do res.anyPartial = res.anyPartial or row.partial end
     ns.last = res
     done(res)
   end)
+end
+
+-- One sentence per cause of a partial estimate, for the rows given.
+function ns.PartialText(rows)
+  local stale, unseen, unpriced = false, false, false
+  for _, r in ipairs(rows) do
+    stale, unseen, unpriced = stale or r.stale, unseen or r.unseen, unpriced or r.unpriced
+  end
+  local out = {}
+  if stale then out[#out + 1] = S.banner_stale end
+  if unseen then out[#out + 1] = S.banner_unseen end
+  if unpriced then out[#out + 1] = S.banner_unpriced end
+  return table.concat(out, " ")
 end
 
 local function money(copper)
@@ -206,54 +218,62 @@ function ns.RunBags(done)
 end
 
 -- Here tab data (PLAN.md step 6): the ranking, narrowed to the zone the character stands in.
+-- Quest items of the zone are loaded BEFORE they are priced, so unloaded items are not valued at 0.
 function ns.RunHere(done)
   ns.Run(function(res)
     if res.state ~= "ok" then return done(res) end
-    local ok, here, ids = pcall(function()
-      local zone = C_Map.GetBestMapForUnit("player")
-      local cmp = zone and ns.Here.Compare(res.all, zone)
-      if not cmp then return { state = "here_nodata" } end
-      local ctx = ns.Context()
-      local here = { state = "ok", cmp = cmp, level = ctx.level, supposed = res.supposed, nodes = {}, pickups = {} }
-      for i = 1, math.min(4, #cmp.row.detail) do
-        local d = cmp.row.detail[i]
-        here.nodes[i] = { name = ns.ItemName(d.item), unit = d.unit }
+    local zone = C_Map.GetBestMapForUnit("player")
+    local cmp = zone and ns.Here.Compare(res.all, zone)
+    if not cmp then return done({ state = "here_nodata" }) end
+    local info = ns.Zones[zone]
+    local ids = {}
+    for item, quests in pairs(ns.QuestItems) do
+      for _, q in ipairs(quests) do
+        if info and q.zone == info[1] then ids[#ids + 1] = item; break end
       end
-      local info = ns.Zones[zone]
-      here.pickups = info and ns.Here.Pickups(info[1], ns.QuestItems, ctx) or {}
-      while #here.pickups > 4 do here.pickups[#here.pickups] = nil end
-      -- the gathering profession the character lacks, and what it would add here
-      local skills = ns.Skills()
-      if not res.supposed then
-        for _, prof in ipairs({ "Mining", "Herb Gathering" }) do
-          if not skills[prof] then
-            local gain = ns.Here.ProfessionGain(res.input, cmp.row.zone, prof, math.min(300, 5 * ctx.level))
-            if gain then here.hint = { prof = prof, gain = gain } end
+    end
+    ns.LoadItems(ids, function()
+      local ok, here = pcall(function()
+        local ctx = ns.Context()
+        local out = { state = "ok", cmp = cmp, level = ctx.level, supposed = res.supposed, nodes = {} }
+        for i = 1, math.min(4, #cmp.row.detail) do
+          local d = cmp.row.detail[i]
+          out.nodes[i] = { name = ns.ItemName(d.item), unit = d.unit }
+        end
+        out.pickups = info and ns.Here.Pickups(info[1], ns.QuestItems, ctx) or {}
+        while #out.pickups > 4 do out.pickups[#out.pickups] = nil end
+        for _, p in ipairs(out.pickups) do p.name = ns.ItemName(p.item) end
+        -- the gathering profession the character lacks, and what it would add here
+        local skills = ns.Skills()
+        if not res.supposed then
+          for _, prof in ipairs({ "Mining", "Herb Gathering" }) do
+            if not skills[prof] then
+              local gain = ns.Here.ProfessionGain(res.input, cmp.row.zone, prof, math.min(300, 5 * ctx.level))
+              if gain then out.hint = { prof = prof, gain = gain } end
+            end
           end
         end
-      end
-      local ids = {}
-      for i, p in ipairs(here.pickups) do ids[i] = p.item end
-      return here, ids
-    end)
-    if not ok then return done({ state = "error", message = tostring(here) }) end
-    if here.state ~= "ok" then return done(here) end
-    ns.LoadItems(ids, function()
-      for _, p in ipairs(here.pickups) do p.name = ns.ItemName(p.item) end
-      done(here)
+        return out
+      end)
+      done(ok and here or { state = "error", message = tostring(here) })
     end)
   end)
 end
 
--- Zones to show on the map tab: with "my level only", zones whose lowest level is more than 4 above the character are left out.
+-- Zones to show on the map tab, best first, at most ns.TOP. With "my level only", a zone whose lowest level is more than
+-- 4 above the character is left out; a zone whose level is unknown (Data/Zones.lua) is left out too and counted in the
+-- second result so the window can say so. Zones missing from the table (cities) are always shown.
 function ns.VisibleZones(all, onlyLevel)
-  local level, list = UnitLevel("player"), {}
+  local level, list, hidden = UnitLevel("player"), {}, 0
   for _, row in ipairs(all) do
     local info = ns.Zones[row.zone]
-    if not (onlyLevel and info and info[2] - level > 4) then list[#list + 1] = row end
-    if #list == ns.TOP then break end
+    local skip = false
+    if onlyLevel and info then
+      if not info[2] then skip, hidden = true, hidden + 1 elseif info[2] - level > 4 then skip = true end
+    end
+    if not skip and #list < ns.TOP then list[#list + 1] = row end
   end
-  return list
+  return list, hidden
 end
 
 local function printMap()
@@ -269,7 +289,8 @@ local function printMap()
       print(("%d. %s  %s  %s  [%s]%s"):format(i, row.name, S.per_hour:format(money(row.copperPerHour)),
         table.concat(row.itemNames, ", "), S.price_age:format(ageText(row.maxAge)), tags))
     end
-    if res.anyPartial then ns.Print(S.stale_banner) end
+    local partial = ns.PartialText(res.rows)
+    if partial ~= "" then ns.Print(partial) end
     if res.ageUnknown then ns.Print(S.age_unknown) end
     print("|cff9d9d9d" .. S.footer .. "|r")
   end)
