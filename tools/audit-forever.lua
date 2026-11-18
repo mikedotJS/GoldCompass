@@ -270,12 +270,30 @@ if sv then
   local aQty = tally("game: crafted quantity (addon data vs the owner's profession windows)")
   local gQty = tally("game: crafted quantity (ForeverDB vs the owner's profession windows)")
   local cap = tally("game: a profession's maximum is a rank cap, 75 / 150 / 225 / 300 (the owner's profession windows)")
+  -- the colour the profession window gave a known recipe at the owner's skill (0 orange, 1 yellow, 2 green, 3 gray) against the
+  -- colour the thresholds predict
+  -- (only in the section of the recipe's own profession: the saved data also holds Leatherworking recipes under Skinning and under
+  -- an unnamed section, with another profession's skill)
+  local FRENCH = { ["Travail du cuir"] = "Leatherworking", Cuisine = "Cooking", ["P\195\170che"] = "Fishing", Secourisme = "First Aid",
+    Couture = "Tailoring", Forge = "Blacksmithing", ["Ing\195\169nierie"] = "Engineering", Alchimie = "Alchemy", Enchantement = "Enchanting",
+    Minage = "Mining", ["D\195\169pe\195\167age"] = "Skinning", Herboristerie = "Herbalism" }
+  local aColour = tally("game: colour of a known recipe at the owner's skill (addon thresholds vs the profession window)")
+  local gColour = tally("game: colour of a known recipe at the owner's skill (ForeverDB thresholds vs the profession window)")
+  local function colourAt(skill, y, g, gr) return skill < y and 0 or skill < g and 1 or skill < gr and 2 or 3 end
   for _, char in pairs(db.chars or {}) do
     for name, p in pairs(char.profs or {}) do
       if (p.max or 0) > 0 then cap(p.max == 75 or p.max == 150 or p.max == 225 or p.max == 300, ("%s: %s"):format(tostring(name), tostring(p.max))) end
       for id, rec in pairs(p.recipes or {}) do
         local f, c = fdb[id], shown[id]
         local label = ("%d %s"):format(id, tostring(rec.name))
+        if f and (FRENCH[name] or name) == f.prof and (p.max or 0) > 0 and p.skill and rec.d then
+          if c and c.y and c.g and c.gr then
+            aColour(colourAt(p.skill, c.y, c.g, c.gr) == rec.d, ("[%s] %s at %d: %d/%d/%d, the game showed %d"):format(tostring(name), label, p.skill, c.y, c.g, c.gr, rec.d))
+          end
+          if f and f.r[4] > 0 and f.r[6] > 0 then
+            gColour(colourAt(p.skill, f.r[4], f.r[5], f.r[6]) == rec.d, ("[%s] %s at %d: %d/%d/%d, the game showed %d"):format(tostring(name), label, p.skill, f.r[4], f.r[5], f.r[6], rec.d))
+          end
+        end
         if f then
           gOut(f.r[7] == (rec.out or 0), label .. ": " .. f.r[7] .. " vs " .. tostring(rec.out))
           gMats(strKey(f.r[9]) == matsKey(rec.mats), label .. ": " .. strKey(f.r[9]) .. " vs " .. matsKey(rec.mats))
