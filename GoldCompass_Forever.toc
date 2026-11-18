@@ -13,11 +13,13 @@ Log.lua
 Data\GatherNodes.lua
 Data\Zones.lua
 Data\Recipes.lua
+Data\Locations.lua
 Data\QuestItems.lua
 ZoneRank.lua
 Advice.lua
 Here.lua
 Leveling.lua
+Where.lua
 Format.lua
 Prices.lua
 Nodes.lua

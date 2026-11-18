@@ -130,3 +130,16 @@ Sources (`entraîneur`, `vendeur`, `butin de monstre`, `butin`, `quête`) come f
 | 68 | Check the colour on a recipe to learn against the trainer window | The colour named on the best recipe is close to what the trainer shows (estimate: yellow +30, green +45, gray +60 above the learn skill unless the data has the thresholds) | Yes / no, and the recipe |
 | 69 | Tick `Avec mon sac` with nothing craftable to learn | `Le filtre « Avec mon sac » cache les recettes à apprendre.` and the `Voir sans filtre` button, not `Aucune recette à apprendre` | Screenshot |
 | 70 | A profession where everything in reach is gray | `Les recettes à ta portée ne font plus monter le métier.` | Screenshot |
+
+## "Où l'apprendre" (map button on recipes to learn)
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 74 | `/gc spike`, read the `S8` line | `C_Map.SetUserWaypoint`, `UiMapPoint`, `SetSuperTrackedUserWaypoint`, `CraftRecipe`, `OpenTradeSkill`, `IsTradeSkillReady` each true or false | The S8 line |
+| 75 | `Métier` tab: a small map icon at the right end of each recipe to learn (and of `Meilleure à apprendre`) | Icons only on those rows; the recipe text is not covered by the icon | Screenshot |
+| 76 | Hover an icon | Tooltip: `Où l'apprendre`, the NPC, `<zone en français> : x, y`, `Données Classic, à vérifier.` For a recipe with no place: its free text and `Lieu non précis.` | Screenshot |
+| 77 | Click an icon with a place (out of combat) | Chat `Repère posé : ...`, the world map opens, a yellow waypoint arrow points at the NPC, and you can follow it | Screenshot, and whether the NPC is really there |
+| 78 | Click an icon with no place | Only a chat line with the text and `lieu non précis`; the map does not open | The chat line |
+| 79 | Click in combat | Only a chat line `Indisponible en combat : ...`, no map, no pin | The chat line |
+| 80 | Check the chosen trainer | It is of your faction, teaches your skill level, and is on your continent when one is | Yes / no, and the wrong ones |
+

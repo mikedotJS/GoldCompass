@@ -131,7 +131,7 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Leveling", "Format",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Leveling", "Where", "Format",
     "Prices", "Nodes", "Core", "Learned", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
@@ -848,7 +848,7 @@ describe("text safety and localized recipe names", function()
   -- Characters the game font cannot draw show as empty boxes. Allowed: Latin-1 (accents, middle dot, multiplication sign).
   it("has no character outside Latin-1 in any file that holds user-visible text", function()
     local bad = {}
-    for _, name in ipairs({ "Strings", "Tooltip", "Window", "Here", "Format", "Log", "Core", "Advice", "Spike", "Learned", "Nodes", "Prices", "ZoneRank" }) do
+    for _, name in ipairs({ "Strings", "Tooltip", "Window", "Here", "Format", "Where", "Log", "Core", "Advice", "Spike", "Learned", "Nodes", "Prices", "ZoneRank" }) do
       local f = assert(io.open(name .. ".lua", "rb"))
       local src = f:read("a")
       f:close()
@@ -1508,3 +1508,115 @@ describe("scrollable lists (bags, here, Métier)", function()
     assert.matches("scroll frame: plain ScrollFrame", table.concat(logged, "\n"))
   end)
 end)
+
+describe("Où l'apprendre (map button on recipes to learn)", function()
+  local alchemy = { skill = 50, max = 75, recipes = {
+    [1] = { id = 1, name = "Potion de soins", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } } } }
+  local function start()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    return ns
+  end
+  local function goButtons()
+    local out = {}
+    for _, fr in ipairs(frames) do if fr.target and fr.shown then out[#out + 1] = fr end end
+    return out
+  end
+  local pin = { name = "Mallory", zone = "Elwynn Forest", mapID = 1429, x = 32.8, y = 49 }
+
+  it("puts a button with a target on rows to learn (and on the best one), nothing on the other rows", function()
+    local ns = start()
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local lr = res.profs[1].learn
+    assert.is_true(#lr.now > 0)
+    for _, row in ipairs(lr.now) do assert.is_table(row.target) end
+    local buttons = goButtons()
+    assert.is_true(#buttons >= #lr.now)                      -- best line + rows (+ soon rows)
+    local pins = 0
+    for _, b in ipairs(buttons) do if b.target.mapID then pins = pins + 1 end end
+    assert.is_true(pins > 0)
+    -- a recycled line shows no button when its new content has no target
+    ns.char.onlyBag = true
+    _G.C_Item.GetItemCount = function() return 0 end
+    ns.Window.Refresh()
+    assert.are.equal(0, #goButtons())                         -- bag filter on, nothing carried: no learn rows left
+  end)
+
+  it("pins the NPC with a user waypoint, super tracks it and opens the map (out of combat)", function()
+    local ns = start()
+    local calls = {}
+    _G.UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
+    _G.C_Map.SetUserWaypoint = function(p) calls.pin = p end
+    _G.C_Map.OpenWorldMap = function(id) calls.open = id end
+    _G.C_SuperTrack = { SetSuperTrackedUserWaypoint = function(on) calls.track = on end }
+    ns.Window.GoTo(pin)
+    assert.are.equal(1429, calls.pin.map)
+    assert.is_near(0.328, calls.pin.x, 1e-9); assert.is_near(0.49, calls.pin.y, 1e-9)   -- percentages become 0..1
+    assert.is_true(calls.track)
+    assert.are.equal(1429, calls.open)
+    assert.matches("Repère posé : Mallory", table.concat(printed, "\n"))
+  end)
+
+  it("in combat only writes the place in the chat: no pin, no map", function()
+    local ns = start()
+    local calls = {}
+    _G.UiMapPoint = { CreateFromCoordinates = function() return {} end }
+    _G.C_Map.SetUserWaypoint = function() calls.pin = true end
+    _G.C_Map.OpenWorldMap = function() calls.open = true end
+    _G.InCombatLockdown = function() return true end
+    ns.Window.GoTo(pin)
+    assert.is_nil(calls.pin); assert.is_nil(calls.open)
+    assert.matches("Indisponible en combat : Mallory", table.concat(printed, "\n"))
+  end)
+
+  it("without SetUserWaypoint opens the map on the zone and prints the coordinates", function()
+    local ns = start()
+    local opened
+    _G.C_Map.SetUserWaypoint = nil
+    _G.C_Map.OpenWorldMap = function(id) opened = id end
+    ns.Window.GoTo(pin)
+    assert.are.equal(1429, opened)
+    assert.matches("32.8, 49.0%) : repère indisponible", table.concat(printed, "\n"))
+  end)
+
+  it("with only a text: prints it with 'lieu non précis', opens nothing", function()
+    local ns = start()
+    local opened
+    _G.C_Map.OpenWorldMap = function() opened = true end
+    ns.Window.GoTo({ text = "World drop (level 15-25)" })
+    ns.Window.GoTo({})
+    assert.is_nil(opened)
+    local chat = table.concat(printed, "\n")
+    assert.matches("World drop %(level 15%-25%)", chat)
+    assert.matches("lieu non précis", chat)
+  end)
+
+  it("builds the tooltip: NPC, zone (client language when known), coordinates, Classic caveat", function()
+    local ns = start()
+    _G.C_Map.GetMapInfo = function(id) return { name = "Forêt d'Elwynn" } end
+    local tip = table.concat(ns.Window.TargetTooltipLines(pin), "\n")
+    assert.matches("Mallory", tip)
+    assert.matches("Forêt d'Elwynn : 32.8, 49.0", tip)
+    assert.matches("Données Classic, à vérifier", tip)
+    local textual = table.concat(ns.Window.TargetTooltipLines({ text = "World drop" }), "\n")
+    assert.matches("World drop", textual); assert.matches("Lieu non précis", textual)
+  end)
+
+  it("clicking the button of a row calls GoTo with that row's target", function()
+    local ns = start()
+    local seen
+    local real = ns.Window.GoTo
+    ns.Window.GoTo = function(t) seen = t end
+    local b
+    for _, fr in ipairs(goButtons()) do b = b or fr end
+    assert.is_not_nil(b)
+    b.scripts.OnClick(b)
+    assert.are.equal(b.target, seen)
+    ns.Window.GoTo = real
+  end)
+end)
+

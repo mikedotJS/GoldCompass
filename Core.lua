@@ -303,6 +303,33 @@ function ns.ProfessionList()
   return out
 end
 
+-- Environment for Where.Target: faction, the continent the player is on and a distance function (world coordinates of
+-- the player and of a map position; nil when the game cannot tell, then only the continent decides).
+local function whereEnv(ctx)
+  local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = ctx.faction }
+  local C = C_Map
+  local here = C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")
+  for _, m in pairs(ns.MapIDs) do if m[1] == here then env.continent = m[2] end end
+  if not (here and C.GetWorldPosFromMapPos and C.GetPlayerMapPosition and CreateVector2D) then return env end
+  local function world(mapID, x, y)
+    local ok, instance, pos = pcall(C.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
+    if ok and instance and pos then
+      local wx, wy = pos:GetXY()
+      return instance, wx, wy
+    end
+  end
+  local ok, p = pcall(C.GetPlayerMapPosition, here, "player")
+  local instance, mx, my
+  if ok and p then instance, mx, my = world(here, p:GetXY()) end
+  if instance then
+    env.dist = function(mapID, x, y)
+      local i, wx, wy = world(mapID, x / 100, y / 100)
+      if i == instance and wx then return math.sqrt((wx - mx) ^ 2 + (wy - my) ^ 2) end
+    end
+  end
+  return env
+end
+
 -- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable); nil when the profession has no craft data.
 local craftsCache = {}
 function ns.LearnFor(p, ctx, count, knownBest)
@@ -312,7 +339,19 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local data = ns.char and ns.char.profs[p.name]
   local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end },
     { __index = ctx })
-  return ns.Leveling.Learnable(craftsCache[english], p.skill or 0, own, count, nil, knownBest)
+  local result = ns.Leveling.Learnable(craftsCache[english], p.skill or 0, own, count, nil, knownBest)
+  -- where to go to learn each one (a pin, or a text only), from the Classic location data
+  local env = whereEnv(ctx)
+  for _, bucket in ipairs({ result.now, result.soon }) do
+    for _, row in ipairs(bucket) do row.target = ns.Where.Target(row.rec, english, env) end
+  end
+  return result
+end
+
+-- Zone name in the client's language when the game knows the map, else the English name of the data.
+function ns.ZoneLabel(target)
+  local info = C_Map and C_Map.GetMapInfo and target.mapID and C_Map.GetMapInfo(target.mapID)
+  return info and info.name or target.zone
 end
 
 -- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).

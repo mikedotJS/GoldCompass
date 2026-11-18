@@ -42,7 +42,8 @@ W.RowParts = {
 }
 -- The lines of the bags, here and Métier tabs live in a scroll frame: the bar takes SCROLLBAR_W on the right of the slot.
 local SCROLLBAR_W = 20
-W.LineParts = { left = rect(0, 0, 232, LINE_H), right = rect(236, 0, 406, LINE_H) }
+-- go = the small map button of a recipe to learn ("Où l'apprendre").
+W.LineParts = { left = rect(0, 0, 222, LINE_H), right = rect(226, 0, 386, LINE_H), go = rect(390, 0, 406, 16) }
 -- Long sentences take the whole line (the right slot is then empty), so coin icons never push them into the figure.
 W.LineWide = rect(0, 0, 406, LINE_H)
 
@@ -125,8 +126,43 @@ local function openMap(zone)
   if not pcall(open, zone) then ns.Print(S.map_blocked) end
 end
 W.OpenMap = openMap -- exposed for tests
+
+-- "Où l'apprendre": pins the NPC with a user waypoint and opens the map on it. Out of combat only (in combat the place
+-- is only written in the chat). Without a precise place, only the free text of the data is written in the chat.
+function W.GoTo(t)
+  if not t.mapID then return ns.Print(t.text and S.where_text:format(t.text) or S.where_none) end
+  local label = ns.ZoneLabel(t)
+  if InCombatLockdown() then return ns.Print(S.where_combat:format(("%s, %s (%.1f, %.1f)"):format(t.name, label, t.x, t.y))) end
+  local pinned = false
+  local C = C_Map
+  if C and C.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
+    and (not C.CanSetUserWaypointOnMap or C.CanSetUserWaypointOnMap(t.mapID)) then
+    pinned = pcall(function()
+      C.SetUserWaypoint(UiMapPoint.CreateFromCoordinates(t.mapID, t.x / 100, t.y / 100))
+      if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
+    end)
+  end
+  ns.Log("frame", ("where: %s (%s) map %d %.1f,%.1f pinned=%s"):format(t.name, t.zone, t.mapID, t.x, t.y, tostring(pinned)))
+  ns.Print((pinned and S.where_pinned or S.where_coords):format(t.name, label, t.x, t.y))
+  openMap(t.mapID)
+end
 function W.Rows() return rows end
 function W.Lines() return lines end
+-- Tooltip of the map button: NPC, zone (client language when known), coordinates, and the Classic caveat.
+function W.TargetTooltipLines(t)
+  local tip = { S.where_title }
+  if t.mapID then
+    tip[#tip + 1] = t.name
+    tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t), t.x, t.y)
+    tip[#tip + 1] = S.where_classic
+  else
+    if t.text then tip[#tip + 1] = t.text end
+    tip[#tip + 1] = S.where_unclear
+    tip[#tip + 1] = S.where_classic
+  end
+  return tip
+end
+
 function W.ContentHeight() return contentHeight end -- height of the scrolled content (rows shown x line height)
 function W.ScrollKind() return scrollKind end
 function W.Footer() return f.footer end
@@ -423,10 +459,31 @@ local function setLines(entries, tail, area)
       l = { left = text(content, "GameFontHighlightSmall"), right = text(content, "GameFontHighlightSmall", nil, "RIGHT") }
       place(l.left, rect(W.LineParts.left.l, top, W.LineParts.left.r, top + LINE_H), content)
       place(l.right, rect(W.LineParts.right.l, top, W.LineParts.right.r, top + LINE_H), content)
+      -- small map button, shown only on rows that have a place to go to
+      local go = CreateFrame("Button", nil, content)
+      place(go, rect(W.LineParts.go.l, top, W.LineParts.go.r, top + W.LineParts.go.b), content)
+      go.icon = go:CreateTexture(nil, "ARTWORK")
+      go.icon:SetAllPoints()
+      go.icon:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+      go.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+      go:SetScript("OnClick", function(self) if self.target then W.GoTo(self.target) end end)
+      go:SetScript("OnEnter", function(self)
+        if not self.target then return end
+        local tip = W.TargetTooltipLines(self.target)
+        GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+        GameTooltip:SetText(tip[1], 1, 1, 1)
+        for j = 2, #tip do GameTooltip:AddLine(tip[j], 0.8, 0.8, 0.8, true) end
+        GameTooltip:Show()
+      end)
+      go:SetScript("OnLeave", function() GameTooltip:Hide() end)
+      l.go = go
       lines[i] = l
     end
     local e = all[i]
-    l.left:SetWidth((e and e.wide) and W.LineWide.r or W.LineParts.left.r)
+    l.go.target = e and e.target or nil
+    l.go:SetShown(l.go.target ~= nil)
+    -- a line with a map button leaves its room (the button sits at the right end)
+    l.left:SetWidth((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or W.LineWide.r) or W.LineParts.left.r)
     l.left:SetFontObject(e and e.head and GameFontNormalSmall or GameFontHighlightSmall)
     l.left:SetText(e and e.left or "")
     l.right:SetText(e and e.right or "")
@@ -575,7 +632,7 @@ local function addLearn(entries, p)
   end
   local function row(e)
     entries[#entries + 1] = { left = S.learn_row:format(e.name or ns.Fmt.RecipeName(e.rec), ns.Fmt.Source(e.rec), e.rec.learn),
-      right = perPoint(e) }
+      right = perPoint(e), target = e.target }
   end
   if #lr.now > 0 then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_now .. "|r" }
@@ -585,7 +642,8 @@ local function addLearn(entries, p)
       local label = e.name or ns.Fmt.RecipeName(e.rec)
       local fmt = e.floor and (e.perPoint < 0 and S.learn_best_floor_gain or S.learn_best_floor)
         or (e.perPoint < 0 and S.learn_best_gain or S.learn_best)
-      entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. fmt:format(label, ns.Money(math.abs(e.perPoint))) .. "|r" }
+      entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. fmt:format(label, ns.Money(math.abs(e.perPoint))) .. "|r",
+        target = e.target }
       grey(S.learn_detail:format(ns.Fmt.Source(e.rec), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
         L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)))
       if lr.gain then

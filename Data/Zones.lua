@@ -53,3 +53,22 @@ ns.Zones = {
   -- Copper (starting), 2548 Steelbloom/Khadgar's Whisker/Iron/Mithril (mid), 2652 Bruiseweed/Grave Moss/Mithril (mid).
   [2482] = { "?" }, [2521] = { "?" }, [2548] = { "?" }, [2652] = { "?" },
 }
+
+-- HAND-MAINTAINED DATA: English zone name -> { uiMapID (Classic numbering, same family as above), continent }.
+-- continent: "K" Kalimdor, "E" Eastern Kingdoms. Used to pin trainers and vendors (Data/Locations.lua) on the world map.
+ns.MapIDs = {
+  ["Durotar"] = { 1411, "K" }, ["Mulgore"] = { 1412, "K" }, ["The Barrens"] = { 1413, "K" },
+  ["Alterac Mountains"] = { 1416, "E" }, ["Arathi Highlands"] = { 1417, "E" }, ["Badlands"] = { 1418, "E" },
+  ["Blasted Lands"] = { 1419, "E" }, ["Tirisfal Glades"] = { 1420, "E" }, ["Silverpine Forest"] = { 1421, "E" },
+  ["Western Plaguelands"] = { 1422, "E" }, ["Eastern Plaguelands"] = { 1423, "E" }, ["Hillsbrad Foothills"] = { 1424, "E" },
+  ["The Hinterlands"] = { 1425, "E" }, ["Dun Morogh"] = { 1426, "E" }, ["Searing Gorge"] = { 1427, "E" },
+  ["Burning Steppes"] = { 1428, "E" }, ["Elwynn Forest"] = { 1429, "E" }, ["Deadwind Pass"] = { 1430, "E" },
+  ["Duskwood"] = { 1431, "E" }, ["Loch Modan"] = { 1432, "E" }, ["Redridge Mountains"] = { 1433, "E" },
+  ["Stranglethorn Vale"] = { 1434, "E" }, ["Swamp of Sorrows"] = { 1435, "E" }, ["Westfall"] = { 1436, "E" },
+  ["Wetlands"] = { 1437, "E" }, ["Teldrassil"] = { 1438, "K" }, ["Darkshore"] = { 1439, "K" }, ["Ashenvale"] = { 1440, "K" },
+  ["Thousand Needles"] = { 1441, "K" }, ["Stonetalon Mountains"] = { 1442, "K" }, ["Desolace"] = { 1443, "K" },
+  ["Feralas"] = { 1444, "K" }, ["Dustwallow Marsh"] = { 1445, "K" }, ["Tanaris"] = { 1446, "K" }, ["Azshara"] = { 1447, "K" },
+  ["Felwood"] = { 1448, "K" }, ["Un'Goro Crater"] = { 1449, "K" }, ["Moonglade"] = { 1450, "K" }, ["Silithus"] = { 1451, "K" },
+  ["Winterspring"] = { 1452, "K" }, ["Stormwind City"] = { 1453, "E" }, ["Orgrimmar"] = { 1454, "K" },
+  ["Ironforge"] = { 1455, "E" }, ["Thunder Bluff"] = { 1456, "K" }, ["Darnassus"] = { 1457, "K" }, ["Undercity"] = { 1458, "E" },
+}

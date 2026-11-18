@@ -93,6 +93,11 @@ function ns.Spike()
     for _, rec in pairs(data.recipes) do n = n + 1; if rec.mats and #rec.mats > 0 then withMats = withMats + 1 end end
     out(("S6 remembered profession %s: skill %s, %d known recipes, %d with reagents"):format(name, tostring(data.skill), n, withMats))
   end
+  -- S8: APIs of the map button ("Où l'apprendre") and of the craft button
+  out("S8 APIs: C_Map.SetUserWaypoint", tostring(C_Map and C_Map.SetUserWaypoint ~= nil), " UiMapPoint", tostring(UiMapPoint ~= nil),
+    " C_SuperTrack.SetSuperTrackedUserWaypoint", tostring(C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint ~= nil),
+    " C_TradeSkillUI.CraftRecipe", tostring(T and T.CraftRecipe ~= nil), " OpenTradeSkill", tostring(T and T.OpenTradeSkill ~= nil),
+    " IsTradeSkillReady", tostring(T and T.IsTradeSkillReady ~= nil))
   -- S7: recipes the character does not know yet, per remembered profession (Classic sources, not confirmed on Forever)
   local ctx = ns.Context()
   for _, p in ipairs(ns.ProfessionList()) do

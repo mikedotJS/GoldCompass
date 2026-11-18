@@ -17,7 +17,8 @@ Forever Ledger itself credits Wago (client data), wow-classic-items (nexus-devs,
 
 Data/Recipes.lua also merges data from ProfessionsTracker 1.2.0 by Thork (https://www.curseforge.com/wow/addons/profession-tracker-forever),
 which is under the MIT licence (Copyright (c) 2026 Thork; full text verbatim in THIRD-PARTY): the skill needed to learn each recipe, the
-yellow / green / gray skill thresholds and some recipe sources, matched by English recipe name by tools/build-data.py. Classic-era data,
+yellow / green / gray skill thresholds and some recipe sources, matched by English recipe name by tools/build-data.py. Data/Locations.lua
+also vendors its trainer table, NPC positions and recipe "where" texts. Classic-era data,
 not confirmed on Forever.
 
 Learned.lua follows the approach of Forever Ledger's Professions.lua (read learned recipes when a profession window opens); no code was copied.
