@@ -86,6 +86,22 @@ function T.SaveNpc(db, id, name, faction, where)
   db.npcs[id] = { name = name, mapID = where.mapID, x = where.x, y = where.y, f = faction }
 end
 
+-- The NPCs whose place was recorded in game (merchant, trainer and auction house windows), one per NPC, sorted by name:
+-- { { name, mapID, x, y, zone }, ... }. /gc pnj lists them, so the player sees which places are confirmed on Forever. Pure.
+function T.Recorded(db)
+  local seen, list = {}, {}
+  local function add(name, rec)
+    if name and rec.mapID and rec.x and rec.y and not seen[name] then
+      seen[name] = true
+      list[#list + 1] = { name = name, mapID = rec.mapID, x = rec.x, y = rec.y, zone = rec.zone }
+    end
+  end
+  for _, rec in pairs(db.npcs or {}) do add(rec.name, rec) end
+  for _, t in pairs(db.trainers or {}) do add(t.npc, t) end
+  table.sort(list, function(a, b) return a.name < b.name end)
+  return list
+end
+
 -- What the recorded trainers of this faction offer for a profession (English name): { [craftID] = { skill, cost, status,
 -- npc, mapID, x, y, zone } } with the cheapest offer when several trainers teach a recipe; a recipe a trainer lists as
 -- already known (status "used") is marked used. Pure.

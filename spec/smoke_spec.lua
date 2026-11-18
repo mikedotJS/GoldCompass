@@ -2732,3 +2732,25 @@ describe("vendor, quest and quest-item facts say what is and is not confirmed on
     assert.is_true(seen >= 55 and seen < all)
   end)
 end)
+
+describe("/gc pnj lists the NPCs recorded in game", function()
+  it("says when nothing is recorded, then lists merchants and trainers with their place, one line per NPC", function()
+    setup({ scanned = true, faction = "Horde", profs = {} })
+    local ns = loadAddon()
+    ns.db = {}
+    printed = {}
+    SlashCmdList["GOLDCOMPASS"]("pnj")
+    assert.matches("Aucun PNJ enregistré", table.concat(printed, "\n"))
+    ns.db.npcs = { [3027] = { name = "Naal Mistrunner", mapID = 1456, x = 50.84, y = 52.21, f = "H" } }
+    ns.db.trainers = {
+      ["H|Kamari|Leatherworking"] = { npc = "Kamari", mapID = 1454, x = 63.16, y = 45.01, zone = "Orgrimmar", f = "H", prof = "Leatherworking", offers = {} },
+      ["H|Naal Mistrunner|Cooking"] = { npc = "Naal Mistrunner", mapID = 1456, x = 50.8, y = 52.2, f = "H", prof = "Cooking", offers = {} },
+    }
+    assert.are.same({ "Kamari", "Naal Mistrunner" }, { ns.TrainerLog.Recorded(ns.db)[1].name, ns.TrainerLog.Recorded(ns.db)[2].name })
+    printed = {}
+    SlashCmdList["GOLDCOMPASS"]("pnj")
+    local text = table.concat(printed, "\n")
+    assert.matches("2 PNJ enregistrés en jeu", text)
+    assert.matches("Kamari · [^\n]- 63%.2, 45%.0", text); assert.matches("Naal Mistrunner · [^\n]- 50%.8, 52%.2", text)
+  end)
+end)

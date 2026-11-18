@@ -301,9 +301,26 @@ if sv then
     for _, p in pairs(soldBy[itemID] or {}) do any = true; same = same or p == copper end
     if any then buy(same, ("item %d: recorded %d"):format(itemID, copper)) end
   end
-  local n = 0
-  for _ in pairs(db.npcs or {}) do n = n + 1 end
-  print(("owner's saved data: %d NPC positions recorded in game"):format(n))
+  -- where the owner stood when a trainer, merchant or auction window opened: the ground truth for the places the addon pins
+  local fPos = tally("game: place of an NPC the owner opened (ForeverDB's place seen in Forever, within 2 map units)")
+  local pPos = tally("game: place of an NPC the owner opened (pfQuest's Classic place, within 2 map units)")
+  local n, seenNpc = 0, {}
+  local function near(mapID, x, y, rec) return mapID == rec.mapID and math.abs(x - rec.x) <= 2 and math.abs(y - rec.y) <= 2 end
+  local function place(name, rec)
+    if not (rec.mapID and rec.x and rec.y) or seenNpc[name] then return end
+    seenNpc[name], n = true, n + 1
+    for _, f in pairs(ns.FdbNpcs) do
+      if f[1] == name and f[6] then fPos(near(f[2], f[3], f[4], rec), ("%s: %s %.1f,%.1f vs recorded %s %.1f,%.1f"):format(name, f[2], f[3], f[4], rec.mapID, rec.x, rec.y)) end
+    end
+    for _, id in ipairs(ns.NpcByName[name] or {}) do
+      local ok = false
+      for _, s in ipairs(ns.Npcs[id][3] or {}) do ok = ok or near(s[1], s[2], s[3], rec) end
+      pPos(ok, ("%s: recorded %s %.1f,%.1f"):format(name, rec.mapID, rec.x, rec.y))
+    end
+  end
+  for _, rec in pairs(db.npcs or {}) do place(rec.name, rec) end
+  for _, t in pairs(db.trainers or {}) do place(t.npc, t) end
+  print(("owner's saved data: %d NPC places recorded in game"):format(n))
 end
 
 print(("\n%-98s %8s %8s %7s"):format("item", "compared", "agree", "%"))

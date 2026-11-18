@@ -580,8 +580,16 @@ SlashCmdList["GOLDCOMPASS"] = function(msg)
       print(S.prefix .. " : " .. S.log_header:format(#entries, total))
       for _, e in ipairs(entries) do print(("%s [%s] %s"):format(e.time, e.kind, e.text)) end
     end
+  elseif cmd == "pnj" or cmd == "npc" then
+    -- the NPCs recorded in game: their place is the confirmed one on Forever (raw print: one line per NPC)
+    local list = ns.TrainerLog.Recorded(ns.db or {})
+    ns.Print(#list == 0 and S.npc_none or S.npc_header:format(#list))
+    for _, n in ipairs(list) do
+      local info = C_Map and C_Map.GetMapInfo and C_Map.GetMapInfo(n.mapID)
+      print(S.npc_line:format(n.name, info and info.name or n.zone or tostring(n.mapID), n.x, n.y))
+    end
   elseif cmd == "" and ns.Window then ns.Window.Toggle()
-  else ns.Print("/gc (fenêtre) · /gc map · /gc spike · /gc dump · /gc log [clear]") end
+  else ns.Print("/gc (fenêtre) · /gc map · /gc pnj · /gc spike · /gc dump · /gc log [clear]") end
 end
 
 local frame = CreateFrame("Frame")
