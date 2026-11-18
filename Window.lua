@@ -45,6 +45,7 @@ end
 local TABS = {
   { key = "map", label = S.tab_map, title = S.title, footer = S.footer },
   { key = "bags", label = S.tab_bags, title = S.title_bags, footer = S.bags_total_note },
+  { key = "here", label = S.tab_here, title = S.title_here, footer = S.footer },
 }
 
 local f, rows, lines, panel, selected, titleFS
@@ -299,6 +300,37 @@ local function renderBags(res)
   setLines(entries, { { head = true, left = S.bags_total, right = ns.Money(res.total) } })
 end
 
+local function fmtRatio(r) return (("%.1f"):format(r):gsub("%.", ",")) end
+
+local function renderHere(res)
+  render(res, "here")
+  if res.state ~= "ok" then
+    local title, body = ns.StateText(res)
+    return showPanel(title, body, true)
+  end
+  local cmp = res.cmp
+  f.subtitle:SetText(res.supposed and S.hypothetical:format(res.supposed) or "")
+  f.banner:SetText(cmp.row.partial and S.stale_banner or "")
+  local entries = {
+    { head = true, left = cmp.row.name, right = S.here_level:format(res.level) },
+    { left = "|cff1eff00" .. S.here_you:format(ns.Money(cmp.row.copperPerHour)) .. "|r", right = "|cff9d9d9d" .. S.estimate .. "|r" },
+  }
+  if cmp.ratio and cmp.other then
+    local other = cmp.other.name
+    entries[#entries + 1] = { left = "|cff9d9d9d" .. (cmp.best and S.here_best:format(fmtRatio(cmp.ratio), other)
+      or S.here_behind:format(other, fmtRatio(cmp.ratio), ns.Money(cmp.other.copperPerHour))) .. "|r" }
+  end
+  entries[#entries + 1] = { head = true, left = S.here_nodes }
+  for _, n in ipairs(res.nodes) do entries[#entries + 1] = { left = n.name, right = ns.Money(n.unit) } end
+  if #res.pickups > 0 then
+    entries[#entries + 1] = { head = true, left = S.here_pickups }
+    for _, p in ipairs(res.pickups) do
+      entries[#entries + 1] = { left = ("%s ×%d |cff9d9d9d(%s)|r"):format(p.name, p.count, p.quest), right = ns.Money(p.unit) }
+    end
+  end
+  setLines(entries, res.hint and { { left = "|cff9d9d9d" .. S.here_hint:format(S.prof_names[res.hint.prof], ns.Money(res.hint.gain)) .. "|r" } } or {})
+end
+
 function W.Refresh()
   if not f then return end
   token = token + 1
@@ -309,9 +341,12 @@ function W.Refresh()
   if current == "map" then
     showPanel(S.loading_t, S.loading_p, false, true)
     ns.Run(guard(renderMap))
-  else
+  elseif current == "bags" then
     showPanel(S.loading_t, S.bags_loading, false, true)
     ns.RunBags(guard(renderBags))
+  else
+    showPanel(S.loading_t, S.loading_p, false, true)
+    ns.RunHere(guard(renderHere))
   end
 end
 
@@ -337,9 +372,11 @@ function W.Toggle()
   W.SetTab(current)
 end
 
--- The bags tab follows the bags while it is open.
+-- The bags tab follows the bags and the here tab follows the zone, while the window is open.
 local watcher = CreateFrame("Frame")
 watcher:RegisterEvent("BAG_UPDATE_DELAYED")
-watcher:SetScript("OnEvent", function()
-  if f and f:IsShown() and current == "bags" then W.Refresh() end
+watcher:RegisterEvent("ZONE_CHANGED_NEW_AREA")
+watcher:SetScript("OnEvent", function(_, event)
+  if not (f and f:IsShown()) then return end
+  if (event == "BAG_UPDATE_DELAYED" and current == "bags") or (event == "ZONE_CHANGED_NEW_AREA" and current == "here") then W.Refresh() end
 end)

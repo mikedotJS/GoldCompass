@@ -27,7 +27,8 @@ local function setup(opts)
   _G.C_Timer = { After = function() end }
   _G.Item = { CreateFromItemID = function() return { ContinueOnItemLoad = function(_, cb) cb() end } end }
   _G.GetItemInfo = function(id) return "Item" .. id, nil, nil, nil, nil, nil, nil, nil, nil, nil, 25 end
-  _G.C_Map = { GetMapInfo = function(id) return { name = "Zone" .. id } end }
+  _G.C_Map = { GetMapInfo = function(id) return { name = "Zone" .. id } end,
+    GetBestMapForUnit = function() return opts.zone or 1411 end }
   _G.UnitLevel = function() return 20 end
   _G.GetProfessions, _G.GetProfessionInfo = nil, nil
   if opts.alchemy then
@@ -146,6 +147,24 @@ describe("addon glue (stubbed WoW API)", function()
     ns = loadAddon()
     ns.RunBags(function(r) res = r end)
     assert.are.equal("no_auctionator_addon", res.state)
+  end)
+
+  it("runs the here tab for a ranked zone, an unranked zone, and with a missing profession hint", function()
+    setup({ scanned = true, alchemy = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.RunHere(function(r) res = r end)
+    assert.are.equal("ok", res.state)
+    assert.are.equal(1411, res.cmp.row.zone)
+    assert.is_true(res.cmp.best) -- zone 1411 (46s/h) beats zone 1429 (40s/h) in the stub data
+    assert.is_true(res.cmp.ratio > 1)
+    assert.is_true(#res.nodes >= 1)
+    assert.has_no.errors(function() ns.Window.Toggle(); ns.Window.SetTab("here") end)
+    setup({ scanned = true, zone = 9999 })
+    ns = loadAddon()
+    ns.RunHere(function(r) res = r end)
+    assert.are.equal("here_nodata", res.state)
   end)
 
   it("opens the window and renders without error", function()

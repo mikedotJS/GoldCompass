@@ -142,7 +142,7 @@ local STATE_TEXT = {
   nogather = { S.nogather_t, S.nogather_p }, noscan = { S.noscan_t, S.noscan_p },
   no_gathermate_addon = { S.nogm_t, S.nogm_p }, no_auctionator_addon = { S.noauc_t, S.noauc_p },
   price_error = { S.error_t, S.error_p }, error = { S.unexpected_t, "" },
-  empty = { S.bags_empty_t, S.bags_empty_p },
+  empty = { S.bags_empty_t, S.bags_empty_p }, here_nodata = { S.here_nodata_t, S.here_nodata_p },
 }
 ns.StateText = function(res)
   local t = STATE_TEXT[res.state]
@@ -196,6 +196,46 @@ function ns.RunBags(done)
       return bags
     end)
     done(ok and res or { state = "error", message = tostring(res) })
+  end)
+end
+
+-- Here tab data (PLAN.md step 6): the ranking, narrowed to the zone the character stands in.
+function ns.RunHere(done)
+  ns.Run(function(res)
+    if res.state ~= "ok" then return done(res) end
+    local ok, here, ids = pcall(function()
+      local zone = C_Map.GetBestMapForUnit("player")
+      local cmp = zone and ns.Here.Compare(res.all, zone)
+      if not cmp then return { state = "here_nodata" } end
+      local ctx = ns.Context()
+      local here = { state = "ok", cmp = cmp, level = ctx.level, supposed = res.supposed, nodes = {}, pickups = {} }
+      for i = 1, math.min(4, #cmp.row.detail) do
+        local d = cmp.row.detail[i]
+        here.nodes[i] = { name = ns.ItemName(d.item), unit = d.unit }
+      end
+      local info = ns.Zones[zone]
+      here.pickups = info and ns.Here.Pickups(info[1], ns.QuestItems, ctx) or {}
+      while #here.pickups > 4 do here.pickups[#here.pickups] = nil end
+      -- the gathering profession the character lacks, and what it would add here
+      local skills = ns.Skills()
+      if not res.supposed then
+        for _, prof in ipairs({ "Mining", "Herb Gathering" }) do
+          if not skills[prof] then
+            local gain = ns.Here.ProfessionGain(res.input, cmp.row.zone, prof, math.min(300, 5 * ctx.level))
+            if gain then here.hint = { prof = prof, gain = gain } end
+          end
+        end
+      end
+      local ids = {}
+      for i, p in ipairs(here.pickups) do ids[i] = p.item end
+      return here, ids
+    end)
+    if not ok then return done({ state = "error", message = tostring(here) }) end
+    if here.state ~= "ok" then return done(here) end
+    ns.LoadItems(ids, function()
+      for _, p in ipairs(here.pickups) do p.name = ns.ItemName(p.item) end
+      done(here)
+    end)
   end)
 end
 
