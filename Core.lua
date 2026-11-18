@@ -163,8 +163,12 @@ function ns.PartialText(rows)
   return table.concat(out, " ")
 end
 
+-- The one money formatter: the game's coin icons when available (C_CurrencyInfo.GetCoinTextureString, else the global
+-- GetCoinTextureString), plain text ("1g 20s") as the last fallback. 0 or nil is "prix inconnu", never a price.
 local function money(copper)
   if not copper or copper <= 0 then return S.price_unknown end
+  local coin = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+  if coin then return coin(ns.ZoneRank.RoundCopper(copper)) end
   return ns.ZoneRank.FormatMoney(copper)
 end
 ns.Money = money

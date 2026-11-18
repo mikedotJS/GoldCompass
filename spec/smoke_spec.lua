@@ -96,7 +96,7 @@ local function setup(opts)
   GameTooltip.AddLine = function(self, t) self.lines[#self.lines + 1] = t end
   GameTooltip.AddDoubleLine = function(self, l, r) self.lines[#self.lines + 1] = l .. " | " .. r end
   GameTooltip.IsShown = function() return true end
-  GameTooltip.GetItem = function() if not opts.notItem then return "item" end end
+  GameTooltip.GetItem = function() if not opts.notItem then return "Name", opts.hoverLink or "|cffffffff|Hitem:2449::::::::|h[x]|h|r" end end
   GameTooltip.refreshed = 0
   GameTooltip.RefreshData = function(self) self.refreshed = self.refreshed + 1 end
   _G.TooltipDataProcessor = { AddTooltipPostCall = function(_, fn) handlers.item = fn end }
@@ -881,5 +881,111 @@ describe("text safety and localized recipe names", function()
     handlers.item(GameTooltip, { id = 2449 })
     assert.matches("Elixir of Minor Strength", table.concat(GameTooltip.lines, "\n"))
     _G.C_Spell = nil
+  end)
+end)
+
+describe("coins, tooltip rows and spell data loading", function()
+  it("formats every amount through one function: coin icons when the game has them, plain text otherwise", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    assert.are.equal("1g 24s", ns.Money(12449))                    -- no coin API: the plain formatter
+    _G.GetCoinTextureString = function(c) return "[global " .. c .. "]" end
+    assert.are.equal("[global 12400]", ns.Money(12449))            -- rounded to the silver, then icons
+    _G.C_CurrencyInfo = { GetCoinTextureString = function(c) return "[currency " .. c .. "]" end }
+    assert.are.equal("[currency 1230000]", ns.Money(1234567))      -- 123.4567g -> 123g
+    assert.are.equal("[currency 40]", ns.Money(40))                -- under 1s: exact copper
+    assert.are.equal("prix inconnu", ns.Money(0))
+    _G.C_CurrencyInfo, _G.GetCoinTextureString = nil, nil
+  end)
+
+  it("uses coin icons in the per-hour figure and keeps it inside its slot", function()
+    setup({ scanned = true })
+    _G.GetCoinTextureString = function(c) return "|TInterface\\MoneyFrame\\UI-SilverIcon:0:0:2:0|t" .. c end
+    local ns = loadAddon()
+    ns.db = {}
+    ns.Window.Toggle()
+    assert.matches("^~.*UI%-SilverIcon.*/h", ns.Window.Rows()[1].gph.text)
+    -- the figure slot is wide enough for icons: at least 180 px, and still clear of the zone and bar slots
+    local P = ns.Window.RowParts
+    assert.is_true(P.gph.r - P.gph.l >= 180)
+    assert.is_true(P.zone.r <= P.gph.l and P.sub.r <= P.gph.l)
+    _G.GetCoinTextureString = nil
+  end)
+
+  it("puts each recipe and its result price on one row, the status on the line below", function()
+    setup({ scanned = true, alchemy = true, noSpell = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {} }
+    local doubles, singles = {}, {}
+    GameTooltip.AddDoubleLine = function(_, l, r) doubles[#doubles + 1] = { l, r }; GameTooltip.lines[#GameTooltip.lines + 1] = l .. " | " .. r end
+    GameTooltip.AddLine = function(_, t) singles[#singles + 1] = t; GameTooltip.lines[#GameTooltip.lines + 1] = t end
+    handlers.item(GameTooltip, { id = 2449 })
+    local recipeRows = 0
+    for _, d in ipairs(doubles) do
+      if d[1]:find("Elixir", 1, true) then
+        recipeRows = recipeRows + 1
+        assert.is_nil(d[1]:find("apprendre", 1, true)) -- no status in the left text
+        assert.is_nil(d[1]:find("  ", 1, true))
+      end
+    end
+    assert.is_true(recipeRows >= 1)
+    local status = false
+    for _, t in ipairs(singles) do status = status or t:find("^  .*apprendre") ~= nil end
+    assert.is_true(status)
+  end)
+
+  it("asks for spell data once, keeps the English name meanwhile, and redraws on arrival for the same item only", function()
+    setup({ scanned = true, alchemy = true, noSpell = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {} }
+    local loaded, requests = {}, {}
+    _G.C_Spell = {
+      GetSpellName = function(id) return loaded[id] and ("Nom FR " .. id) or nil end,
+      RequestLoadSpellData = function(id) requests[#requests + 1] = id end,
+    }
+    handlers.item(GameTooltip, { id = 2449 })
+    local first = table.concat(GameTooltip.lines, "\n")
+    assert.matches("Elixir of Minor Fortitude", first)         -- English fallback while the name is not cached
+    local n = #requests
+    assert.is_true(n >= 1)
+    GameTooltip.lines = {}
+    handlers.item(GameTooltip, { id = 2449 })
+    assert.are.equal(n, #requests)                             -- once per spell, not per hover
+    local function fire(event, id)
+      for _, fr in ipairs(frames) do
+        if fr.events and fr.events[event] then fr.scripts.OnEvent(fr, event, id) end
+      end
+    end
+    local id = requests[1]
+    loaded[id] = true
+    fire("SPELL_DATA_LOAD_RESULT", id)
+    assert.are.equal(1, GameTooltip.refreshed)                 -- the data arrived: redraw once
+    fire("SPELL_DATA_LOAD_RESULT", id)
+    assert.are.equal(1, GameTooltip.refreshed)                 -- not twice for the same spell
+    GameTooltip.lines = {}
+    handlers.item(GameTooltip, { id = 2449 })
+    assert.matches("Nom FR " .. id, table.concat(GameTooltip.lines, "\n"))
+    -- another item under the mouse: no redraw
+    GameTooltip.lines = {}
+    handlers.item(GameTooltip, { id = 2449 })
+    local other = requests[#requests]
+    _G.GetItemInfo = _G.GetItemInfo
+    local shown = GameTooltip.refreshed
+    GameTooltip.GetItem = function() return "Name", "|Hitem:9999::::|h[y]|h" end
+    loaded[other] = true
+    fire("SPELL_DATA_LOAD_RESULT", other)
+    assert.are.equal(shown, GameTooltip.refreshed)
+    _G.C_Spell = nil
+  end)
+
+  it("does not redraw for spell data in combat", function()
+    setup({ scanned = true, alchemy = true, noSpell = true, combat = true })
+    loadAddon()
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.SPELL_DATA_LOAD_RESULT then fr.scripts.OnEvent(fr, "SPELL_DATA_LOAD_RESULT", 1) end
+    end
+    assert.are.equal(0, GameTooltip.refreshed)
   end)
 end)

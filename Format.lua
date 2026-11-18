@@ -9,7 +9,7 @@ local SALE = { ah = S.act_ah, vendor = S.act_vendor, disenchant = S.act_de, none
 
 -- Recipe name in the client's language: the game's spell name for the craft spell (C_Spell.GetSpellName, or the older
 -- GetSpellInfo), and the English name from Data/Recipes.lua when the game returns nothing (not cached yet, unknown ID).
-function F.RecipeName(recipe)
+function F.LocalName(recipe)
   local name
   if C_Spell and C_Spell.GetSpellName then
     name = C_Spell.GetSpellName(recipe.id)
@@ -18,8 +18,9 @@ function F.RecipeName(recipe)
   end
   if type(name) == "table" then name = name.name end
   if type(name) == "string" and name ~= "" then return name end
-  return recipe.name
 end
+
+function F.RecipeName(recipe) return F.LocalName(recipe) or recipe.name end
 
 -- Headline of a decision, e.g. "Fabriquer : Huile ×2", "Garder 20, vendre le reste à l'HV".
 function F.Action(d, withCount)

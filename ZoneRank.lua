@@ -105,3 +105,12 @@ function ZR.FormatMoney(copper)
   if silver >= 1 then return string.format("%ds", silver) end
   return "<1s"
 end
+
+-- The amount actually shown: whole gold from 10g up, whole silver from 1s up, exact copper below, so a coin display
+-- does not look more precise than the estimate (same rounding as FormatMoney).
+function ZR.RoundCopper(copper)
+  local silver = math.floor(copper / 100 + 0.5)
+  if silver >= 1000 then return math.floor(copper / 10000 + 0.5) * 10000 end
+  if silver >= 1 then return silver * 100 end
+  return math.floor(copper + 0.5)
+end

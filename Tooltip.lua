@@ -8,6 +8,15 @@ local SHOWN = 3
 local GOOD, KEEP, MUTE = { 0.12, 1, 0 }, { 1, 0.82, 0 }, { 0.62, 0.62, 0.62 }
 local ACTION_COLOR = { craft = GOOD, ah = GOOD, disenchant = GOOD, vendor = MUTE, none = MUTE }
 local failed
+local current, requested, waiting = nil, {}, {}  -- item of the section drawn last; spells asked for; spells awaited
+
+-- Spell names are not cached for recipes the player does not know: ask the game once per spell and redraw on arrival.
+local function requestSpell(id)
+  if requested[id] or not (C_Spell and C_Spell.RequestLoadSpellData) then return end
+  requested[id] = true
+  waiting[id] = true
+  pcall(C_Spell.RequestLoadSpellData, id)
+end
 
 local function ledgerLoaded()
   local isLoaded = (C_AddOns and C_AddOns.IsAddOnLoaded) or IsAddOnLoaded
@@ -16,6 +25,7 @@ end
 
 local function addSection(tt, id)
   if InCombatLockdown() or not (ns.Prices.Installed() and ns.RecipeRows) then return end
+  current = id
   local ctx = ns.Context()
   -- the same bag scan as the Bags tab, so both agree on the count and on soulbound items
   local bag
@@ -46,7 +56,10 @@ local function addSection(tt, id)
     for i = 1, more and uses.total or math.min(SHOWN, uses.total) do
       local e = uses.list[i]
       unconfirmed = unconfirmed or e.status ~= "known"
-      tt:AddDoubleLine(ns.Fmt.RecipeName(e.recipe) .. "  " .. ns.Fmt.Status(e), ns.Money(e.result), 1, 1, 1, 1, 1, 1)
+      if not ns.Fmt.LocalName(e.recipe) then requestSpell(e.recipe.id) end
+      -- name and result price on the same row; the status, dim, on the line below
+      tt:AddDoubleLine(ns.Fmt.RecipeName(e.recipe), ns.Money(e.result), 1, 1, 1, 1, 1, 1)
+      tt:AddLine("  " .. ns.Fmt.Status(e))
     end
     if not more and uses.total > SHOWN then tt:AddLine(S.uses_more:format(uses.total - SHOWN), MUTE[1], MUTE[2], MUTE[3]) end
     if unconfirmed then tt:AddLine(S.tip_unconfirmed, MUTE[1], MUTE[2], MUTE[3]) end
@@ -80,7 +93,16 @@ end
 ns.Log("hook", "MODIFIER_STATE_CHANGED listener registered (calls GameTooltip:RefreshData outside combat)")
 local shift = CreateFrame("Frame")
 shift:RegisterEvent("MODIFIER_STATE_CHANGED")
-shift:SetScript("OnEvent", function()
+shift:RegisterEvent("SPELL_DATA_LOAD_RESULT")
+shift:SetScript("OnEvent", function(_, event, spellID)
   if InCombatLockdown() or not GameTooltip:IsShown() or not GameTooltip.RefreshData then return end
-  if GameTooltip.GetItem and GameTooltip:GetItem() then GameTooltip:RefreshData() end -- item tooltips only
+  if not GameTooltip.GetItem then return end
+  local _, link = GameTooltip:GetItem()
+  if not link then return end -- item tooltips only
+  if event == "SPELL_DATA_LOAD_RESULT" then
+    -- a spell name arrived: redraw once, and only if the tooltip still shows the item the request was made for
+    if not waiting[spellID] or tonumber(link:match("item:(%d+)")) ~= current then return end
+    waiting[spellID] = nil
+  end
+  GameTooltip:RefreshData()
 end)

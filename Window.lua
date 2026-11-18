@@ -34,10 +34,12 @@ W.Layout = {
 
 -- Inside one map row (432 x 30) and one list line (432 x 17).
 W.RowParts = {
-  rank = rect(0, 2, 18, 28), zone = rect(24, 2, 284, 15), sub = rect(24, 16, 284, 28),
-  gph = rect(290, 2, 432, 15), bar = rect(290, 19, 360, 24), age = rect(364, 16, 432, 28),
+  rank = rect(0, 2, 18, 28), zone = rect(24, 2, 240, 15), sub = rect(24, 16, 240, 28),
+  gph = rect(246, 2, 432, 15), bar = rect(246, 19, 316, 24), age = rect(320, 16, 432, 28),
 }
 W.LineParts = { left = rect(0, 0, 250, LINE_H), right = rect(256, 0, 432, LINE_H) }
+-- Long sentences take the whole line (the right slot is then empty), so coin icons never push them into the figure.
+W.LineWide = rect(0, 0, 432, LINE_H)
 
 -- Scale that keeps the whole frame on screen whatever the UI scale makes of UIParent's size.
 function W.FitScale(parentWidth, parentHeight)
@@ -370,6 +372,7 @@ local function setLines(entries, tail)
     if i <= shown then e = entries[i]
     elseif i == shown + 1 and shown < #entries then e = { left = S.bags_more:format(#entries - shown) }
     elseif i > LINES - #tail then e = tail[i - (LINES - #tail)] end
+    l.left:SetWidth((e and e.wide) and W.LineWide.r or W.LineParts.left.r)
     l.left:SetFontObject(e and e.head and GameFontNormalSmall or GameFontHighlightSmall)
     l.left:SetText(e and e.left or "")
     l.right:SetText(e and e.right or "")
@@ -474,7 +477,7 @@ local function renderHere(res)
   }
   if cmp.ratio and cmp.other then
     local other = cmp.other.name
-    entries[#entries + 1] = { left = "|cff9d9d9d" .. (cmp.best and S.here_best:format(fmtRatio(cmp.ratio), other)
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (cmp.best and S.here_best:format(fmtRatio(cmp.ratio), other)
       or S.here_behind:format(other, fmtRatio(cmp.ratio), ns.Money(cmp.other.copperPerHour))) .. "|r" }
   end
   entries[#entries + 1] = { head = true, left = S.here_nodes }
@@ -485,7 +488,7 @@ local function renderHere(res)
       entries[#entries + 1] = { left = ("%s ×%d |cff9d9d9d(%s)|r"):format(p.name, p.count, p.quest), right = ns.Money(p.unit) }
     end
   end
-  setLines(entries, res.hint and { { left = "|cff9d9d9d" .. S.here_hint:format(S.prof_names[res.hint.prof], ns.Money(res.hint.gain)) .. "|r" } } or {})
+  setLines(entries, res.hint and { { wide = true, left = "|cff9d9d9d" .. S.here_hint:format(S.prof_names[res.hint.prof], ns.Money(res.hint.gain)) .. "|r" } } or {})
 end
 
 function W.UpdateControls()
