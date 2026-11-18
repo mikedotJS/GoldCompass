@@ -1,3 +1,4 @@
 .DS_Store
 tools/cache-wowforever/
 __pycache__/
+tools/cache-foreverdb/

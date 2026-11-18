@@ -152,6 +152,11 @@ function W.GoTo(t, recipe)
     log("text")
     if t.onlyFaction then return ns.Print(S.where_only:format(t.onlyFaction == "A" and S.faction_a or S.faction_h)) end
     if t.vendors then return ns.Print(S.where_zone_only:format(W.VendorText(t))) end
+    if t.unverified then   -- no Forever source names a place: said plainly, what Classic says only as an unverified hint
+      ns.Print(S.where_no_source)
+      if t.hint then ns.Print(S.where_classic_hint:format(t.hint)) end
+      return
+    end
     return ns.Print(t.text and S.where_text:format(t.text) or S.where_none)
   end
   local label = ns.ZoneLabel(t) or t.zone or ""   -- pfQuest NPCs carry a map ID but no zone name
@@ -174,6 +179,7 @@ function W.GoTo(t, recipe)
   end
   ns.Log("frame", ("where: %s (%s) map %d %.1f,%.1f pinned=%s"):format(tostring(t.name), label, t.mapID, t.x, t.y, tostring(pinned)))
   ns.Print((pinned and S.where_pinned or S.where_coords):format(W.NpcName(t), label, t.x, t.y, S.where_src[t.source or "classic"]))
+  if not t.confirmed then ns.Print(S.where_unconfirmed) end   -- a Classic position: never shown as a sure one
   if t.text then ns.Print(t.text) end                -- "Patron en vente à l'HV : ~2g (prix HV de 3 j)"
   openMap(t.mapID)
 end
@@ -239,11 +245,17 @@ function W.TargetTooltipLines(t)
   elseif t.mapID then
     tip[#tip + 1] = W.NpcName(t)
     tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t) or "?", t.x, t.y)
+    if not t.confirmed then tip[#tip + 1] = S.where_unconfirmed end
     if t.text then tip[#tip + 1] = t.text end
   else
     if t.onlyFaction then tip[#tip + 1] = S.where_only:format(t.onlyFaction == "A" and S.faction_a or S.faction_h) end
     if t.text then tip[#tip + 1] = t.text end
-    tip[#tip + 1] = S.where_unclear
+    if t.unverified then
+      tip[#tip + 1] = S.where_no_source_tip
+      if t.hint then tip[#tip + 1] = S.where_classic_hint:format(t.hint) end
+    else
+      tip[#tip + 1] = S.where_unclear
+    end
   end
   if t.extra then tip[#tip + 1] = t.extra end       -- what the site says: butin, pickpocket, pêche, quête
   if t.note then tip[#tip + 1] = t.note end         -- the AH price of the crafted item: its age, "prix HV incertain"

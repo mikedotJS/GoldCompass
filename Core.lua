@@ -323,7 +323,8 @@ end
 -- the player and of a map position; nil when the game cannot tell, then only the continent decides).
 local function whereEnv(ctx)
   local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = ctx.faction,
-    db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, auctioneers = ns.NpcAuctioneers, recorded = ns.db and ns.db.npcs, contOf = {} }
+    db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, auctioneers = ns.NpcAuctioneers, recorded = ns.db and ns.db.npcs, contOf = {},
+    fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors, fdbTrainers = ns.FdbTrainers }
   for _, m in pairs(ns.MapIDs) do env.contOf[m[1]] = m[2] end
   local C = C_Map
   local here = C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")

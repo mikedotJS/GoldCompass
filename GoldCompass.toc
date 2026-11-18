@@ -17,6 +17,7 @@ Data\Locations.lua
 Data\ForeverTrainers.lua
 Data\ForeverRecipes.lua
 Data\Npcs.lua
+Data\ForeverNpcs.lua
 Data\QuestItems.lua
 ZoneRank.lua
 Advice.lua

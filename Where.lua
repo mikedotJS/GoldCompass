@@ -1,10 +1,15 @@
 -- Where to learn a recipe: picks the trainer, vendor or quest giver to go to. Pure Lua, no WoW API.
 -- Data: ns.Npcs / ns.NpcByName / ns.NpcTrainers (Data/Npcs.lua, pfQuest: spawn positions and faction of the NPCs we can point to),
--- ns.Trainers, ns.NPCs, ns.RecipeWhere (Data/Locations.lua, the older fallback) and ns.MapIDs (Data/Zones.lua). All of it is
--- original Classic data, NOT confirmed on Forever: every answer is a hint to check; positions recorded in game win.
+-- ns.Trainers, ns.NPCs, ns.RecipeWhere (Data/Locations.lua, the older fallback) and ns.MapIDs (Data/Zones.lua): original Classic
+-- data, NOT confirmed on Forever. ns.FdbNpcs / ns.FdbVendors / ns.FdbTrainers (Data/ForeverNpcs.lua, ForeverDB.net) are Forever's:
+-- where vendors and trainers stand (with a "seen in Forever" flag), which vendors sell a recipe, who trains a profession.
+-- A target is `confirmed` only when its position was seen on Forever (ForeverDB) or recorded in game by the player; Classic
+-- positions are kept as unconfirmed hints, ranked after the confirmed ones. With the Forever data loaded (env.fdb), an NPC that
+-- only Classic data names is never pinned, and an NPC ForeverDB does not list for the recipe or the profession is never proposed.
 --
 -- env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs,
 --         db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, recorded = ns.db.npcs (npcID -> { name, mapID, x, y, f }),
+--         fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors, fdbTrainers = ns.FdbTrainers,
 --         contOf = { [uiMapID] = "K" | "E" },
 --         faction = "A" | "H", continent = "K" | "E" | nil (where the player is),
 --         dist = function(mapID, x, y) -> number | nil (distance from the player, same continent only) }
@@ -20,8 +25,8 @@ ns.Where = Wh
 local RANKS = { Apprentice = 1, Journeyman = 1, Expert = 2, Artisan = 3 }
 function Wh.NeededRank(learn, rank) return RANKS[rank] or (learn <= 150 and 1 or (learn <= 225 and 2 or 3)) end
 
--- Picks the best candidate { name, zone, x, y }: same continent as the player first, then the nearest one (unknown
--- distances last), then by name so the answer is stable. Candidates in a zone with no map ID are skipped.
+-- Picks the best candidate { name, zone, x, y }: a position confirmed on Forever first, then the same continent as the player,
+-- then the nearest one (unknown distances last), then by name so the answer is stable. Candidates in a zone with no map ID are skipped.
 local function pick(candidates, env)
   local best, bestKey
   for _, c in ipairs(candidates) do
@@ -33,12 +38,16 @@ local function pick(candidates, env)
       mapID, cont = map and map[1], map and map[2]
     end
     if mapID and c.x > 0 and c.y > 0 then
-      local key = { (env.continent == nil or cont == nil or cont == env.continent) and 0 or 1,
+      local key = { c.confirmed and 0 or 1, (env.continent == nil or cont == nil or cont == env.continent) and 0 or 1,
         env.dist and env.dist(mapID, c.x, c.y) or math.huge, c.name }
-      if not bestKey or key[1] < bestKey[1] or (key[1] == bestKey[1] and (key[2] < bestKey[2]
-        or (key[2] == bestKey[2] and key[3] < bestKey[3]))) then
+      local better = not bestKey
+      for i = 1, bestKey and 4 or 0 do
+        if key[i] ~= bestKey[i] then better = key[i] < bestKey[i]; break end
+      end
+      if better then
         best, bestKey = { name = c.name, zone = c.zone, mapID = mapID, x = c.x, y = c.y, id = c.id, fr = c.fr, recorded = c.recorded,
-          source = c.recorded and "recorded" or (c.id and "pfquest" or "classic") }, key
+          confirmed = c.confirmed and true or false,
+          source = c.recorded and "recorded" or (c.fdb and (c.confirmed and "foreverdb" or "fdbclassic")) or (c.id and "pfquest" or "classic") }, key
       end
     end
   end
@@ -48,21 +57,53 @@ end
 -- Can this faction letter ("A", "H", "AH", nil = unknown) be used by the player's faction?
 local function fits(fac, faction) return fac == nil or fac == "AH" or fac:find(faction, 1, true) ~= nil end
 
--- Positions of one NPC: what the player recorded in game wins over pfQuest's spawns. Second result: the NPC's faction.
+-- The capital city maps. pfQuest also lists a city NPC on the zone around the city: the same spot projected on that zone's map, at
+-- ground level, where nobody stands (Naal Mistrunner of Thunder Bluff pinned at Mulgore 40.2, 27.5). A city spawn rules the others out.
+local CITY = { [1453] = true, [1454] = true, [1455] = true, [1456] = true, [1457] = true, [1458] = true }
+
+-- Positions of one NPC, best evidence first: what the player recorded in game, then ForeverDB's place (`confirmed` when it was
+-- seen in the Forever game, else still a Classic place), then pfQuest's Classic spawns (never confirmed). Second result: the NPC's faction.
 local function spawnsOf(id, env)
-  local rec, npc = env.recorded and env.recorded[id], env.db[id]
-  local name, fr, fac = npc and npc[1], npc and npc[4], npc and npc[2]
+  local rec, npc, fdb = env.recorded and env.recorded[id], env.db[id], env.fdb and env.fdb[id]
+  local name, fr, fac = npc and npc[1] or fdb and fdb[1], npc and npc[4], fdb and fdb[5] or npc and npc[2]
   if rec and rec.mapID and rec.x then
-    return { { id = id, name = rec.name or name, fr = fr, mapID = rec.mapID, x = rec.x, y = rec.y, recorded = true } }, fac or rec.f
+    return { { id = id, name = rec.name or name, fr = fr, mapID = rec.mapID, x = rec.x, y = rec.y, recorded = true, confirmed = true } }, fac or rec.f
   end
-  local out = {}
-  for _, s in ipairs(npc and npc[3] or {}) do out[#out + 1] = { id = id, name = name, fr = fr, mapID = s[1], x = s[2], y = s[3] } end
+  if fdb then
+    return { { id = id, name = name, fr = fr, mapID = fdb[2], x = fdb[3], y = fdb[4], confirmed = fdb[6], fdb = true } }, fac
+  end
+  local out, city = {}, false
+  for _, s in ipairs(npc and npc[3] or {}) do city = city or CITY[s[1]] or false end
+  for _, s in ipairs(npc and npc[3] or {}) do
+    if not city or CITY[s[1]] then out[#out + 1] = { id = id, name = name, fr = fr, mapID = s[1], x = s[2], y = s[3] } end
+  end
   return out, fac
+end
+
+-- NPC ids of an English name in ForeverDB's data (NPCs new to Forever are in no Classic list), indexed once per table.
+local fdbNames = setmetatable({}, { __mode = "k" })
+local function fdbIds(name, env)
+  if not env.fdb then return {} end
+  local index = fdbNames[env.fdb]
+  if not index then
+    index = {}
+    for id, n in pairs(env.fdb) do
+      local list = index[n[1]] or {}
+      index[n[1]] = list
+      list[#list + 1] = id
+    end
+    for _, list in pairs(index) do table.sort(list) end
+    fdbNames[env.fdb] = index
+  end
+  return index[name] or {}
 end
 
 -- NPC ids of an English name; when the text gave a zone, the ones that spawn there (several NPCs can share a name).
 local function idsOfName(name, zone, env)
-  local ids = env.byName and env.byName[name] or {}
+  local ids, has = {}, {}
+  for _, list in ipairs({ env.byName and env.byName[name] or {}, fdbIds(name, env) }) do
+    for _, id in ipairs(list) do if not has[id] then has[id] = true; ids[#ids + 1] = id end end
+  end
   local map = zone and env.maps[zone]
   if map and #ids > 1 then
     local out = {}
@@ -79,7 +120,7 @@ local function fromDb(ids, env)
   local cands, other = {}, false
   for _, id in ipairs(ids) do
     local sp, fac = spawnsOf(id, env)
-    if #sp > 0 then
+    if #sp > 0 and sp[1].mapID and sp[1].mapID > 0 then
       if fits(fac, env.faction) then for _, s in ipairs(sp) do cands[#cands + 1] = s end else other = true end
     end
   end
@@ -110,23 +151,29 @@ function Wh.ParseVendors(text)
 end
 
 -- Every target has a `kind`: "pin" (an exact position), "zone" (a vendor whose zone has a map but no coordinates: open that map)
--- or "text" (the free text, or nothing: the caller words it).
+-- or "text" (the free text, or nothing: the caller words it). A pin says whether its position is `confirmed` on Forever and its
+-- `source` (recorded, foreverdb, fdbclassic, pfquest, classic); a text target is `unverified` when no Forever source names a
+-- place (`hint`: what Classic data says, to quote as such).
 function Wh.Target(rec, prof, env)
   -- a trainer window recorded in game beats the Classic coordinates: the NPC and where it really stands
   local seen = rec.trainer
   if seen and seen.mapID and seen.x and seen.y then
-    return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true, kind = "pin",
-      source = "recorded" }
+    return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true, confirmed = true,
+      kind = "pin", source = "recorded" }
   end
   if rec.src == nil then
     if env.db then   -- the NPC database: nearest trainer of the player's faction whose rank covers the recipe
       local ids, top = {}, neededTop(rec)
-      for _, t in ipairs(env.ntrainers and env.ntrainers[prof] or {}) do if t[2] >= top then ids[#ids + 1] = t[1] end end
+      local listed = env.fdbTrainers and env.fdbTrainers[prof]   -- ForeverDB's trainers of the profession: the others are not proposed
+      for _, t in ipairs(env.ntrainers and env.ntrainers[prof] or {}) do
+        if t[2] >= top and (not listed or listed[t[1]]) then ids[#ids + 1] = t[1] end
+      end
       local cands, other = fromDb(ids, env)
       local best = pick(cands, env)
       if best then best.kind = "pin"; return best end
       if other then return { kind = "text", onlyFaction = onlyFor(env) } end
     end
+    if env.fdb then return { kind = "text", unverified = true } end   -- the older Classic list is no Forever source: no pin
     local rank, found = Wh.NeededRank(rec.learn or 0, rec.way and rec.way.rank), {}
     for _, t in ipairs(env.trainers[prof] or {}) do
       if t[6] >= rank and (t[5] == nil or t[5] == env.faction) then found[#found + 1] = { name = t[1], zone = t[2], x = t[3], y = t[4] } end
@@ -138,19 +185,29 @@ function Wh.Target(rec, prof, env)
   -- vendors and quest givers: the NPC names of LibProfessionDB (rec.npcNames, no coordinates there) and of the
   -- Classic "where" text, both looked up in the Classic NPC positions
   local info = not (rec.way and rec.way.site) and env.where[rec.id] or nil   -- Classic texts do not apply to what the site observed
+  -- With the Forever data loaded (`strict`), only Forever sources name the NPCs: ForeverDB's vendor list of the recipe (`fv`: the
+  -- whole list, so nobody else is proposed), else the site's vendors and the library's own captures (way.confirmed). The names
+  -- borrowed from Classic world databases give no pin: they are only quoted as an unverified hint.
+  local strict = env.fdb ~= nil
+  local fv = env.fdbVendors and env.fdbVendors[rec.id]
   local names, found = {}, {}
-  for _, n in ipairs(rec.npcNames or {}) do names[#names + 1] = n end
-  for i = 2, #(info or {}) do names[#names + 1] = info[i] end
+  if not strict then
+    for _, n in ipairs(rec.npcNames or {}) do names[#names + 1] = n end
+    for i = 2, #(info or {}) do names[#names + 1] = info[i] end
+  end
   local siteVendors = Wh.ParseVendors(rec.way and rec.way.where)
-  for _, v in ipairs(siteVendors) do names[#names + 1] = v.name end
+  if not fv then for _, v in ipairs(siteVendors) do names[#names + 1] = v.name end end
   local way = rec.way
-  if env.db then   -- the NPC database: the NPCs the sources name (library ids, the site's vendors, the Classic names), by faction
+  if env.db then   -- the NPC database: the NPCs the sources name, by faction
     local ids, taken = {}, {}
     local function add(id) if not taken[id] then taken[id] = true; ids[#ids + 1] = id end end
-    for _, id in ipairs(way and way.ids or {}) do add(id) end
-    for _, v in ipairs(siteVendors) do for _, id in ipairs(idsOfName(v.name, v.zone, env)) do add(id) end end
-    for _, n in ipairs(rec.npcNames or {}) do for _, id in ipairs(idsOfName(n, nil, env)) do add(id) end end
-    for i = 2, #(info or {}) do for _, id in ipairs(idsOfName(info[i], nil, env)) do add(id) end end
+    if fv then
+      for _, id in ipairs(fv) do add(id) end
+    else
+      if not strict or (way and way.confirmed) then for _, id in ipairs(way and way.ids or {}) do add(id) end end
+      for _, v in ipairs(siteVendors) do for _, id in ipairs(idsOfName(v.name, v.zone, env)) do add(id) end end
+      for _, n in ipairs(names) do for _, id in ipairs(idsOfName(n, nil, env)) do add(id) end end
+    end
     local cands, other = fromDb(ids, env)
     local best = pick(cands, env)
     if best then best.kind = "pin"; return best end
@@ -198,6 +255,10 @@ function Wh.Target(rec, prof, env)
       end
       return { name = list[1].name, zone = list[1].zone, vendors = list, text = where, kind = "text", source = "site" }
     end
+  end
+  if strict then   -- no Forever source names a place: said plainly, the Classic names only as an unverified hint
+    local hint = info and info[1] or (#(rec.npcNames or {}) > 0 and table.concat(rec.npcNames, ", ")) or nil
+    return { hint = hint, kind = "text", unverified = true }
   end
   return { text = info and info[1] or nil, kind = "text" }
 end
