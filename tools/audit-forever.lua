@@ -93,6 +93,22 @@ end
 print(("ForeverDB recipes the addon does not list: %d learnable, %d granted with the profession, %d ForeverDB calls speculation; "
   .. "addon recipes with no thresholds shown (estimate): %d"):format(missing, missingAuto, missingSpec, noThreshold))
 
+-- The rows of Data/Recipes.lua (Forever Ledger): what the bag advice crafts with (reagents, crafted item and quantity)
+local bExists = tally("1 bag advice rows (Data/Recipes.lua): the recipe is in the Forever client (ForeverDB)")
+local bProf, bItem = tally("1 bag advice rows: profession"), tally("1 bag advice rows: crafted item")
+local bQty, bMats = tally("1 bag advice rows: crafted quantity"), tally("1 bag advice rows: reagents and counts")
+for _, r in ipairs(ns.RecipeRows) do
+  local f = fdb[r[1]]
+  bExists(f ~= nil, ("%d %s (%s)"):format(r[1], tostring(r[8]), tostring(r[2])))
+  if f then
+    local label = ("%d %s"):format(r[1], tostring(r[8]))
+    bProf(f.prof == r[2], ("%s: %s vs %s"):format(label, tostring(r[2]), f.prof))
+    if f.r[7] > 0 then bItem(r[4] == f.r[7], ("%s: %s vs %s"):format(label, tostring(r[4]), f.r[7])) end
+    if f.r[8] > 0 then bQty((r[5] + r[6]) / 2 == f.r[8], ("%s: %s-%s vs %s"):format(label, tostring(r[5]), tostring(r[6]), f.r[8])) end
+    bMats(strKey(r[9]) == strKey(f.r[9]), ("%s: %s vs %s"):format(label, strKey(r[9]), strKey(f.r[9])))
+  end
+end
+
 -- 2. Trainers ---------------------------------------------------------------------------------------------------------
 local taught = tally("2 trainers: recipe is trainer-taught (site table vs ForeverDB)")
 local fee = tally("2 trainers: trainer fee shown is the full price (not below ForeverDB's observation)")
