@@ -282,7 +282,9 @@ function W.Footer() return f.footer end
 function W.RowTooltipLines(row)
   local out = { row.name }
   local info = ns.Zones[row.zone]
-  out[#out + 1] = S.tt_spots:format(row.spots, info and info[2] and S.far_tag:format(info[2], info[3]) or S.unknown_level_tag)
+  -- a level range no Forever source gives is the Classic one: said as such
+  out[#out + 1] = S.tt_spots:format(row.spots, info and info[2] and (S.far_tag:format(info[2], info[3]) .. (info[4] and "" or S.level_classic))
+    or S.unknown_level_tag)
   out[#out + 1] = S.tt_nodes
   for _, d in ipairs(row.detail or {}) do
     out[#out + 1] = S.tt_per_node:format(ns.ItemName(d.item), ns.Money(d.unit * 2))
@@ -710,7 +712,7 @@ function renderMap(res)
       local lo = info and info[2]
       local tags = (row.old and (" · " .. S.tag_old) or "") .. (row.partial and (" · " .. S.tag_partial) or "")
         .. (info and not lo and (" · " .. S.unknown_level_tag) or "")
-        .. (lo and lo > level and (" · " .. S.far_tag:format(lo, info[3])) or "")
+        .. (lo and lo > level and (" · " .. S.far_tag:format(lo, info[3]) .. (info[4] and "" or S.level_classic)) or "")
       local sub = table.concat(row.itemNames, ", ") .. tags
       r.zoneID = row.zone
       r.tip = W.RowTooltipLines(row)

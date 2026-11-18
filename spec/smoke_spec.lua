@@ -528,7 +528,12 @@ describe("review fixes, group B", function()
       assert.is_not_nil(ns.Zones[id])
       assert.is_nil(ns.Zones[id][2])
     end
-    assert.are.same({ "Zephras Isle", 1, 12 }, ns.Zones[2521]); assert.are.same({ "?", 38, 42 }, ns.Zones[2548])
+    assert.are.same({ "Zephras Isle", 1, 12, true }, ns.Zones[2521]); assert.are.same({ "?", 38, 42 }, ns.Zones[2548])
+    -- a range no Forever source gives is shown as the Classic one, Zephras Isle's (Blizzard's own) as it is
+    local classic = table.concat(ns.Window.RowTooltipLines({ name = "Les Tarides", zone = 1413, spots = 3, detail = {} }), "\n")
+    assert.matches("niveau 10%-25 %(Classic, non vérifié%)", classic)
+    local forever = table.concat(ns.Window.RowTooltipLines({ name = "Zephras", zone = 2521, spots = 3, detail = {} }), "\n")
+    assert.matches("niveau 1%-12", forever); assert.is_nil(forever:find("Classic", 1, true))
     assert.are.same({ 2521, "Z" }, ns.MapIDs["Zephras Isle"])
   end)
 end)
