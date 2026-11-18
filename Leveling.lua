@@ -900,8 +900,9 @@ function V.Roadmap(prof, ctx, opts)
     if isCraft(x) then
       local missing, subs = {}, {}
       for item, n in pairs(x.short) do
-        if byOut[item] and byOut[item] ~= x.rec then subs[#subs + 1] = { item = item, need = n }
-        else missing[#missing + 1] = { item = item, n = n, how = ctx.how and ctx.how(item) or nil } end
+        local how = ctx.how and ctx.how(item) or nil   -- a reagent you gather (Light Leather) is gathered, not crafted from scraps
+        if byOut[item] and byOut[item] ~= x.rec and not (how == "skin" or how == "herb" or how == "ore") then subs[#subs + 1] = { item = item, need = n }
+        else missing[#missing + 1] = { item = item, n = n, how = how } end
       end
       local function order(p, q) if (p.n or p.need) ~= (q.n or q.need) then return (p.n or p.need) > (q.n or q.need) end return p.item < q.item end
       table.sort(missing, order)
