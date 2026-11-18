@@ -536,14 +536,16 @@ local function addLearn(entries, p)
     return fmt:format(ns.Money(math.abs(e.perPoint)))
   end
   local function grey(msg) entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. msg .. "|r" } end
-  if lr.nowTotal + lr.soonTotal == 0 then return grey(S.learn_none) end
   if #lr.now + #lr.soon == 0 then
-    if not p.filtered or lr.candidates + lr.unpriced == 0 then return grey(S.learn_none) end
+    -- say the real reason: nothing to learn, everything gray, or hidden by the bag filter
+    if lr.nowTotal + lr.soonTotal == 0 then return grey(S.learn_none) end
+    if lr.candidates + lr.unpriced == 0 then return grey(S.learn_gray) end
+    if not p.filtered then return grey(S.learn_none) end
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_nothing_bag .. "|r" }
     return true
   end
   local function row(e)
-    entries[#entries + 1] = { left = S.learn_row:format(e.name or ns.Fmt.RecipeName(e.rec), ns.Fmt.Source(e.rec), e.rec.learn or e.rec.skill),
+    entries[#entries + 1] = { left = S.learn_row:format(e.name or ns.Fmt.RecipeName(e.rec), ns.Fmt.Source(e.rec), e.rec.learn),
       right = perPoint(e) }
   end
   if #lr.now > 0 then
@@ -555,7 +557,7 @@ local function addLearn(entries, p)
       local fmt = e.floor and (e.perPoint < 0 and S.learn_best_floor_gain or S.learn_best_floor)
         or (e.perPoint < 0 and S.learn_best_gain or S.learn_best)
       entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. fmt:format(label, ns.Money(math.abs(e.perPoint))) .. "|r" }
-      grey(S.learn_detail:format(ns.Fmt.Source(e.rec), e.rec.learn or e.rec.skill, L.MayNeedRank(e.rec) and S.learn_rank or "",
+      grey(S.learn_detail:format(ns.Fmt.Source(e.rec), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
         L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)))
       if lr.gain then
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. S.learn_beats:format(label, ns.Money(lr.gain)) .. "|r" }

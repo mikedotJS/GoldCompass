@@ -329,7 +329,7 @@ function ns.RunLeveling(done)
     end
     -- reagents and outputs of the recipes that may be learned (within reach of the skill)
     for _, craft in ipairs(data and SKILL_LINES[p.line] and ns.Leveling.Crafts(ns.RecipeRows or {}, SKILL_LINES[p.line]) or {}) do
-      if (craft.learn or craft.skill) <= (p.skill or 0) + ns.Leveling.SOON then
+      if craft.learn and craft.learn <= (p.skill or 0) + ns.Leveling.SOON then
         ids[#ids + 1] = craft.out
         for _, m in ipairs(craft.mats) do ids[#ids + 1] = m[1] end
       end

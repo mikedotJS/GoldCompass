@@ -1057,7 +1057,7 @@ describe("profession leveling tab", function()
     assert.are.equal(0, #p.learn.now + #p.learn.soon)
     assert.is_true(p.learn.candidates > 0)
     ns.Window.Toggle(); ns.Window.SetTab("job")
-    assert.matches("Rien à apprendre qui soit fabricable avec ton sac", lineTexts(ns))
+    assert.matches("cache les recettes à apprendre", lineTexts(ns))
   end)
 
   it("prints how many learnable recipes /gc spike found per remembered profession", function()
@@ -1368,5 +1368,38 @@ describe("recipes to learn without prices, footer and line slots", function()
     end
     assert.is_true(used > 0)
     assert.is_true(used <= math.floor((slots.b - slots.t) / 17))
+  end)
+end)
+
+describe("empty states of the recipes to learn say the real reason", function()
+  local function lineTexts(ns)
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
+    return table.concat(out, "\n")
+  end
+  local function show(learn, filtered)
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, onlyBag = filtered, profs = { Alchimie = { skill = 50, max = 75, recipes = {
+      [1] = { id = 1, name = "Potion", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } } } } } }
+    ns.LearnFor = function() return learn end
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    return lineTexts(ns)
+  end
+  local function lr(t) return setmetatable(t, { __index = { now = {}, soon = {}, candidates = 0, unpriced = 0, nowTotal = 0, soonTotal = 0 } }) end
+
+  it("nothing to learn", function()
+    assert.matches("Aucune recette à apprendre pour ce métier", show(lr({})))
+  end)
+  it("everything in reach is gray", function()
+    local text = show(lr({ nowTotal = 4 }))
+    assert.matches("ne font plus monter le métier", text)
+    assert.is_nil(text:match("Aucune recette à apprendre"))
+  end)
+  it("hidden by the bag filter", function()
+    local text = show(lr({ nowTotal = 4, candidates = 2 }), true)
+    assert.matches("cache les recettes à apprendre", text)
+    assert.is_nil(text:match("Aucune recette à apprendre"))
   end)
 end)

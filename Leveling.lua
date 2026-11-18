@@ -111,26 +111,26 @@ end
 -- Recipes to learn. Source data: Data/Recipes.lua rows (Classic sources, NOT confirmed on Forever).
 
 V.SOON = 25 -- a recipe is "soon" when it is learnable within this many skill points
-V.BAND = 10 -- width in skill points of each colour band in the estimate below
 
--- Estimated colour of a recipe for a given skill. Data/Recipes.lua only gives the skill at which a recipe is orange
--- (`orangeAt`), so the other colours are ESTIMATED with equal bands: 0-9 points above orange = orange (0), 10-19 =
--- yellow (1), 20-29 = green (2), 30 or more = gray (3). A skill below `orangeAt` counts as orange (the game would show
--- red until then, but then the recipe could not be learned either).
-function V.EstimateColor(skill, orangeAt)
-  local band = math.floor(math.max(0, skill - orangeAt) / V.BAND)
-  return math.min(3, band)
+-- Estimated colour of a recipe to learn, for a given skill (0 orange, 1 yellow, 2 green, 3 gray). `learnAt` is the skill
+-- needed to learn it (orange from there). The data gives the skills at which it turns yellow / green / gray (`y`, `g`,
+-- `gr`) for some recipes; for the others the common Classic spacing is ESTIMATED: yellow = learnAt + 30, green =
+-- learnAt + 45, gray = learnAt + 60. A recipe the character knows keeps the colour the game gives it instead.
+function V.EstimateColor(skill, learnAt, y, g, gr)
+  y, g, gr = y or learnAt + 30, g or learnAt + 45, gr or learnAt + 60
+  if skill >= gr then return 3 elseif skill >= g then return 2 elseif skill >= y then return 1 end
+  return 0
 end
 
 -- Rows of Data/Recipes.lua for one profession (English name) as crafts:
--- { id, name, skill (orange at), learn (skill needed to learn, nil = assumed trainer), src, out, oq, sell, mats }.
+-- { id, name, learn (skill needed to learn, nil = unknown), src, y, g, gr (colour thresholds, optional), out, oq, sell, mats }.
 function V.Crafts(rows, prof)
   local out = {}
   for _, r in ipairs(rows) do
     if r[2] == prof then
       local mats = {}
       for mat, n in (r[9] or ""):gmatch("(%d+):(%d+)") do mats[#mats + 1] = { tonumber(mat), tonumber(n) } end
-      out[#out + 1] = { id = r[1], name = r[8], skill = r[3], learn = r[11], src = r[10], out = r[4],
+      out[#out + 1] = { id = r[1], name = r[8], learn = r[11], src = r[10], y = r[12], g = r[13], gr = r[14], out = r[4],
         oq = ((r[5] or 1) + (r[6] or 1)) / 2, sell = r[7], mats = mats }
     end
   end
@@ -142,13 +142,13 @@ function V.Source(rec) return rec.src or "trainer" end
 
 -- Trainer recipes from skill 50 up may need a higher profession rank first (Journeyman 50, Expert 125, Artisan 200,
 -- with character level gates 10 / 20 / 35). The rank gates are not modelled: the line says it "may" be required.
-function V.MayNeedRank(rec) return rec.src == nil and (rec.learn or rec.skill) >= 50 end
+function V.MayNeedRank(rec) return rec.src == nil and rec.learn >= 50 end
 
 local function byCost(a, b)
   if a.perPoint ~= b.perPoint then return a.perPoint < b.perPoint end
   return a.rec.id < b.rec.id
 end
-local function learnAt(e) return e.rec.learn or e.rec.skill end
+local function learnAt(e) return e.rec.learn end
 
 -- Priced recipes first (cheapest per point), then the ones with an unknown reagent price by required skill.
 local function byLearnRank(a, b)
@@ -170,18 +170,19 @@ end
 --   count = optional bag count function: only recipes whose reagents are carried are kept ("Avec mon sac").
 --   knownBest = cost per point of the best KNOWN recipe: when the best learnable one is cheaper, `gain` is the
 --   difference per point (not given when that best recipe relies on a floor price).
--- Returns { now, soon, best (priced rows only), gain, candidates (priced, before the bag filter), unpriced (listed or
--- not, before the bag filter), nowTotal, soonTotal }.
+-- Returns { now, soon, best (priced rows only), gain, candidates (priced and not gray, before the bag filter), unpriced
+-- (same, with an unknown reagent price), nowTotal, soonTotal (learnable in reach, gray or not) }. Nothing learnable:
+-- nowTotal + soonTotal = 0; everything gray: candidates + unpriced = 0; hidden by the bag filter: both lists empty.
 function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   limits = limits or {}
   local now, soon, candidates, unpriced, nowTotal, soonTotal = {}, {}, 0, 0, 0, 0
   for _, c in ipairs(crafts) do
-    local at = c.learn or c.skill
-    if not ctx.known(c.id) and at <= skill + V.SOON then
+    local at = c.learn -- a recipe whose learn skill is unknown is not listed (mostly crafts not learnable in this phase)
+    if at and not ctx.known(c.id) and at <= skill + V.SOON then
       local isNow = at <= skill
       if isNow then nowTotal = nowTotal + 1 else soonTotal = soonTotal + 1 end
-      local rec = { id = c.id, name = c.name, skill = c.skill, learn = c.learn, src = c.src, out = c.out, oq = c.oq,
-        mats = c.mats, d = V.EstimateColor(math.max(skill, at), c.skill) }
+      local rec = { id = c.id, name = c.name, learn = at, src = c.src, out = c.out, oq = c.oq, mats = c.mats,
+        d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr) }
       local own = setmetatable({
         vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
         floor = function(id) return ctx.vendor(id) end,

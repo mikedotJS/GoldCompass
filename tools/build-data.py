@@ -1,20 +1,46 @@
 #!/usr/bin/env python3
-"""Regenerates Data/Recipes.lua and Data/QuestItems.lua from Forever Ledger's data files.
+"""Regenerates Data/Recipes.lua and Data/QuestItems.lua from Forever Ledger's data files, and merges the learn skills,
+colour thresholds and sources of ProfessionsTracker into the recipes.
 
-Source: https://github.com/ivellos/forever-ledger (MIT licence, see NOTICE). Run: python3 tools/build-data.py
-The commit used is recorded in the header of each generated file.
+Sources (MIT, see NOTICE and THIRD-PARTY):
+  Forever Ledger  https://github.com/ivellos/forever-ledger  (pinned commit below; --fl DIR reads a local copy instead)
+  ProfessionsTracker 1.2.0 by Thork, unzipped to a folder holding Data.lua and Data2.lua: python3 tools/build-data.py --pt DIR
+The Forever Ledger commit is recorded in the header of each generated file.
 """
-import json, re, urllib.request, pathlib
+import argparse, re, urllib.request, pathlib
 
 REPO = "ivellos/forever-ledger"
+SHA = "5457f71607380ca95cf68f71bab4a77aac03c915"
+PT_VERSION = "1.2.0"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
+
+ap = argparse.ArgumentParser()
+ap.add_argument("--pt", required=True, help="folder with ProfessionsTracker's Data.lua and Data2.lua")
+ap.add_argument("--fl", help="local copy of Forever Ledger at the pinned commit (default: download it)")
+args = ap.parse_args()
 
 def get(url):
     with urllib.request.urlopen(url, timeout=60) as r:
         return r.read().decode("utf-8")
 
-sha = json.loads(get(f"https://api.github.com/repos/{REPO}/commits/main"))["sha"]
-raw = lambda name: get(f"https://raw.githubusercontent.com/{REPO}/{sha}/{name}")
+sha = SHA
+raw = (lambda name: (pathlib.Path(args.fl) / name).read_text(encoding="utf-8")) if args.fl else \
+    (lambda name: get(f"https://raw.githubusercontent.com/{REPO}/{sha}/{name}"))
+
+# --- ProfessionsTracker: { profession: { English recipe name: { s, y, g, gr, src } } }
+PT_SRC = {"vendor": "v", "rep": "v", "book": "v", "quest": "q", "drop": "d"}  # trainer = no source (assumed trainer)
+pt = {}
+for fname in ("Data.lua", "Data2.lua"):
+    prof, inside = None, fname == "Data2.lua"
+    for line in (pathlib.Path(args.pt) / fname).read_text(encoding="utf-8").splitlines():
+        if line.startswith("D.Recipes = {"): inside = True
+        head = re.match(r'^(?:D\.Recipes)?\s*\["([^"]+)"\] = \{', line) if inside else None
+        if head: prof = head.group(1)
+        m = re.match(r'^\s*\{ n = "([^"]+)",(.*)$', line) if inside and prof else None
+        if m and "src =" in m.group(2):
+            f = {k: int(v) for k, v in re.findall(r'\b(s|y|g|gr) = (\d+)', m.group(2))}
+            f["src"] = re.search(r'src = "(\w+)"', m.group(2)).group(1)
+            pt.setdefault(prof, {})[m.group(1).lower()] = f
 
 # --- crafts (Forever, from Wago client data via Forever Ledger) + recipe sources (Classic, unconfirmed on Forever)
 crafts = raw("ForeverCrafts.lua")
@@ -30,20 +56,32 @@ out = [
     "-- Crafts come from Forever Ledger's ForeverCrafts.lua (client data, Forever 1.60.1); recipe sources (src, learn)",
     "-- come from its ClassicRecipes.lua (original Classic data, NOT confirmed on Forever). src: v vendor, m mob drop,",
     "-- d other drop, q quest, nil = assumed trainer. learn = skill needed to learn the recipe.",
-    "-- Row: { craftSpellID, profession, skill, outputItem, outLow, outHigh, vendorSell, name, \"mat:count,...\", src, learn }",
+    f"-- Learn skills, colour thresholds (yellow, green, gray) and missing sources are merged by name from ProfessionsTracker {PT_VERSION}",
+    "-- by Thork (https://www.curseforge.com/wow/addons/profession-tracker-forever, MIT licence, see NOTICE), also Classic data,",
+    "-- NOT confirmed on Forever. `skill` (column 3) is not a reliable level: use learn.",
+    "-- Row: { craftSpellID, profession, skill, outputItem, outLow, outHigh, vendorSell, name, \"mat:count,...\", src, learn, yellow, green, gray }",
     "local _, ns = ...",
     "ns.RecipeRows = {",
 ]
-matched = 0
+matched = withLearn = merged = 0
 for rid, prof, skill, o, low, high, sell, name, mats in rows:
     flat = ",".join(f"{a}:{b}" for a, b in re.findall(r"\{ (\d+), (\d+) \}", mats))
     src = sources.get(name.lower())
     matched += bool(src)
-    tail = f', "{KIND[src[0]]}", {src[1]}' if src else ""
+    kind, learn = (KIND[src[0]], src[1]) if src else (None, None)
+    extra = pt.get(prof, {}).get(name.lower())
+    thresholds = ""
+    if extra:
+        merged += 1
+        if not learn and extra.get("s"): learn = extra["s"]
+        if not kind: kind = PT_SRC.get(extra["src"])
+        if all(k in extra for k in ("y", "g", "gr")): thresholds = f', {extra["y"]}, {extra["g"]}, {extra["gr"]}'
+    withLearn += bool(learn)
+    tail = f', {chr(34) + kind + chr(34) if kind else "nil"}, {learn}{thresholds}' if learn else ""
     out.append(f'  {{ {rid}, "{prof}", {skill}, {o}, {low}, {high}, {sell}, "{name}", "{flat}"{tail} }},')
 out.append("}")
 (ROOT / "Data/Recipes.lua").write_text("\n".join(out) + "\n", encoding="utf-8")
-print(f"Recipes: {len(rows)} crafts, {matched} with a Classic source")
+print(f"Recipes: {len(rows)} crafts, {matched} with a Classic source, {merged} matched in ProfessionsTracker, {withLearn} with a learn skill")
 
 # --- quest items: quest, zone, level, faction, { item name, count, ... } resolved to item IDs
 ids = {}

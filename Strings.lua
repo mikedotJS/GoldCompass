@@ -128,11 +128,12 @@ ns.S = {
   learn_rank = ", rang supérieur possible",
   learn_beats = "Apprendre %s ferait baisser ton coût par point de ~%s",
   learn_none = "Aucune recette à apprendre pour ce métier.",
+  learn_gray = "Les recettes à ta portée ne font plus monter le métier.",
   learn_best_floor = "Meilleure à apprendre : %s : coût dès ~%s par point",
   learn_best_floor_gain = "Meilleure à apprendre : %s : gain max ~%s par point",
   learn_pp_floor = "dès ~%s/pt", learn_pp_floor_gain = "gain max ~%s/pt", learn_pp_unknown = "prix inconnu",
   learn_no_price = "Pas de prix HV : lance un scan Auctionator à l'hôtel des ventes.",
-  learn_nothing_bag = "Rien à apprendre qui soit fabricable avec ton sac.",
+  learn_nothing_bag = "Le filtre « Avec mon sac » cache les recettes à apprendre.",
   src_trainer = "entraîneur", src_v = "vendeur", src_m = "butin de monstre", src_d = "butin", src_q = "quête",
 
   -- map controls
