@@ -32,5 +32,24 @@ Do the lines in order; lines 3 to 5 need the three addons installed but NOT yet 
 | 12 | Drag the window, `/reload`, `/gc` | The window reopens where you left it | Yes / no |
 | 13 | Disable Auctionator in the AddOns list, `/reload`, `/gc map` | `Auctionator n'est pas installé` message. Repeat with GatherMate2 disabled instead: `GatherMate2 n'est pas installé` | The two texts |
 
+### Tooltip, Bags tab, Here tab, map controls (steps 4 to 6)
+
+Use a character with at least one profession (ideally one recipe known), a few items in the bags, and the auction scan done (line 6).
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 14 | `/gc spike`, read the `S5` lines | `TooltipDataProcessor`, `C_Container`, `IsPlayerSpell` true; `IsPlayerSpell(2329)` is true only if you know that Alchemy recipe | The S5 lines |
+| 15 | Hover a herb or ore in the bags | Under the normal tooltip: a teal `GOLD COMPASS` header, ONE action line (green, with a price on the right) and a grey reason; then `Sert à N usages` with at most 3 recipes (`✓ connue` green, `à apprendre : ...` gold, grey for missing profession), then `~ estimation · prix HV vus il y a ...` | Screenshot |
+| 16 | Hold Shift while hovering | The full recipe list appears without moving the mouse | Screenshot |
+| 17 | Hover a grey item, then an item with no price | Grey item: vendor action. No price: `aucun prix : scanne l'hôtel des ventes`. An item with no use and no price: no Gold Compass lines at all | What you saw |
+| 18 | Hover an item during combat | No Gold Compass lines, no error | Yes / no |
+| 19 | Enable Forever Ledger, hover a herb | No second verdict line from Gold Compass, only the recipes list | Screenshot |
+| 20 | `/gc`, click the `Sac` tab | Loading panel, then groups (Vendre à l'HV, Fabriquer / désenchanter, Garder, Vendre au marchand) with totals, and `Ton sac vaut environ ...` at the bottom | Screenshot |
+| 21 | Loot or sell an item with the Sac tab open | The list updates by itself | Yes / no |
+| 22 | Empty your bags (or open the tab on a character with empty bags) | `Ton sac est vide` panel | Yes / no |
+| 23 | Click the `Ici` tab, walk into another zone | Zone name, `~X/h pour toi`, a comparison line, `À récolter ici`, quest pick-ups when the zone has quests, a profession hint if you lack Herbalism or Mining. It refreshes when the zone changes. In a city: `Pas de données pour cette zone` | Screenshot of two zones |
+| 24 | On the `Carte` tab, tick `Mon niveau seulement` | High-level zones disappear instantly (no reload) | Yes / no |
+| 25 | Click the `Métier : ...` button three times | It cycles Tous, Herboristerie, Minage; the list is recomputed each time | Yes / no |
+
 Spike S4 (zone and level) is the `S4` lines of line 2: the map ID should match the zone you stand in, and each profession line shows its `skillLine` (GoldCompass expects 182 for Herbalism and 186 for Mining; if yours differ, say so, the ranking will think you have no profession).
 Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in one zone and count; send the count.
