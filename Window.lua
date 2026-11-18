@@ -961,7 +961,8 @@ local function renderJob(res)
           ingredients[#ingredients + 1] = ("%d %s"):format(m[2], ns.ItemName(m[1]))
         end
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (p.filtered
-          and S.job_best_bag:format(name, e.times or 0, fmtPoints(e.points or 0), fmtPoints(e.unitsPerPoint), fmtPoints(e.craftsPerPoint))
+          and S.job_best_bag:format(name, e.times or 0, fmtPoints(e.points or 0), (e.points or 0) >= 1.5 and "s" or "",
+            fmtPoints(e.unitsPerPoint), fmtPoints(e.craftsPerPoint), (e.craftsPerPoint or 0) >= 1.5 and "s" or "")
           or S.job_best:format(name, fmtPoints(e.unitsPerPoint), table.concat(ingredients, ", "), fmtPoints(e.craftsPerPoint))) .. "|r" }
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (gain and S.job_gain_dim or S.job_cost_dim):format(money) .. "|r" }
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.d or e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),

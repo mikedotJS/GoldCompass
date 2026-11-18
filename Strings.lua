@@ -114,7 +114,7 @@ ns.S = {
   job_missing = "Prix manquant : %s",
   job_best = "Monte avec %s : ~%s ingrédients par point (%s), ~%s fabrications par point",
   job_cost_dim = "coût en or ~%s par point", job_gain_dim = "rapporte ~%s par point en or", job_ingr_row = "~%s ingr./pt",
-  job_best_bag = "Monte avec %s : ×%d, ton sac donne ~%s points, ~%s ingrédients par point, ~%s fabrications par point",
+  job_best_bag = "Monte avec %s : ×%d, ton sac donne ~%s point%s, ~%s ingrédients par point, ~%s fabrication%s par point",
   job_then = "puis %s ×%d (~%s points)",
   job_resale = "rentable seulement si tu revends à l'HV", job_ah_age = "prix HV de %d j", job_ah_today = "prix HV du jour",
   job_ah_old = "prix HV ancien : valeur au prix vendeur", job_ah_noage = "prix HV sans date : ne peut pas gagner",
