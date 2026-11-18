@@ -54,6 +54,9 @@ function F.Where(recipe)
   return S.where_trainer:format(recipe.learn or recipe.skill)
 end
 
+-- Where a recipe to learn comes from, in French ("entraîneur", "vendeur", ...). Classic data, not confirmed on Forever.
+function F.Source(recipe) return S["src_" .. ns.Leveling.Source(recipe)] end
+
 -- Colored status of an evaluated recipe.
 function F.Status(e)
   local st, r = e.status, e.recipe

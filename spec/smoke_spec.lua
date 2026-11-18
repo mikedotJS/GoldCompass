@@ -1001,7 +1001,7 @@ describe("profession leveling tab", function()
     [2] = { id = 2, name = "Elixir vert", d = 2, greenAt = 41, out = 118, oq = 1, mats = { { 2447, 1 } } },
   } }
 
-  it("renders the whole tab: best recipe, estimate labels, remembered data, 'learn later' note", function()
+  it("renders the whole tab: best recipe, estimate labels, remembered data, recipes to learn with the Classic caveat", function()
     setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
@@ -1011,7 +1011,62 @@ describe("profession leveling tab", function()
     assert.matches("Alchimie  50/75", text)
     assert.matches("Monte avec", text)
     assert.matches("estimation", text)
-    assert.matches("Recettes à apprendre : bientôt", text)
+    assert.matches("À apprendre maintenant", text)
+    assert.matches("Meilleure à apprendre", text)
+    assert.matches("Bientôt %(dans les 25 prochains points%)", text)
+    assert.matches("entraîneur", text)
+    assert.is_nil(text:match("bientôt|r"))                          -- the placeholder is gone
+    local footer = ns.Window.Footer().text
+    assert.matches("non confirmées sur Forever", footer)
+    assert.matches("Coût d'apprentissage non inclus", footer)
+  end)
+
+  it("lists the recipes to learn per profession, never a known one, and leaves Fishing and Herbalism alone", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 }, { 182, 80, "Herboristerie", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    local known = {}
+    for _, r in ipairs(ns.RecipeRows) do if r[2] == "Alchemy" and (r[11] or r[3]) <= 75 then known[r[1]] = true end end
+    local function run()
+      local res
+      ns.RunLeveling(function(r) res = r end)
+      return res
+    end
+    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    local res = run()
+    local alch, herb = res.profs[1], res.profs[2]
+    assert.is_true(#alch.learn.now > 0 and alch.learn.nowTotal > 0)
+    assert.is_nil(herb.learn)
+    assert.are.equal("norecipes", herb.status)
+    -- everything learnable in reach is already known: the empty message
+    ns.char.learned = known
+    alch = run().profs[1]
+    assert.are.equal(0, alch.learn.nowTotal + alch.learn.soonTotal)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.matches("Aucune recette à apprendre pour ce métier", lineTexts(ns))
+  end)
+
+  it("applies the bag filter to the recipes to learn, with an empty state and the way out", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } }, counts = {} })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy }, onlyBag = true }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local p = res.profs[1]
+    assert.are.equal(0, #p.learn.now + #p.learn.soon)
+    assert.is_true(p.learn.candidates > 0)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.matches("Rien à apprendre qui soit fabricable avec ton sac", lineTexts(ns))
+  end)
+
+  it("prints how many learnable recipes /gc spike found per remembered profession", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    SlashCmdList.GOLDCOMPASS("spike")
+    assert.matches("S7 learnable recipes Alchimie %(skill 50%): %d+ now, %d+ soon", table.concat(printed, "\n"))
   end)
 
   it("says to open the profession window once when it has not been read", function()

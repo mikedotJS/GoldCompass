@@ -304,6 +304,18 @@ function ns.ProfessionList()
   return out
 end
 
+-- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable); nil when the profession has no craft data.
+local craftsCache = {}
+function ns.LearnFor(p, ctx, count, knownBest)
+  local english = SKILL_LINES[p.line]
+  if not english or not ns.RecipeRows then return end
+  craftsCache[english] = craftsCache[english] or ns.Leveling.Crafts(ns.RecipeRows, english)
+  local data = ns.char and ns.char.profs[p.name]
+  local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end },
+    { __index = ctx })
+  return ns.Leveling.Learnable(craftsCache[english], p.skill or 0, own, count, { now = 4, soon = 3 }, knownBest)
+end
+
 -- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).
 function ns.RunLeveling(done)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
@@ -315,6 +327,13 @@ function ns.RunLeveling(done)
     for _, rec in pairs(data and data.recipes or {}) do
       if rec.out then ids[#ids + 1] = rec.out end
       for _, m in ipairs(rec.mats or {}) do ids[#ids + 1] = m[1] end
+    end
+    -- reagents and outputs of the recipes that may be learned (within reach of the skill)
+    for _, craft in ipairs(data and SKILL_LINES[p.line] and ns.Leveling.Crafts(ns.RecipeRows or {}, SKILL_LINES[p.line]) or {}) do
+      if (craft.learn or craft.skill) <= (p.skill or 0) + ns.Leveling.SOON then
+        ids[#ids + 1] = craft.out
+        for _, m in ipairs(craft.mats) do ids[#ids + 1] = m[1] end
+      end
     end
   end
   ns.LoadItems(ids, function()
@@ -339,6 +358,12 @@ function ns.RunLeveling(done)
           if almost then
             entry.almost = { name = ns.Fmt.RecipeName(almost.rec), missing = {} }
             for i, s in ipairs(almost.short) do entry.almost.missing[i] = { ns.ItemName(s[1]), s[2] } end
+          end
+          entry.learn = ns.LearnFor(p, ctx, count, entry.plan.best and entry.plan.best.perPoint)
+          if entry.learn then
+            for _, bucket in ipairs({ entry.learn.now, entry.learn.soon }) do
+              for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end
+            end
           end
           local seen, names = {}, {}
           for i = 1, math.min(3, #entry.plan.unpriced) do

@@ -102,3 +102,91 @@ function V.Plan(prof, ctx, limit, count)
   while #rows > (limit or 5) do rows[#rows] = nil end
   return { rows = rows, best = rows[1], unpriced = unpriced, known = known, craftable = craftable, almost = almost }
 end
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Recipes to learn. Source data: Data/Recipes.lua rows (Classic sources, NOT confirmed on Forever).
+
+V.SOON = 25 -- a recipe is "soon" when it is learnable within this many skill points
+V.BAND = 10 -- width in skill points of each colour band in the estimate below
+
+-- Estimated colour of a recipe for a given skill. Data/Recipes.lua only gives the skill at which a recipe is orange
+-- (`orangeAt`), so the other colours are ESTIMATED with equal bands: 0-9 points above orange = orange (0), 10-19 =
+-- yellow (1), 20-29 = green (2), 30 or more = gray (3). A skill below `orangeAt` counts as orange (the game would show
+-- red until then, but then the recipe could not be learned either).
+function V.EstimateColor(skill, orangeAt)
+  local band = math.floor(math.max(0, skill - orangeAt) / V.BAND)
+  return math.min(3, band)
+end
+
+-- Rows of Data/Recipes.lua for one profession (English name) as crafts:
+-- { id, name, skill (orange at), learn (skill needed to learn, nil = assumed trainer), src, out, oq, sell, mats }.
+function V.Crafts(rows, prof)
+  local out = {}
+  for _, r in ipairs(rows) do
+    if r[2] == prof then
+      local mats = {}
+      for mat, n in (r[9] or ""):gmatch("(%d+):(%d+)") do mats[#mats + 1] = { tonumber(mat), tonumber(n) } end
+      out[#out + 1] = { id = r[1], name = r[8], skill = r[3], learn = r[11], src = r[10], out = r[4],
+        oq = ((r[5] or 1) + (r[6] or 1)) / 2, sell = r[7], mats = mats }
+    end
+  end
+  return out
+end
+
+-- Source key of a recipe: trainer (no source in the data: assumed), v vendor, m monster drop, d other drop, q quest.
+function V.Source(rec) return rec.src or "trainer" end
+
+-- Trainer recipes from skill 50 up may need a higher profession rank first (Journeyman 50, Expert 125, Artisan 200,
+-- with character level gates 10 / 20 / 35). The rank gates are not modelled: the line says it "may" be required.
+function V.MayNeedRank(rec) return rec.src == nil and (rec.learn or rec.skill) >= 50 end
+
+local function byCost(a, b)
+  if a.perPoint ~= b.perPoint then return a.perPoint < b.perPoint end
+  return a.rec.id < b.rec.id
+end
+
+-- Recipes the character does not know, ranked by estimated cost per skill point (same maths as Evaluate; the colour
+-- is the estimate above, taken at the skill the character will have when the recipe can be learned). `ctx.known(id)`
+-- says which recipes are known; a craft whose output has no market and no vendor price uses the sale value of the
+-- data. The learning fee is unknown and not included.
+--   now  = learnable at the current skill; soon = learnable within V.SOON more points (limits: { now = n, soon = n }).
+--   count = optional bag count function: only recipes whose reagents are carried are kept ("Avec mon sac").
+--   knownBest = cost per point of the best KNOWN recipe: when the best learnable one is cheaper, `gain` is the
+--   difference per point.
+-- Returns { now, soon, best, gain, candidates (priced, before the bag filter), unpriced, nowTotal, soonTotal }.
+function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
+  limits = limits or {}
+  local now, soon, candidates, unpriced, nowTotal, soonTotal = {}, {}, 0, 0, 0, 0
+  for _, c in ipairs(crafts) do
+    local at = c.learn or c.skill
+    if not ctx.known(c.id) and at <= skill + V.SOON then
+      local isNow = at <= skill
+      if isNow then nowTotal = nowTotal + 1 else soonTotal = soonTotal + 1 end
+      local rec = { id = c.id, name = c.name, skill = c.skill, learn = c.learn, src = c.src, out = c.out, oq = c.oq,
+        mats = c.mats, d = V.EstimateColor(math.max(skill, at), c.skill) }
+      local own = setmetatable({ vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end },
+        { __index = ctx })
+      local e = V.Evaluate(rec, own)
+      if e.chance > 0 then
+        if #e.missing > 0 or #c.mats == 0 then
+          unpriced = unpriced + 1
+        else
+          candidates = candidates + 1
+          if count then e.times, e.short = V.Craftable(rec, count) end
+          if not count or e.times >= 1 then
+            local list = isNow and now or soon
+            list[#list + 1] = e
+          end
+        end
+      end
+    end
+  end
+  table.sort(now, byCost)
+  table.sort(soon, byCost)
+  while #now > (limits.now or 4) do now[#now] = nil end
+  while #soon > (limits.soon or 3) do soon[#soon] = nil end
+  local best = now[1]
+  local gain = (best and knownBest and best.perPoint < knownBest) and (knownBest - best.perPoint) or nil
+  return { now = now, soon = soon, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
+    nowTotal = nowTotal, soonTotal = soonTotal }
+end

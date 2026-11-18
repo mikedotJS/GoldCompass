@@ -522,6 +522,44 @@ local function renderHere(res)
 end
 
 -- Profession leveling tab: per profession the cheapest known recipe per skill point, all labelled as estimates.
+-- Recipes to learn of one profession (Leveling.Learnable result): best one, then the others, then the "soon" ones.
+-- Returns true when the bag filter left nothing to show (the empty state with its way out).
+local function addLearn(entries, p)
+  local lr, L = p.learn, ns.Leveling
+  local function perPoint(e)
+    local money = ns.Money(math.abs(e.perPoint))
+    return (e.perPoint < 0 and S.learn_pp_gain or S.learn_pp):format(money)
+  end
+  local function grey(msg) entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. msg .. "|r" } end
+  if lr.nowTotal + lr.soonTotal == 0 then return grey(S.learn_none) end
+  if lr.candidates == 0 then return grey(S.learn_unpriced) end
+  if #lr.now + #lr.soon == 0 then
+    entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_nothing_bag .. "|r" }
+    return true
+  end
+  local function row(e)
+    entries[#entries + 1] = { left = S.learn_row:format(e.name or ns.Fmt.RecipeName(e.rec), ns.Fmt.Source(e.rec), e.rec.learn or e.rec.skill),
+      right = perPoint(e) }
+  end
+  if #lr.now > 0 then
+    entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_now .. "|r" }
+    local e = lr.best
+    local label = e.name or ns.Fmt.RecipeName(e.rec)
+    entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (e.perPoint < 0 and S.learn_best_gain or S.learn_best):format(
+      label, ns.Money(math.abs(e.perPoint))) .. "|r" }
+    grey(S.learn_detail:format(ns.Fmt.Source(e.rec), e.rec.learn or e.rec.skill, L.MayNeedRank(e.rec) and S.learn_rank or "",
+      L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)))
+    if lr.gain then
+      entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. S.learn_beats:format(label, ns.Money(lr.gain)) .. "|r" }
+    end
+    for i = 2, #lr.now do row(lr.now[i]) end
+  end
+  if #lr.soon > 0 then
+    entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_soon:format(L.SOON) .. "|r" }
+    for _, e in ipairs(lr.soon) do row(e) end
+  end
+end
+
 local function renderJob(res)
   render(res, "job")
   if res.state ~= "ok" then
@@ -532,7 +570,7 @@ local function renderJob(res)
   f.subtitle:SetText("")
   f.banner:SetText("")
   local filtered = ns.char.onlyBag
-  f.footer:SetText(S.job_footer .. (filtered and (" " .. S.job_footer_bag) or ""))
+  f.footer:SetText(S.job_footer .. (filtered and (" " .. S.job_footer_bag) or "") .. " " .. S.learn_footer)
   local entries, nothing = { { left = "" } }, false -- the first line holds the checkbox
   for _, p in ipairs(res.profs) do
     entries[#entries + 1] = { head = true, left = S.job_head:format(p.name, tostring(p.skill or "?"), tostring(p.max or "?")) }
@@ -563,10 +601,11 @@ local function renderJob(res)
       if #(p.missingNames or {}) > 0 then
         entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_missing:format(table.concat(p.missingNames, ", ")) .. "|r" }
       end
+      if p.learn then nothing = addLearn(entries, p) or nothing end
     end
   end
   f.bagOff:SetShown(filtered and nothing)
-  setLines(entries, { { wide = true, left = "|cff9d9d9d" .. S.job_later .. "|r" } })
+  setLines(entries, {})
 end
 
 -- Called by Learned.lua when a profession window was read: refresh the leveling tab if it is the one shown.

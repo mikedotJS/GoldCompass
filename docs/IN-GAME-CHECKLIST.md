@@ -86,7 +86,7 @@ Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in 
 |---|---|---|---|
 | 40 | `/gc spike`, read the `S6` lines | `GetRecipeSchematic`, `GetRecipeInfo`, `GetBaseProfessionInfo` and `Enum.TradeskillRelativeDifficulty` all true; the enum reads `Optimal=0 Medium=1 Easy=2 Trivial=3` (if not, the colours are mislabelled: say so) | The S6 lines |
 | 41 | `/gc`, click the `Métier` tab BEFORE opening any profession window | Each profession of the character is listed with its skill, and `Ouvre la fenêtre de <métier> une fois pour que Gold Compass la lise.` Fishing, Herbalism and Skinning say `Pas de recettes à fabriquer pour ce métier.` | Screenshot |
-| 42 | Open a profession window (for example Alchimie), close it, click `Actualiser` on the `Métier` tab | The profession now shows `Monte avec <recette en français> : coût ~<pièces> par point` (or `gain ~...` when crafting earns money), a dim line `couleur orange · chance d'un point ~100 % (estimation)`, and at the bottom `Recettes à apprendre : bientôt` | Screenshot |
+| 42 | Open a profession window (for example Alchimie), close it, click `Actualiser` on the `Métier` tab | The profession now shows `Monte avec <recette en français> : coût ~<pièces> par point` (or `gain ~...` when crafting earns money), a dim line `couleur orange · chance d'un point ~100 % (estimation)`, and, under it, the recipes to learn (rows 54 to 60) | Screenshot |
 | 43 | Same tab, after `/reload` | The data is still there without reopening the window (remembered per character) | Yes / no |
 | 44 | Compare the proposed recipe with the colours in the profession window | The colour named on the dim line matches the recipe's colour in the window | Yes / no, and the recipe name |
 | 45 | A profession where a reagent has no auction price and no vendor price | A yellow line `Prix manquant : <objets>` instead of a made-up number | Screenshot |
@@ -103,3 +103,18 @@ Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in 
 | 51 | `/reload`, then reopen `/gc` | The checkbox is still ticked for this character; another character has its own setting | Yes / no |
 | 52 | Footer with the filter on | Mentions `Composants du sac valorisés au prix du marché` (owned reagents are still priced at market value) | Yes / no |
 | 53 | Tick the filter on a profession not read yet | Still `Ouvre la fenêtre de <métier> une fois` | Screenshot |
+
+## Recipes to learn (Métier tab)
+
+Sources (`entraîneur`, `vendeur`, `butin de monstre`, `butin`, `quête`) come from Classic data, not confirmed on Forever.
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 54 | `/gc spike`, read the `S7` lines | One line per remembered profession: `N now, M soon, K priced and ranked, J without a reagent price` | The S7 lines |
+| 55 | `Métier` tab on a profession already read | Under the known recipes: `À apprendre maintenant` with `Meilleure à apprendre : <recette>`, a dim line with source, skill needed, colour and chance `(estimation)`, then other rows `<recette> · <source>, niv. N   ~<prix>/pt` | Screenshot |
+| 56 | Compare the list with the profession window and the trainer | No recipe you already know appears; a trainer recipe you cannot buy yet (rank) says `rang supérieur possible`; sources match the trainer/vendor you find | Yes / no, and any wrong source |
+| 57 | Look for the line `Apprendre <recette> ferait baisser ton coût par point de ~<prix>` | Shown only when the best recipe to learn is cheaper per point than your best known one | Yes / no |
+| 58 | `Bientôt (dans les 25 prochains points)` | At most 3 recipes whose learn skill is within 25 points above yours | Screenshot |
+| 59 | Tick `Avec mon sac` | Only recipes to learn whose reagents you carry; with none, `Rien à apprendre qui soit fabricable avec ton sac.` and the `Voir sans filtre` button | Screenshot |
+| 60 | Footer, and a profession with nothing left to learn | Footer says `données Classic, non confirmées sur Forever` and `Coût d'apprentissage non inclus`; the empty profession says `Aucune recette à apprendre pour ce métier.`; Fishing, Herbalism, Skinning keep `Pas de recettes` | Screenshot |
+| 61 | A lot of professions or rows | The list is cut with `+ N de plus` (never overflows the frame, never overlaps the footer) | Screenshot |

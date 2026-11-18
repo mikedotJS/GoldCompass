@@ -103,7 +103,7 @@ ns.S = {
 
   -- profession leveling tab
   tab_job = "Métier", title_job = "Gold Compass · Monter un métier",
-  job_footer = "~ estimation : coût = ingrédients - valeur de revente. Chance de gagner un point : orange 100 %, jaune ~75 %, vert ~25 %, gris 0 %.",
+  job_footer = "~ estimation : coût = ingrédients - revente. Chance d'un point : orange 100 %, jaune ~75 %, vert ~25 %.",
   job_empty_t = "Aucun métier", job_empty_p = "Tu n'as appris aucun métier : apprends-en un chez un entraîneur.",
   job_head = "%s  %s/%s",
   job_unseen = "Ouvre la fenêtre de %s une fois pour que Gold Compass la lise.",
@@ -120,7 +120,18 @@ ns.S = {
   job_almost = "Presque : %s, il manque %s",
   job_detail = "couleur %s · chance d'un point ~%d %% (estimation)%s",
   job_green = " · vert depuis ~%d",
-  job_later = "Recettes à apprendre : bientôt",
+  learn_now = "À apprendre maintenant", learn_soon = "Bientôt (dans les %d prochains points)",
+  learn_best = "Meilleure à apprendre : %s : coût ~%s par point",
+  learn_best_gain = "Meilleure à apprendre : %s : gain ~%s par point",
+  learn_row = "%s |cff9d9d9d· %s, niv. %d|r", learn_pp = "~%s/pt", learn_pp_gain = "gain ~%s/pt",
+  learn_detail = "%s, niv. %d%s · %s ~%d %% (estimation)",
+  learn_rank = ", rang supérieur possible",
+  learn_beats = "Apprendre %s ferait baisser ton coût par point de ~%s",
+  learn_none = "Aucune recette à apprendre pour ce métier.",
+  learn_unpriced = "Des recettes sont à apprendre, mais sans prix pour leurs composants.",
+  learn_nothing_bag = "Rien à apprendre qui soit fabricable avec ton sac.",
+  learn_footer = "Sources des recettes : données Classic, non confirmées sur Forever. Coût d'apprentissage non inclus.",
+  src_trainer = "entraîneur", src_v = "vendeur", src_m = "butin de monstre", src_d = "butin", src_q = "quête",
 
   -- map controls
   nolevel_t = "Aucune zone à ton niveau", nolevel_p = "Décoche « Mon niveau seulement » pour voir toutes les zones.",

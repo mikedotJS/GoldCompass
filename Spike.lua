@@ -93,5 +93,18 @@ function ns.Spike()
     for _, rec in pairs(data.recipes) do n = n + 1; if rec.mats and #rec.mats > 0 then withMats = withMats + 1 end end
     out(("S6 remembered profession %s: skill %s, %d known recipes, %d with reagents"):format(name, tostring(data.skill), n, withMats))
   end
+  -- S7: recipes the character does not know yet, per remembered profession (Classic sources, not confirmed on Forever)
+  local ctx = ns.Context()
+  for _, p in ipairs(ns.ProfessionList()) do
+    if ns.char and ns.char.profs[p.name] then
+      local ok, res = pcall(ns.LearnFor, p, ctx)
+      if ok and res then
+        out(("S7 learnable recipes %s (skill %s): %d now, %d soon, %d priced and ranked, %d without a reagent price"):format(
+          p.name, tostring(p.skill), res.nowTotal, res.soonTotal, res.candidates, res.unpriced))
+      else
+        out("S7 learnable recipes", p.name, ok and "no craft data" or ("ERROR " .. tostring(res)))
+      end
+    end
+  end
   out("done. Send back every [spike] line.")
 end
