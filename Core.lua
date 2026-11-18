@@ -361,7 +361,7 @@ local function libCrafts(p, faction)
     for _, c in ipairs(english and ns.Leveling.Crafts(ns.RecipeRows or {}, english) or {}) do byId[c.id] = c end
     libCache[key] = ns.Leveling.LibCrafts(DB, p.line, faction, function(id) return byId[id] end, ns.ForeverTrainers,
       ns.Where.Who({ db = ns.Npcs or {}, byName = ns.NpcByName, maps = ns.MapIDs, fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors,
-        fdbQuests = ns.FdbQuests, fdbPrice = ns.FdbPrice, fdbFavor = ns.FdbFavor }))
+        fdbQuests = ns.FdbQuests, fdbPrice = ns.FdbPrice, fdbFavor = ns.FdbFavor }), ns.ForeverFixes)
   end
   return libCache[key]
 end

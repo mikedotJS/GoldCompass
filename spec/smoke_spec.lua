@@ -177,7 +177,7 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/ForeverNpcs", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/ForeverNpcs", "Data/ForeverFixes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format",
     "Prices", "Nodes", "Core", "Learned", "Trainers", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
@@ -2614,6 +2614,65 @@ describe("Métier tab with the owner's professions (real Forever data, Horde)", 
         if t:find("^Bientôt") then soon = true elseif t:find("^À apprendre") or t:find("^Déjà grises") then soon = false end
         local level = soon and t:match("niv%. (%d+)")
         if level then assert.is_true(tonumber(level) <= 75, t) end
+      end
+    end
+  end)
+end)
+
+-- The Forever client's own recipe values (Data/ForeverFixes.lua, ForeverDB.net) correct the other sources where they differ.
+describe("recipes follow the Forever client data where the other sources differ (ForeverFixes)", function()
+  local function crafts(line, fixes)
+    setup({ scanned = true, faction = "Horde", profs = {} })
+    local ns = loadAddon()
+    local by = {}
+    for _, c in ipairs(ns.Leveling.LibCrafts(ns.ForeverDB, line, "H", nil, ns.ForeverTrainers, nil, fixes and ns.ForeverFixes or nil)) do by[c.id] = c end
+    return by, ns
+  end
+
+  it("the skill a pattern asks, the colour thresholds and the crafted quantity are the client's", function()
+    local before, ns = crafts(164, false)
+    local after = crafts(164, true)
+    assert.are.equal(265, before[16646].learn); assert.are.equal(240, after[16646].learn)       -- Imperial Plate Shoulders
+    assert.are.equal(240, ns.ForeverFixes.learn[16646])
+    local eng = crafts(202, true)
+    assert.are.equal(2, eng[8339].oq)                                                            -- EZ-Thro Dynamite: 1 to 3, 2 on average
+    assert.are.same({ 185, 205, 225 }, { eng[8243].y, eng[8243].g, eng[8243].gr })               -- Flash Bomb: yellow as soon as learned
+    for id, th in pairs(ns.ForeverFixes.th) do assert.is_true(th[1] <= th[2] and th[2] <= th[3], tostring(id)) end
+  end)
+
+  it("a recipe that is not in the Forever client is never listed, the rank books stay", function()
+    local n = 0
+    for _, line in ipairs({ 171, 164, 333, 202, 165, 197, 185, 129, 356 }) do
+      local by, ns = crafts(line, true)
+      for id in pairs(ns.ForeverFixes.gone) do assert.is_nil(by[id], tostring(id)); n = n + 1 end
+      if line == 185 then assert.is_not_nil(by[3413]) end                                        -- Cooking's Expert book
+    end
+    assert.is_true(n > 100)
+  end)
+
+  it("a trainer fee is the full price: the higher of what the two sources observed (a 10 % reputation discount apart)", function()
+    local n = 0
+    for _, line in ipairs({ 171, 164, 333, 202, 165, 197 }) do
+      local by, ns = crafts(line, true)
+      for id, fee in pairs(ns.ForeverFixes.fee) do
+        local c = by[id]
+        if c then
+          n = n + 1
+          assert.are.equal("trainer", c.how.kind); assert.are.equal(fee, c.how.cost)
+          local seen = ns.ForeverTrainers[id].cost
+          assert.is_true(fee > seen and seen / fee >= 0.8, id .. ": " .. seen .. " vs " .. fee)
+        end
+      end
+    end
+    assert.is_true(n > 10)
+    -- further apart than any discount, the fee is the site's and is said to be unverified
+    local by, ns = crafts(197, true)
+    local doubt = next(ns.ForeverFixes.feeDoubt)
+    assert.is_not_nil(doubt)
+    for id in pairs(ns.ForeverFixes.feeDoubt) do
+      if by[id] then
+        assert.is_true(by[id].how.costDoubt); assert.are.equal(ns.ForeverTrainers[id].cost, by[id].how.cost)
+        assert.matches("%(prix non vérifié%)", ns.Fmt.Source({ id = id, way = by[id].how }, true))
       end
     end
   end)

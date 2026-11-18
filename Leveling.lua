@@ -215,7 +215,7 @@ end
 -- (false: every one a source names belongs to the other faction, then it is no way to learn it: way.onlyFaction = "A" | "H"),
 -- which quest it is (way.questID) and what the teaching item costs at a vendor (gold, or Merchant's Favor: way.currency).
 V.FAVOR = 3402                                      -- currency id of Merchant's Favor
-function V.Way(DB, id, e, faction, forever, who)
+function V.Way(DB, id, e, faction, forever, who, fixes)
   local ft = forever and forever[id]
   local own = function(field) return not (DB.IsBorrowed and DB:IsBorrowed(id, field)) end
   local ownSkill = e.requiredSkill ~= nil and own("requiredSkill")
@@ -266,7 +266,9 @@ function V.Way(DB, id, e, faction, forever, who)
     end
   end
   if ft and ft.cost then
-    way.kind, way.confirmed, way.cost, way.rank = "trainer", true, ft.cost, ft.rank
+    -- the fee before any reputation discount: the Forever client data's when it is higher than the one the site observed
+    way.kind, way.confirmed, way.cost, way.rank = "trainer", true, math.max(ft.cost, fixes and fixes.fee and fixes.fee[id] or 0), ft.rank
+    way.costDoubt = fixes and fixes.feeDoubt and fixes.feeDoubt[id] or nil   -- the sources disagree on the fee: shown as not verified
   elseif not forever and has("trainer") then
     way.kind, way.confirmed = "trainer", ownSkill
   elseif has("vendor") and vendorOK and vendorUsable() then
@@ -335,12 +337,15 @@ function V.Difficulty(d, learn, ft)
   return d
 end
 
-function V.LibCrafts(DB, profId, faction, fallback, forever, who)
+function V.LibCrafts(DB, profId, faction, fallback, forever, who, fixes)
   local out = {}
+  -- `fixes` (ns.ForeverFixes): the Forever client's own values where the other sources differ: recipes that are not in the client
+  -- (gone, never listed), skill needed (learn), { yellow, green, gray } (th), crafted quantity (oq)
+  local gone, fixLearn, fixTh, fixOq = fixes and fixes.gone or {}, fixes and fixes.learn or {}, fixes and fixes.th or {}, fixes and fixes.oq or {}
   for id, e in pairs(DB:GetRecipes(profId) or {}) do
     local ft = forever and forever[id]
     if not (DB.IsHiddenRecipe and DB:IsHiddenRecipe(id)) and not (DB.IsAutoTaughtRecipe and DB:IsAutoTaughtRecipe(id))
-      and not (ft and ft.start) then
+      and not (ft and ft.start) and not gone[id] then
       local d = V.Difficulty(e.difficulty, ft and ft.learn or e.requiredSkill, ft)
       local borrowed = DB.IsBorrowed and DB:IsBorrowed(id, "requiredSkill")
       local unanchored = (e.requiredSkill == nil or borrowed) and d and d[1] == 1
@@ -349,10 +354,13 @@ function V.LibCrafts(DB, profId, faction, fallback, forever, who)
       table.sort(mats, function(a, b) return a[1] < b[1] end)
       local fb = fallback and fallback(id)
       if #mats == 0 and fb then mats = fb.mats end
-      out[#out + 1] = { id = id, name = e.name, learn = ft and ft.learn or e.requiredSkill, borrowed = borrowed and not ft and true or false,
+      local th = fixTh[id]
+      if th then d, unanchored = { 0, th[1], th[2], th[3] }, false end
+      out[#out + 1] = { id = id, name = e.name, learn = fixLearn[id] or (ft and ft.learn) or e.requiredSkill,
+        borrowed = borrowed and not ft and not fixLearn[id] and true or false,
         y = (d and not unanchored) and d[2] or nil, g = (d and not unanchored) and d[3] or nil,
         gr = (d and not unanchored) and d[4] or nil, out = e.craftedItemId or (fb and fb.out),
-        oq = fb and fb.oq or 1, sell = fb and fb.sell, mats = mats, how = V.Way(DB, id, e, faction, forever, who) }
+        oq = fixOq[id] or (fb and fb.oq) or 1, sell = fb and fb.sell, mats = mats, how = V.Way(DB, id, e, faction, forever, who, fixes) }
     end
   end
   return out
