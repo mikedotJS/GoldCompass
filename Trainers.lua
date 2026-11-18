@@ -26,10 +26,14 @@ end
 -- req(i) -> skillName, skillLevel, cost(i) -> copper, link(i) -> item link }, index = { [itemID] = crafts },
 -- byName(prof, localizedName) -> craft | nil (fallback). Returns { prof, offers = { [craftID] = { skill, cost, status,
 -- name } } } or nil, and the names of the services that matched no recipe.
+-- The state of a service is the third value of GetTrainerServiceInfo on the Classic client (name, rank, state) and the second on
+-- Forever's (name, state, icon, level): the owner's saved data held the icon's number as the state. Whichever is a known state.
+local STATE = { available = true, unavailable = true, used = true, header = true }
 function T.Read(api, index, byName)
   local services, votes, skipped = {}, {}, {}
   for i = 1, api.count() or 0 do
-    local name, _, category = api.service(i)
+    local name, second, third = api.service(i)
+    local category = STATE[third] and third or STATE[second] and second or nil
     if name and category ~= "header" then
       local link = api.link and api.link(i)
       local item = link and tonumber(link:match("item:(%d+)"))

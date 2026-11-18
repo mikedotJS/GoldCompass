@@ -44,6 +44,20 @@ describe("Trainers.Read", function()
     assert.are.same({ "Apprenti artisan du cuir" }, skipped)  -- the rank service has no recipe: skipped
   end)
 
+  it("reads the state of a service on the Forever client too (name, state, icon, level): never the icon's number", function()
+    local api = kamari()
+    local classic = api.service
+    api.service = function(i)
+      local name, _, state = classic(i)
+      return name, i == 3 and "unavailable" or state, 321409, 0     -- what the owner's client returned: the icon in third place
+    end
+    local rec = T.Read(api, index)
+    assert.are.equal("available", rec.offers[9062].status)
+    assert.are.equal("unavailable", rec.offers[1255143].status)
+    api.service = function(i) return (classic(i)), nil, 321409 end   -- no state at all: unknown, not a number
+    assert.is_nil(T.Read(api, index).offers[9062].status)
+  end)
+
   it("skips a service whose item matches no recipe, and falls back on the localized name", function()
     local api = kamari()
     local real = api.link
