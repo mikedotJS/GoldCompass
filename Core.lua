@@ -353,8 +353,9 @@ function ns.LearnFor(p, ctx, count, knownBest)
   if not english or not ns.RecipeRows then return end
   craftsCache[english] = craftsCache[english] or ns.Leveling.Crafts(ns.RecipeRows, english)
   local data = ns.char and ns.char.profs[p.name]
-  local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end },
-    { __index = ctx })
+  local offers = ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction)   -- trainer windows recorded in game
+  local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end,
+    offer = function(id) return offers[id] end }, { __index = ctx })
   local result = ns.Leveling.Learnable(craftsCache[english], p.skill or 0, own, count, nil, knownBest)
   -- where to go to learn each one (a pin, or a text only), from the Classic location data
   local env = whereEnv(ctx)
@@ -383,8 +384,10 @@ function ns.RunLeveling(done)
       for _, m in ipairs(rec.mats or {}) do ids[#ids + 1] = m[1] end
     end
     -- reagents and outputs of the recipes that may be learned (within reach of the skill)
+    local offers = data and SKILL_LINES[p.line] and ns.TrainerLog.Offers(ns.db or {}, SKILL_LINES[p.line], UnitFactionGroup("player") == "Horde" and "H" or "A") or {}
     for _, craft in ipairs(data and SKILL_LINES[p.line] and ns.Leveling.Crafts(ns.RecipeRows or {}, SKILL_LINES[p.line]) or {}) do
-      if craft.learn and craft.learn <= (p.skill or 0) + ns.Leveling.SOON then
+      local at = offers[craft.id] and math.max(1, offers[craft.id].skill or 1) or craft.learn
+      if at and at <= (p.skill or 0) + ns.Leveling.SOON then
         ids[#ids + 1] = craft.out
         for _, m in ipairs(craft.mats) do ids[#ids + 1] = m[1] end
       end

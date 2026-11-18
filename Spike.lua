@@ -98,6 +98,13 @@ function ns.Spike()
     " C_SuperTrack.SetSuperTrackedUserWaypoint", tostring(C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint ~= nil),
     " C_TradeSkillUI.CraftRecipe", tostring(T and T.CraftRecipe ~= nil), " OpenTradeSkill", tostring(T and T.OpenTradeSkill ~= nil),
     " IsTradeSkillReady", tostring(T and T.IsTradeSkillReady ~= nil))
+  -- S9: trainer window APIs, and what was recorded
+  local recorded = 0
+  for _ in pairs(ns.db and ns.db.trainers or {}) do recorded = recorded + 1 end
+  out("S9 trainer APIs: GetNumTrainerServices", tostring(GetNumTrainerServices ~= nil), " GetTrainerServiceInfo", tostring(GetTrainerServiceInfo ~= nil),
+    " GetTrainerServiceSkillReq", tostring(GetTrainerServiceSkillReq ~= nil), " GetTrainerServiceCost", tostring(GetTrainerServiceCost ~= nil),
+    " GetTrainerServiceItemLink", tostring(GetTrainerServiceItemLink ~= nil), " IsTradeskillTrainer", tostring(IsTradeskillTrainer ~= nil),
+    " trainers recorded:", recorded)
   -- S7: recipes the character does not know yet, per remembered profession (Classic sources, not confirmed on Forever)
   local ctx = ns.Context()
   for _, p in ipairs(ns.ProfessionList()) do

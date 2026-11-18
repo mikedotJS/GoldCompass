@@ -144,8 +144,11 @@ function V.Source(rec) return rec.src or "trainer" end
 -- with character level gates 10 / 20 / 35). The rank gates are not modelled: the line says it "may" be required.
 function V.MayNeedRank(rec) return rec.src == nil and rec.learn >= 50 end
 
+-- Value a learnable recipe is ranked by: its cost per point, plus the learning fee spread over the points it gives
+-- (`amortised`, see Learnable); the plain cost per point for a recipe with no known fee.
+local function rankValue(e) return e.amortised or e.perPoint end
 local function byCost(a, b)
-  if a.perPoint ~= b.perPoint then return a.perPoint < b.perPoint end
+  if rankValue(a) ~= rankValue(b) then return rankValue(a) < rankValue(b) end
   return a.rec.id < b.rec.id
 end
 local function learnAt(e) return e.rec.learn end
@@ -165,7 +168,14 @@ end
 -- says which recipes are known. A reagent without an AH price falls back to its vendor buy price (ctx.buy), then to
 -- its vendor sell value (ctx.vendor, a floor: `floor` on the row), then is unknown; a recipe with an unknown reagent
 -- is still listed (`unpriced`, no cost per point) after the priced ones. A craft whose output has no market and no
--- vendor price uses the sale value of the data. The learning fee is unknown and not included.
+-- vendor price uses the sale value of the data.
+-- A trainer window recorded in game (ctx.offer(craftID) -> { skill, cost, status, npc, mapID, x, y, zone }, see
+-- Trainers.lua) is the truth for that recipe: it gives the real skill needed and the real fee, makes recipes the data
+-- does not know learnable (Forever recipes), hides recipes the trainer lists as already known, and gives the recipe its
+-- `trainer` place. The fee is spread over the points the recipe can still give you: from your skill (or the skill
+-- needed, when higher) to the skill where it turns gray (data threshold, else learn + 60). That gives
+-- `amortised` = cost per point + fee / points (points at least 1), the value used to rank and to compare with the best
+-- known recipe. Without a recorded trainer the fee is unknown and not included.
 --   now  = learnable at the current skill; soon = learnable within V.SOON more points (optional limits: { now = n, soon = n }; none by default).
 --   count = optional bag count function: only recipes whose reagents are carried are kept ("Avec mon sac").
 --   knownBest = cost per point of the best KNOWN recipe: when the best learnable one is cheaper, `gain` is the
@@ -177,12 +187,17 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   limits = limits or {}
   local now, soon, candidates, unpriced, nowTotal, soonTotal = {}, {}, 0, 0, 0, 0
   for _, c in ipairs(crafts) do
-    local at = c.learn -- a recipe whose learn skill is unknown is not listed (mostly crafts not learnable in this phase)
+    local offer = ctx.offer and ctx.offer(c.id)
+    if offer and offer.status == "used" then offer = nil; c = nil end -- the trainer lists it as already known
+    -- a recipe whose learn skill is unknown (and no trainer offers it) is not listed: mostly crafts not learnable yet
+    local at = c and (offer and math.max(1, offer.skill or 1) or c.learn)
     if at and not ctx.known(c.id) and at <= skill + V.SOON then
       local isNow = at <= skill
       if isNow then nowTotal = nowTotal + 1 else soonTotal = soonTotal + 1 end
-      local rec = { id = c.id, name = c.name, learn = at, src = c.src, out = c.out, oq = c.oq, mats = c.mats,
-        d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr) }
+      local src = c.src
+      if offer then src = nil end                  -- a trainer teaches it
+      local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats,
+        d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = offer and offer.cost or nil }
       local own = setmetatable({
         vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
         floor = function(id) return ctx.vendor(id) end,
@@ -194,6 +209,10 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
           unpriced = unpriced + 1
         else
           candidates = candidates + 1
+          if rec.fee and rec.fee > 0 then
+            local points = math.max(1, (c.gr or at + 60) - math.max(skill, at))
+            e.points, e.amortised = points, e.perPoint + rec.fee / points
+          end
         end
         if count then e.times, e.short = V.Craftable(rec, count) end
         if not count or e.times >= 1 then
@@ -208,7 +227,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   while limits.now and #now > limits.now do now[#now] = nil end
   while limits.soon and #soon > limits.soon do soon[#soon] = nil end
   local best = now[1] and not now[1].unpriced and now[1] or nil
-  local gain = (best and not best.floor and knownBest and best.perPoint < knownBest) and (knownBest - best.perPoint) or nil
+  local gain = (best and not best.floor and knownBest and rankValue(best) < knownBest) and (knownBest - rankValue(best)) or nil
   return { now = now, soon = soon, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
     nowTotal = nowTotal, soonTotal = soonTotal }
 end

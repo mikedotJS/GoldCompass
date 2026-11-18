@@ -199,7 +199,7 @@ function W.TargetTooltipLines(t)
   if t.mapID then
     tip[#tip + 1] = t.name
     tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t), t.x, t.y)
-    tip[#tip + 1] = S.where_classic
+    tip[#tip + 1] = t.recorded and S.where_recorded or S.where_classic
   else
     if t.text then tip[#tip + 1] = t.text end
     tip[#tip + 1] = S.where_unclear
@@ -703,8 +703,9 @@ local function addLearn(entries, p)
     return true
   end
   local function row(e)
-    entries[#entries + 1] = { left = S.learn_row:format(e.name or ns.Fmt.RecipeName(e.rec), ns.Fmt.Source(e.rec), e.rec.learn),
-      right = perPoint(e), target = e.target }
+    local t, name = e.rec.trainer, e.name or ns.Fmt.RecipeName(e.rec)
+    entries[#entries + 1] = { left = t and S.learn_row_seen:format(name, ns.Money(e.rec.fee or 0), t.npc)
+      or S.learn_row:format(name, ns.Fmt.Source(e.rec), e.rec.learn), right = perPoint(e), target = e.target }
   end
   if #lr.now > 0 then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_now .. "|r" }
@@ -716,8 +717,14 @@ local function addLearn(entries, p)
         or (e.perPoint < 0 and S.learn_best_gain or S.learn_best)
       entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. fmt:format(label, ns.Money(math.abs(e.perPoint))) .. "|r",
         target = e.target }
-      grey(S.learn_detail:format(ns.Fmt.Source(e.rec), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
-        L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)))
+      local t = e.rec.trainer
+      if t then -- the real trainer: its name, the real skill and the real fee
+        grey(S.learn_detail_seen:format(ns.Money(e.rec.fee or 0), t.npc, e.rec.learn, L.COLOR[e.rec.d] or "?",
+          math.floor(e.chance * 100 + 0.5)))
+      else
+        grey(S.learn_detail:format(ns.Fmt.Source(e.rec), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
+          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)))
+      end
       if lr.gain then
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. S.learn_beats:format(label, ns.Money(lr.gain)) .. "|r" }
       end

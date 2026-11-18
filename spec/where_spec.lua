@@ -118,3 +118,17 @@ describe("location data (real)", function()
     assert.is_true(pins > text)
   end)
 end)
+
+describe("Where.Target prefers the recorded trainer", function()
+  it("pins the NPC where the trainer window was opened, not the Classic coordinates", function()
+    local trainers = { Alchemy = { { "Classic Trainer", "Durotar", 56, 74, nil, 1 } } }
+    local rec = { id = 1, learn = 35, trainer = { npc = "Kamari", mapID = 1454, x = 61.5, y = 40, zone = "Orgrimmar" } }
+    local t = Wh.Target(rec, "Alchemy", env({ trainers = trainers }))
+    assert.are.equal("Kamari", t.name); assert.are.equal(1454, t.mapID)
+    assert.are.equal(61.5, t.x); assert.are.equal(40, t.y)
+    assert.is_true(t.recorded)
+    t = Wh.Target({ id = 1, learn = 35 }, "Alchemy", env({ trainers = trainers }))
+    assert.are.equal("Classic Trainer", t.name); assert.is_nil(t.recorded)     -- no record: Classic data as before
+  end)
+end)
+

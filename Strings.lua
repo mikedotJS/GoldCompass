@@ -125,6 +125,8 @@ ns.S = {
   craft_r_combat = "Indisponible en combat.", craft_r_manual = "Ouvre la fenêtre du métier à la main.",
   craft_opening = "Ouverture de %s...", craft_fail = "Fabrication impossible pour l'instant : ouvre la fenêtre du métier.",
   craft_open_fail = "Impossible d'ouvrir %s : ouvre la fenêtre du métier à la main.",
+  learn_row_seen = "%s |cff9d9d9d· %s chez %s|r", learn_detail_seen = "%s chez %s, niv. %d · %s ~%d %% (estimation)",
+  where_recorded = "Relevé en jeu sur Forever.",
   where_title = "Où l'apprendre", where_classic = "Données Classic, à vérifier.", where_unclear = "Lieu non précis.",
   where_pin = "Clique : repère sur la carte", where_text_tip = "Clique : affiche le lieu dans le chat",
   where_pinned = "Repère posé : %s, %s (%.1f, %.1f). Données Classic, à vérifier.",

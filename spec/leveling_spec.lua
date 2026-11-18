@@ -341,3 +341,71 @@ describe("Leveling.CraftButton", function()
   end)
 end)
 
+describe("Leveling recipes offered by a recorded trainer", function()
+  -- skill 61, reagent 10: AH 100, output 30: AH 1000 (950 net): an orange recipe costs -850 per point.
+  -- Default colour spacing from the skill needed: yellow +30, green +45, gray +60, so a recipe taught at 35 is orange at 61
+  -- (yellow from 65) and turns gray at 95: it can give 95 - 61 = 34 points.
+  local function mk(over)
+    local c = { id = 401, learn = 60, out = 30, oq = 1, mats = { { 10, 1 } } }
+    for k, v in pairs(over or {}) do c[k] = v end
+    if c.learn == false then c.learn = nil end         -- `learn = false`: a craft the Classic data does not teach
+    return c
+  end
+  local function lctx(offers)
+    local c = ctx()
+    c.known = function() return false end
+    c.offer = function(id) return offers[id] end
+    return c
+  end
+  local kamari = { npc = "Kamari", mapID = 1411, x = 50, y = 25, zone = "Durotar" }
+  local function offer(skill, cost, status)
+    return { skill = skill, cost = cost, status = status or "available", npc = "Kamari", mapID = 1411, x = 50, y = 25, zone = "Durotar" }
+  end
+
+  it("takes the real skill and the real fee from the trainer, over the Classic data", function()
+    local r = V.Learnable({ mk() }, 61, lctx({ [401] = offer(35, 500) }))
+    local e = r.now[1]
+    assert.are.equal(35, e.rec.learn)                  -- the Classic data said 60
+    assert.are.equal(500, e.rec.fee)
+    assert.is_nil(e.rec.src)                           -- a trainer teaches it
+    assert.are.equal("Kamari", e.rec.trainer.npc)
+    assert.are.equal(-850, e.perPoint)                 -- the crafting figure alone
+  end)
+
+  it("spreads the fee over the points the recipe can still give: gray at learn + 60", function()
+    local e = V.Learnable({ mk() }, 61, lctx({ [401] = offer(35, 500) })).now[1]
+    assert.are.equal(34, e.points)                     -- 95 - 61
+    assert.is_near(-850 + 500 / 34, e.amortised, 1e-9)
+    -- the data's gray threshold wins when there is one, and a recipe nearly gray still counts at least 1 point
+    e = V.Learnable({ mk({ gr = 63 }) }, 61, lctx({ [401] = offer(35, 500) })).now[1]
+    assert.are.equal(2, e.points)
+    e = V.Learnable({ mk({ gr = 61 }) }, 61, lctx({ [401] = offer(35, 500) }))
+    assert.are.equal(0, #e.now)                        -- already gray: nothing to gain, not listed
+    assert.is_nil(V.Learnable({ mk() }, 61, lctx({ [401] = offer(35, 0) })).now[1].amortised)  -- free: no fee to spread
+  end)
+
+  it("ranks by the amortised value and compares it with the best known recipe", function()
+    local crafts = { mk({ id = 401 }), mk({ id = 402, learn = false }) }
+    local r = V.Learnable(crafts, 61, lctx({ [401] = offer(35, 500), [402] = offer(35, 100) }), nil, nil, -840)
+    assert.are.same({ 402, 401 }, { r.now[1].rec.id, r.now[2].rec.id })     -- fee 100 beats fee 500 (-847.06 < -835.29)
+    assert.are.equal(402, r.best.rec.id)
+    assert.is_near((-840) - (-850 + 100 / 34), r.gain, 1e-9)                -- cheaper by ~7.06 per point
+  end)
+
+  it("lists a Forever recipe the data does not teach, and hides one the trainer lists as already known", function()
+    local crafts = { mk({ id = 402, learn = false }), mk({ id = 403, learn = 30 }) }
+    local r = V.Learnable(crafts, 61, lctx({ [402] = offer(35, 500), [403] = offer(30, 500, "used") }))
+    assert.are.equal(1, #r.now)
+    assert.are.equal(402, r.now[1].rec.id)
+    -- without the trainer, 402 is unknown to the data and 403 is learnable
+    r = V.Learnable(crafts, 61, lctx({}))
+    assert.are.equal(1, #r.now); assert.are.equal(403, r.now[1].rec.id)
+  end)
+
+  it("keeps the data ranking untouched when no trainer was recorded (no gating on visits)", function()
+    local r = V.Learnable({ mk() }, 61, lctx({}))
+    assert.are.equal(60, r.now[1].rec.learn); assert.is_nil(r.now[1].rec.trainer)
+    assert.are.equal(r.now[1].perPoint, r.now[1].rec.fee and r.now[1].amortised or r.now[1].perPoint)
+  end)
+end)
+

@@ -156,3 +156,16 @@ The button sits on its own line right under the recommended recipe (`Monte avec 
 | 84 | `/gc log` right after the click | `craft: CraftRecipe(<id>, <N>) -> true`; no `blocked` line. If a `blocked` or error line appears, send it | The lines |
 | 85 | In combat, or with nothing in the bags | Button grey with `Indisponible en combat.` or `Rien à fabriquer avec ton sac.`; no craft happens | Screenshot |
 | 86 | Interrupt a craft (move) | The button is released within a second, with the count refreshed | Yes / no |
+
+## Trainer windows recorded in game
+
+Nothing is required: the Métier tab works from the data without any visit. A visit only corrects the data (real skill, real fee, real NPC place) and adds recipes the Classic data does not know.
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 87 | `/gc spike`, read the `S9` line | The trainer APIs (`GetNumTrainerServices`, `GetTrainerServiceInfo`, `GetTrainerServiceSkillReq`, `GetTrainerServiceCost`, `GetTrainerServiceItemLink`) true or false, and `trainers recorded: N` | The S9 line |
+| 88 | Open a profession trainer (for example Kamari), look at the list, close it, then `/gc log` | A line `<NPC> (<Profession>) at <zone> x,y: N recipes`, with `skipped (no matching recipe): ...` for the rank entry; no Lua error | The lines |
+| 89 | Open the trainer, then the Métier tab | The recipes the trainer offers (for example Bottes lueur-de-lune, Chaussures en écailles de Murloc, Mules de dragonnet noir, Petite giberne en cuir) are listed with the trainer's real skill, `<fee> chez <NPC>` and the cost per point | Screenshot |
+| 90 | Click the map icon of such a recipe | The pin is on the NPC where you opened the window (tooltip says `Relevé en jeu sur Forever.`), not on the Classic coordinates | Screenshot |
+| 91 | Visit the same trainer again after learning a recipe | The recipe disappears from the list (the new visit replaces the old record) | Yes / no |
+| 92 | `Meilleure à apprendre` and `Apprendre X ferait baisser ton coût par point de ~Y` for a recipe with a fee | The figure includes the fee spread over the points the recipe can still give (until it turns gray, about 60 skill points after the skill needed) | Yes / no |

@@ -35,6 +35,11 @@ end
 -- Target for a recipe to learn: { name, zone, mapID, x, y } (a place to pin), or { text = "..." } when only a free-text
 -- description exists (or nothing: text = nil, "lieu non précis"). `prof` is the English profession name of the data.
 function Wh.Target(rec, prof, env)
+  -- a trainer window recorded in game beats the Classic coordinates: the NPC and where it really stands
+  local seen = rec.trainer
+  if seen and seen.mapID and seen.x and seen.y then
+    return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true }
+  end
   if rec.src == nil then
     local rank, found = Wh.NeededRank(rec.learn or 0), {}
     for _, t in ipairs(env.trainers[prof] or {}) do

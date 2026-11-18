@@ -132,7 +132,7 @@ end
 local function loadAddon()
   local ns = {}
   for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Leveling", "Where", "Format",
-    "Prices", "Nodes", "Core", "Learned", "Spike", "Tooltip", "Window" }) do
+    "Prices", "Nodes", "Core", "Learned", "Trainers", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
   return ns
@@ -848,7 +848,7 @@ describe("text safety and localized recipe names", function()
   -- Characters the game font cannot draw show as empty boxes. Allowed: Latin-1 (accents, middle dot, multiplication sign).
   it("has no character outside Latin-1 in any file that holds user-visible text", function()
     local bad = {}
-    for _, name in ipairs({ "Strings", "Tooltip", "Window", "Here", "Format", "Where", "Log", "Core", "Advice", "Spike", "Learned", "Nodes", "Prices", "ZoneRank" }) do
+    for _, name in ipairs({ "Strings", "Tooltip", "Window", "Here", "Format", "Where", "Log", "Core", "Advice", "Spike", "Learned", "Trainers", "Nodes", "Prices", "ZoneRank" }) do
       local f = assert(io.open(name .. ".lua", "rb"))
       local src = f:read("a")
       f:close()
@@ -1765,6 +1765,94 @@ describe("Fabriquer (craft button on the recommended recipe)", function()
     local ns = start({}, openAlchemy)
     SlashCmdList.GOLDCOMPASS("spike")
     assert.matches("S8 APIs: C_Map.SetUserWaypoint.*CraftRecipe true.*OpenTradeSkill true.*IsTradeSkillReady true", table.concat(printed, "\n"))
+  end)
+end)
+
+describe("trainer windows recorded in game (owner's case: Kamari, Travail du cuir 61)", function()
+  local services = {
+    { "Apprenti artisan du cuir", "used", 0, 0, nil },
+    { "Petite giberne en cuir", "available", 25, 100, "|Hitem:7279::::::::|h[x]|h" },
+    { "Bottes lueur-de-lune", "available", 35, 500, "|Hitem:252427::::::::|h[x]|h" },
+    { "Chaussures en écailles de Murloc", "available", 35, 500, "|Hitem:252426::::::::|h[x]|h" },
+    { "Mules de dragonnet noir", "available", 35, 500, "|Hitem:252424::::::::|h[x]|h" },
+  }
+  local function start()
+    setup({ scanned = true, profs = { { 165, 61, "Travail du cuir", 75 } } })
+    _G.GetNumTrainerServices = function() return #services end
+    _G.GetTrainerServiceInfo = function(i) return services[i][1], "", services[i][2] end
+    _G.GetTrainerServiceSkillReq = function(i) return "Travail du cuir", services[i][3] end
+    _G.GetTrainerServiceCost = function(i) return services[i][4] end
+    _G.GetTrainerServiceItemLink = function(i) return services[i][5] end
+    _G.UnitName = function(unit) return unit == "npc" and "Kamari" or "Tester" end
+    _G.C_Map.GetPlayerMapPosition = function() return { x = 0.5, y = 0.25 } end
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { ["Travail du cuir"] = { skill = 61, max = 75, recipes = {
+      [2149] = { id = 2149, name = "Bottes en cuir cousu main", d = 2, out = 2302, oq = 1, mats = { { 2318, 2 } } } } } } }
+    return ns
+  end
+  local function visit()
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.TRAINER_SHOW then fr.scripts.OnEvent(fr, "TRAINER_SHOW") end
+    end
+    for _, fn in ipairs(timers) do fn() end
+  end
+
+  it("records the trainer: recipes by item, skill, cost, status, NPC, map, position, faction", function()
+    local ns = start()
+    visit()
+    local t = ns.db.trainers["A|Kamari|Leatherworking"]
+    assert.is_not_nil(t)
+    assert.are.equal("Kamari", t.npc); assert.are.equal("A", t.f); assert.are.equal(1411, t.mapID)
+    assert.are.equal(50, t.x); assert.are.equal(25, t.y)
+    assert.are.same({ skill = 35, cost = 500, status = "available", name = "Bottes lueur-de-lune" }, t.offers[1255143])
+    local logged = {}
+    for _, e in ipairs(ns.LogRecent(50)) do logged[#logged + 1] = e.text end
+    assert.matches("Kamari %(Leatherworking%)", table.concat(logged, "\n"))
+    assert.matches("skipped %(no matching recipe%): Apprenti artisan du cuir", table.concat(logged, "\n"))   -- logged
+  end)
+
+  it("lists the four Forever recipes with the real fee and the recorded NPC, and writes 'chez Kamari'", function()
+    local ns = start()
+    visit()
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local lr = res.profs[1].learn
+    local found = {}
+    for _, bucket in ipairs({ lr.now, lr.soon }) do
+      for _, e in ipairs(bucket) do found[e.rec.id] = e end
+    end
+    for id, skill in pairs({ [9062] = 25, [1255143] = 35, [1255144] = 35, [1255146] = 35 }) do
+      assert.is_not_nil(found[id], "recipe " .. id)
+      assert.are.equal(skill, found[id].rec.learn)                 -- the trainer's skill, not the Classic one
+      assert.are.equal("Kamari", found[id].target.name)             -- pinned where the window was opened
+      assert.is_true(found[id].target.recorded)
+    end
+    assert.are.equal(500, found[1255143].rec.fee)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") end
+    assert.matches("chez Kamari", table.concat(out, "\n"))
+  end)
+
+  it("does not record anything for a window with no recipe of ours, and ignores class trainers", function()
+    local ns = start()
+    _G.GetTrainerServiceItemLink = function() return "|Hitem:999999::::|h[x]|h" end
+    visit()
+    assert.is_nil(ns.db.trainers)
+    _G.IsTradeskillTrainer = function() return false end
+    _G.GetTrainerServiceItemLink = function(i) return services[i][5] end
+    visit()
+    assert.is_nil(ns.db.trainers)
+    _G.IsTradeskillTrainer = nil
+  end)
+
+  it("S9 spike line says which trainer APIs exist and how many trainers are recorded", function()
+    local ns = start()
+    visit()
+    SlashCmdList.GOLDCOMPASS("spike")
+    assert.matches("S9 trainer APIs: GetNumTrainerServices true.*GetTrainerServiceItemLink true.*trainers recorded: 1", table.concat(printed, "\n"))
+    assert.is_not_nil(ns)
   end)
 end)
 

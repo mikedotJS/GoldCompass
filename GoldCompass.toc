@@ -25,6 +25,7 @@ Prices.lua
 Nodes.lua
 Core.lua
 Learned.lua
+Trainers.lua
 Spike.lua
 Tooltip.lua
 Window.lua
