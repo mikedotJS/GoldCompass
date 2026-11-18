@@ -49,6 +49,8 @@ ns.S = {
   age_fresh = "du jour",
   none = "—", price_unknown = "prix inconnu",
 
+  log_header = "journal : %d dernières entrées sur %d", log_cleared = "journal vidé",
+
   -- tooltip and bags
   gc_header = "|cff3fe0c5GOLD COMPASS|r",
   act_ah = "Vendre à l'HV", act_vendor = "Vendre au marchand", act_de = "Désenchanter", act_none = "Aucune valeur connue",

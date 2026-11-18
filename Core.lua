@@ -3,7 +3,12 @@ local addonName, ns = ...
 local S = ns.S
 ns.TOP = 10
 
-function ns.Print(msg) print(S.prefix .. " : " .. msg) end
+-- Everything GoldCompass shows in chat goes through ns.Say, so the log holds exactly what the chat showed.
+function ns.Say(text)
+  print(text)
+  ns.Log("chat", text)
+end
+function ns.Print(msg) ns.Say(S.prefix .. " : " .. msg) end
 
 -- Request item data from the game for these item IDs, then call cb. Gives up after 5 seconds (PLAN.md step 1):
 -- items that did not load show as "objet #id".
@@ -289,13 +294,13 @@ local function printMap()
     ns.Print(res.supposed and S.hypothetical:format(res.supposed) or S.mine)
     for i, row in ipairs(res.rows) do
       local tags = (row.old and (" (" .. S.tag_old .. ")") or "") .. (row.partial and (" (" .. S.tag_partial .. ")") or "")
-      print(("%d. %s  %s  %s  [%s]%s"):format(i, row.name, S.per_hour:format(money(row.copperPerHour)),
+      ns.Say(("%d. %s  %s  %s  [%s]%s"):format(i, row.name, S.per_hour:format(money(row.copperPerHour)),
         table.concat(row.itemNames, ", "), S.price_age:format(ageText(row.maxAge)), tags))
     end
     local partial = ns.PartialText(res.rows)
     if partial ~= "" then ns.Print(partial) end
     if res.ageUnknown then ns.Print(S.age_unknown) end
-    print("|cff9d9d9d" .. S.footer .. "|r")
+    ns.Say("|cff9d9d9d" .. S.footer .. "|r")
   end)
 end
 
@@ -315,8 +320,18 @@ SlashCmdList["GOLDCOMPASS"] = function(msg)
   if cmd == "map" then printMap()
   elseif cmd == "spike" then ns.Spike()
   elseif cmd == "dump" then dump()
+  elseif cmd == "log" then
+    -- raw print on purpose: showing the log must not add entries to it
+    if (msg or ""):lower():match("^%s*log%s+clear") then
+      ns.LogClear()
+      print(S.prefix .. " : " .. S.log_cleared)
+    else
+      local entries, total = ns.LogRecent(20)
+      print(S.prefix .. " : " .. S.log_header:format(#entries, total))
+      for _, e in ipairs(entries) do print(("%s [%s] %s"):format(e.time, e.kind, e.text)) end
+    end
   elseif cmd == "" and ns.Window then ns.Window.Toggle()
-  else ns.Print("/gc (fenêtre) · /gc map · /gc spike · /gc dump") end
+  else ns.Print("/gc (fenêtre) · /gc map · /gc spike · /gc dump · /gc log [clear]") end
 end
 
 local frame = CreateFrame("Frame")
@@ -330,5 +345,6 @@ frame:SetScript("OnEvent", function(_, _, name)
   local key = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
   ns.db.chars[key] = ns.db.chars[key] or { learned = {} }  -- [recipeID] = true, learned from profession windows
   ns.char = ns.db.chars[key]
+  ns.LogInit(ns.db)
   ns.Print("chargé. Tape /gc.")
 end)

@@ -56,6 +56,7 @@ local lastMap, renderMap
 local function openMap(zone)
   if InCombatLockdown() then return ns.Print(S.map_combat) end
   if not OpenWorldMap then return ns.Print(S.map_fail) end
+  ns.LogOnce("openmap", "frame", "calling OpenWorldMap from a click (first time)")
   if not pcall(OpenWorldMap, zone) then ns.Print(S.map_blocked) end
 end
 
@@ -67,6 +68,7 @@ local function selectRow(i)
 end
 
 local function build()
+  ns.LogOnce("frame-main", "frame", "creating GoldCompassFrame (own frame, parent UIParent, no secure template)")
   f = CreateFrame("Frame", "GoldCompassFrame", UIParent)
   f:SetSize(480, 520)
   f:SetFrameStrata("HIGH")
@@ -83,6 +85,7 @@ local function build()
   local pos = ns.db and ns.db.pos
   if pos then f:SetPoint(pos[1], UIParent, pos[2], pos[3], pos[4]) else f:SetPoint("CENTER") end
   f:Hide()
+  ns.LogOnce("uispecial", "frame", "inserting GoldCompassFrame in UISpecialFrames (Escape closes it)")
   tinsert(UISpecialFrames, "GoldCompassFrame") -- Escape closes it
 
   local edge = solid(f, "BACKGROUND", 0.416, 0.333, 0.149)
@@ -403,6 +406,7 @@ end
 
 function W.SetTab(key)
   current = key
+  ns.LogOnce("tab-" .. key, "frame", "first display of tab " .. key)
   for _, def in ipairs(TABS) do
     if def.key == key then
       titleFS:SetText(def.title)

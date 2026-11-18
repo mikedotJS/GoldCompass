@@ -1,7 +1,11 @@
 -- /gc spike: prints what spikes S1 to S4 of PLAN.md need, from the real game. Read-only, throwaway diagnostic.
 local _, ns = ...
 
-local function out(...) print("|cff3fe0c5[spike]|r", ...) end
+local function out(...)
+  local parts = {}
+  for i = 1, select("#", ...) do parts[i] = tostring((select(i, ...))) end
+  ns.Say("|cff3fe0c5[spike]|r " .. table.concat(parts, " "))
+end
 local function try(label, fn, ...)
   local ok, a, b, c = pcall(fn, ...)
   out(label, ok and (tostring(a) .. " " .. tostring(b) .. " " .. tostring(c)) or ("ERROR " .. tostring(a)))

@@ -58,6 +58,7 @@ end
 local function onItem(tt, id)
   if tt ~= GameTooltip or not id then return end
   local ok, err = pcall(addSection, tt, id)
+  ns.LogOnce("tooltip-first", "hook", "first item tooltip section added")
   if not ok and not failed then
     failed = true
     ns.Print(S.tip_error:format(tostring(err)))
@@ -65,8 +66,10 @@ local function onItem(tt, id)
 end
 
 if TooltipDataProcessor and TooltipDataProcessor.AddTooltipPostCall and Enum and Enum.TooltipDataType then
+  ns.Log("hook", "TooltipDataProcessor.AddTooltipPostCall(Item) registered")
   TooltipDataProcessor.AddTooltipPostCall(Enum.TooltipDataType.Item, function(tt, data) onItem(tt, data and data.id) end)
 else
+  ns.Log("hook", "GameTooltip:HookScript(OnTooltipSetItem) registered (legacy path)")
   GameTooltip:HookScript("OnTooltipSetItem", function(tt)
     local _, link = tt:GetItem()
     onItem(tt, link and tonumber(link:match("item:(%d+)")))
@@ -74,6 +77,7 @@ else
 end
 
 -- Holding or releasing Shift redraws the tooltip, so the full recipe list appears without moving the mouse.
+ns.Log("hook", "MODIFIER_STATE_CHANGED listener registered (calls GameTooltip:RefreshData outside combat)")
 local shift = CreateFrame("Frame")
 shift:RegisterEvent("MODIFIER_STATE_CHANGED")
 shift:SetScript("OnEvent", function()

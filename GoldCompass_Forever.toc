@@ -9,6 +9,7 @@
 ## X-License: MIT
 
 Strings.lua
+Log.lua
 Data\GatherNodes.lua
 Data\Zones.lua
 Data\Recipes.lua
