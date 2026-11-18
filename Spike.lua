@@ -47,7 +47,7 @@ function ns.Spike()
     end
     for _, id in ipairs({ 2770, 2447 }) do
       try(("S3 item %d price, age (nil before any scan):"):format(id), ns.Prices.Get, id)
-      out(("S3 item %d vendor price from item data:"):format(id), tostring(ns.Prices.Vendor(id)))
+      out(("S3 item %d vendor price from item data:"):format(id), tostring((ns.Prices.Vendor(id))))
     end
   else
     out("S3 Auctionator API not found")
@@ -73,6 +73,6 @@ function ns.Spike()
   end
   out("S5 profession window API:", tostring(C_TradeSkillUI and C_TradeSkillUI.GetAllRecipeIDs ~= nil), " merchant API:",
     tostring(GetMerchantNumItems ~= nil), tostring(C_MerchantFrame ~= nil), " vendor buy price of item 3371 (Auctionator):",
-    tostring(ns.Prices.VendorBuy(3371)))
+    tostring((ns.Prices.VendorBuy(3371))))
   out("done. Send back every [spike] line.")
 end

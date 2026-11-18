@@ -224,6 +224,19 @@ describe("addon glue (stubbed WoW API)", function()
     SlashCmdList["GOLDCOMPASS"]("spike")
     assert.matches("S2 Durotar", table.concat(printed, "\n"))
   end)
+
+  it("spike prints every line when item data and merchant prices are missing (nothing returned, not nil)", function()
+    setup({ scanned = true })
+    _G.GetItemInfo = function() end
+    _G.C_Item.GetItemInfo = nil
+    _G.Auctionator.API.v1.GetVendorPriceByItemID = function() end
+    local ns = loadAddon()
+    ns.db = {}
+    assert.has_no.errors(function() SlashCmdList["GOLDCOMPASS"]("spike") end)
+    local out = table.concat(printed, "\n")
+    assert.matches("S3 item 2447 vendor price from item data: nil", out)
+    assert.matches("S5 profession window API", out)
+  end)
 end)
 
 describe("review fixes (stubbed WoW API)", function()
