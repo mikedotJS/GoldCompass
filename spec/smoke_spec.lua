@@ -2822,3 +2822,25 @@ describe("Cooking 124 for a Horde player (real Forever data)", function()
     assert.is_nil(table.concat(text, "\n"):find("Pour dépasser 150 : Cooking", 1, true))
   end)
 end)
+
+describe("Métier tab, 'Monter le métier': no AH resale note, the chance is exact when thresholds are known", function()
+  it("says 'coûte' and never 'rentable seulement si tu revends à l'HV'; the estimate label only without thresholds", function()
+    setup({ scanned = true, profs = { { 165, 75, "Travail du cuir", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { ["Travail du cuir"] = { skill = 75, max = 150, recipes = {
+      [2161] = { id = 2161, name = "Bottes", d = 0, out = 2309, oq = 1, mats = { { 2318, 6 }, { 2320, 2 } } } } } } }
+    _G.GetLocale = function() return "frFR" end
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local due = timers; timers = {}
+    for _, fn in ipairs(due) do pcall(fn) end
+    local text = {}
+    for _, l in ipairs(ns.Window.Lines()) do text[#text + 1] = ((l.left.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+    local all = table.concat(text, "\n")
+    assert.matches("Monte avec ", all)
+    assert.matches("coûte ~", all)
+    assert.matches("chance d'un point ~100 %%\n", all .. "\n")                   -- thresholds known (orange): exact, no "(estimation)"
+    assert.is_nil(all:find("rentable seulement", 1, true))
+    assert.is_nil(all:find("prix HV du jour", 1, true))
+  end)
+end)

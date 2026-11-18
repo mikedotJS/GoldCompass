@@ -34,30 +34,78 @@ local function buyCost(id, ctx)
   if floor and floor > 0 then return floor, true end
 end
 
--- Evaluates one recipe. Returns { rec, chance, color, cost, result, net, perPoint, missing = { itemIDs }, noSale, floor }
+-- Colour of a recipe at `skill` from its thresholds { orange, yellow, green, gray } (0 orange .. 3 gray).
+function V.ColorAt(skill, th)
+  if skill >= th[4] then return 3 elseif skill >= th[3] then return 2 elseif skill >= th[2] then return 1 end
+  return 0
+end
+
+-- Chance of a skill point, the Classic formula (ProfessionsTracker, MIT, does the same): orange 1, gray 0, and between yellow and gray
+-- (gray - skill) / (gray - yellow), clamped to 0..1. Without the thresholds the flat estimate of V.CHANCE. Second result: exact (the
+-- game's colour or the real thresholds), false for the estimate.
+function V.Chance(d, skill, yellow, gray)
+  if d == 0 then return 1, true end
+  if d == nil or d >= 3 then return 0, true end
+  if skill and yellow and gray and gray > yellow then return math.max(0, math.min(1, (gray - skill) / (gray - yellow))), true end
+  return V.CHANCE[d] or 0, false
+end
+
+-- Cost of making one unit of an intermediate item from its own reagents (market prices): nil when one of them has no price.
+local function craftCost(sub, ctx)
+  local cost = 0
+  for _, m in ipairs(sub.mats or {}) do
+    local unit = buyCost(m[1], ctx)
+    if not unit then return nil end
+    cost = cost + unit * m[2]
+  end
+  return cost / math.max(sub.oq or 1, 1)
+end
+
+-- Evaluates one recipe. Returns { rec, chance, exact, d, color, cost, result, net, perPoint, missing = { itemIDs }, noSale, floor, subs }
 -- (floor = a reagent was valued at its vendor sell value, so the cost is a lower bound).
--- net = reagents - best sale value of the output (negative when crafting earns money); perPoint = net / chance;
+-- mode "level" (Monter le métier): what comes back is only the GUARANTEED recovery, the vendor sale of the output (an AH resale is
+-- uncertain and slow, never counted); any other mode ("gold"): the best sale value, the AH price (net of the cut) when it is fresh.
+-- `skill` and `th` ({ yellow, gray }) give the real chance (V.Chance); when `th` has the four thresholds the colour is taken from them
+-- at `skill` (a colour remembered from an older visit may be stale).
+-- A reagent the player does not carry that a recipe he knows makes (`ctx.sub(itemID)` -> that recipe) is valued at the cheaper of
+-- its market price and the cost of crafting it: e.subs = { { item, need, rec, unit } } lists the ones to craft first.
+-- net = reagents - recovery (negative when crafting earns money); perPoint = net / chance;
 -- resale = the profit exists only if the crafted item is sold at the auction house; ahSale = the sale value is an AH price
 -- (saleAge: its age in days when known; noAge: the price addon cannot date it, so it may not win a money ranking);
 -- oldAh = an AH price exists but is older than the configured old days (the vendor value is used instead: "prix HV ancien");
 -- profit = -net, the money one craft makes (negative = it costs); uncertain = the sale price is undated or older than the fresh days.
-function V.Evaluate(rec, ctx)
-  local chance = V.CHANCE[rec.d] or 0
-  local cost, missing, floor = 0, {}, false
+function V.Evaluate(rec, ctx, mode, skill, th)
+  local level = mode == "level"
+  local d = rec.d
+  if th and th[1] and th[3] and skill then d = V.ColorAt(skill, th) end
+  local chance, exact = V.Chance(d, skill, th and (th.y or th[2]), th and (th.gr or th[4]))
+  local cost, missing, floor, subs = 0, {}, false, {}
   for _, m in ipairs(rec.mats or {}) do
     local unit, isFloor = buyCost(m[1], ctx)
+    local sub = ctx.sub and ctx.sub(m[1])
+    if sub and sub ~= rec then
+      local made = craftCost(sub, ctx)
+      if made and (not unit or isFloor or made < unit) then
+        unit, isFloor = made, false
+        local need = m[2] - (ctx.owned and ctx.owned(m[1]) or 0)
+        if need > 0 then subs[#subs + 1] = { item = m[1], need = need, rec = sub, unit = made } end
+      end
+    end
     if unit then cost = cost + unit * m[2]; floor = floor or isFloor else missing[#missing + 1] = m[1] end
   end
   local result, noSale, ahSale, saleAge, oldAh = 0, true, false, nil, false
-  if rec.out then
+  if rec.out and level then
+    local v = ctx.vendor(rec.out) or 0
+    result, noSale = v * (rec.oq or 1), v == 0
+  elseif rec.out then
     local unit, kind, age = ZR.UnitValue(rec.out, ctx.price, ctx.vendor, ZR.DEFAULTS, ctx.ageKnown ~= false)
     result, noSale, ahSale = unit * (rec.oq or 1), kind == "none", kind == "fresh" or kind == "old"
     if ahSale and ctx.ageKnown ~= false then saleAge = age end
     oldAh = kind == "stale" and ctx.price(rec.out) ~= nil
   end
   local net = cost - result
-  return { rec = rec, chance = chance, color = V.COLOR[rec.d] or "?", cost = cost, result = result, net = net,
-    perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale, floor = floor,
+  return { rec = rec, chance = chance, exact = exact, d = d, color = V.COLOR[d] or "?", cost = cost, result = result, net = net,
+    perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale, floor = floor, subs = subs,
     resale = net < 0 and ahSale, ahSale = ahSale, saleAge = saleAge, profit = -net,
     oldAh = oldAh, noAge = ahSale and ctx.ageKnown == false,
     -- the figure rests on an AH price of the crafted item that is undated or past the "fresh" days: "prix HV incertain". (Auctionator
@@ -90,9 +138,14 @@ end
 function V.Plan(prof, ctx, limit, count, thresholds, goal)
   local gold = goal == "gold"
   local rows, unpriced, known, all = {}, {}, 0, {}
+  -- the recipes the player knows make intermediate reagents (a Light Hide -> a Cured Light Hide): valued by what crafting them costs
+  local byOut = {}
+  for _, rec in pairs(prof.recipes or {}) do if rec.out then byOut[rec.out] = rec end end
+  ctx = setmetatable({ sub = function(item) return byOut[item] end }, { __index = ctx })
   for _, rec in pairs(prof.recipes or {}) do
     known = known + 1
-    local e = V.Evaluate(rec, ctx)
+    local e = V.Evaluate(rec, ctx, gold and "gold" or "level", prof.skill, thresholds and thresholds(rec.id) or nil)
+    if ctx.owned then e.craftNow = V.Craftable(rec, ctx.owned) >= 1 end
     if e.chance > 0 or gold then
       if count then
         e.times, e.short = V.Craftable(rec, count)
@@ -132,18 +185,28 @@ function V.Plan(prof, ctx, limit, count, thresholds, goal)
       if a.profit ~= b.profit then return a.profit > b.profit end
       return a.rec.id < b.rec.id
     end
-    if count then
-      if math.abs(a.points - b.points) > 1e-9 then return a.points > b.points end
-    elseif a.rec.d ~= b.rec.d then
-      return a.rec.d < b.rec.d
-    end
-    if a.uncertain ~= b.uncertain then return not a.uncertain end        -- within a colour, reliable figures first
-    if a.perPoint ~= b.perPoint then return a.perPoint < b.perPoint end
+    if count and math.abs(a.points - b.points) > 1e-9 then return a.points > b.points end
+    -- the cost per point (reagents minus the vendor sale, over the chance of a point); ties: higher chance, craftable now, cheaper craft
+    local pa, pb = math.floor(a.perPoint + 0.5), math.floor(b.perPoint + 0.5)
+    if pa ~= pb then return pa < pb end
+    if math.abs(a.chance - b.chance) > 1e-9 then return a.chance > b.chance end
+    if (a.craftNow or false) ~= (b.craftNow or false) then return a.craftNow or false end
+    if a.net ~= b.net then return a.net < b.net end
     return a.rec.id < b.rec.id
   end)
   table.sort(unpriced, function(a, b) return a.rec.id < b.rec.id end)
   while limit and #rows > limit do rows[#rows] = nil end
   local best, second = rows[1], nil
+  if best and not gold and not count and not best.craftNow then
+    -- no bag filter: at about the same cost per point (within 10 %) the recipe that can be crafted right now is preferred
+    local tolerance = math.abs(best.perPoint) * 0.1
+    for i, e in ipairs(rows) do
+      if e.craftNow and e.perPoint <= best.perPoint + tolerance then
+        table.remove(rows, i); table.insert(rows, 1, e); best = e
+        break
+      end
+    end
+  end
   if gold then                                                    -- money: nothing earning, or priced from an undated AH price, wins
     best = nil
     for _, e in ipairs(rows) do if e.profit > 0 and not e.uncertain then best = e; break end end
@@ -494,7 +557,10 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
         vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
         floor = function(id) return ctx.vendor(id) end,
       }, { __index = ctx })
-      local e = V.Evaluate(rec, own)
+      -- the thresholds (the data's, else the common Classic spacing estimated from the learn skill) give the real chance formula
+      local th = { at, c.y or at + 30, c.g or at + 45, c.gr or at + 60 }
+      local e = V.Evaluate(rec, own, gold and "gold" or "level", math.max(skill, at), th)
+      e.exact = (c.y and c.g and c.gr) ~= nil or e.d == 0
       e.recommend = recommend
       e.target = place
       -- how sure the place is: 0 a position seen on Forever, 1 a hint (Classic position or a zone), 2 text only

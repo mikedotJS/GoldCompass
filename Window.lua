@@ -869,11 +869,11 @@ function addLearnMain(entries, p)
       entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. line .. "|r", target = e.target, recipe = label }
       local t = e.rec.trainer
       if t then -- the real trainer: its name, the real skill and the real fee
-        grey(S.learn_detail_seen:format(ns.Money(e.rec.fee or 0), t.npc, e.rec.learn, L.COLOR[e.rec.d] or "?",
-          math.floor(e.chance * 100 + 0.5)))
+        grey(S.learn_detail_seen:format(ns.Money(e.rec.fee or 0), t.npc, e.rec.learn, L.COLOR[e.d or e.rec.d] or "?",
+          math.floor(e.chance * 100 + 0.5), e.exact and "" or S.chance_estimate))
       else
         grey(S.learn_detail:format(ns.Fmt.Source(e.rec, true), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
-          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0 and not (e.rec.way and (e.rec.way.cost or e.rec.way.kind == "vendor" or e.rec.way.kind == "item"))) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
+          L.COLOR[e.d or e.rec.d] or "?", math.floor(e.chance * 100 + 0.5), e.exact and "" or S.chance_estimate) .. ((e.rec.fee and e.rec.fee > 0 and not (e.rec.way and (e.rec.way.cost or e.rec.way.kind == "vendor" or e.rec.way.kind == "item"))) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
       end
       if e.target and e.target.extra then grey(e.target.extra) end          -- the site's butin / pickpocket / pêche / quête
       local note = ns.Fmt.PriceNote(e)
@@ -947,7 +947,7 @@ local function renderJob(res)
           entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_others .. "|r" }
           for i = 2, #plan.rows do
             local o = plan.rows[i]
-            entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.rec.d] or "?"),
+            entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.d or o.rec.d] or "?"),
               right = (o.profit >= 0 and S.job_gold_row_gain or S.job_gold_row_cost):format(ns.Money(math.abs(o.profit))) }
           end
         end
@@ -957,8 +957,11 @@ local function renderJob(res)
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (p.filtered
           and (gain and S.job_best_bag_gain or S.job_best_bag):format(name, e.times or 0, fmtPoints(e.points or 0), money)
           or (gain and S.job_best_gain or S.job_best):format(name, money)) .. "|r" }
-        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
-          (e.rec.d == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.d or e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
+          e.exact and "" or S.chance_estimate, ((e.d or e.rec.d) == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+        for _, sub in ipairs(e.subs or {}) do      -- an intermediate reagent to make first (or buy): "Peau légère traitée"
+          entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_subcraft:format(sub.need, ns.ItemName(sub.item)) .. "|r" }
+        end
         local note = (e.resale or e.oldAh) and saleNote(e)
         if note then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. note .. "|r" } end
         if plan.second then
@@ -972,7 +975,7 @@ local function renderJob(res)
           for i = 2, #plan.rows do
             local o = plan.rows[i]
             local ogain = o.perPoint < 0
-            entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.rec.d] or "?"),
+            entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.d or o.rec.d] or "?"),
               right = (ogain and S.learn_pp_gain or S.learn_pp):format(ns.Money(math.abs(o.perPoint))) }
           end
         end

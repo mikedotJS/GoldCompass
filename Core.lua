@@ -110,6 +110,7 @@ function ns.Context()
     quests = function(id) return ns.QuestItems[id] end, level = UnitLevel("player"), faction = faction,
     disenchant = function(id) return skills["Enchanting"] and ns.Prices.Disenchant(id) or nil end,
     index = ns.index,
+    owned = function(id) return C_Item.GetItemCount(id, false, false, false) end,   -- what the bags hold (bags only, no bank)
   }
 end
 
@@ -388,6 +389,10 @@ function ns.LearnFor(p, ctx, count, knownBest)
     offer = function(id) return offers[id] end, maxSkill = p.max, goal = ns.Goal() }, { __index = ctx })
   -- where to go to learn each one (a pin, or a text only): recorded trainer, library NPC, Classic coordinates, text
   local env = whereEnv(ctx)
+  -- intermediate reagents the character knows how to make (a Cured Light Hide from a Light Hide): valued by their crafting cost
+  local byOut = {}
+  for _, r in pairs(data and data.recipes or {}) do if r.out then byOut[r.out] = r end end
+  own.sub = function(item) return byOut[item] end
   own.place = function(rec) return ns.Where.Target(rec, english, env) end
   local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
   if result.beyond and result.beyond.rank then   -- where to train the rank that lifts the cap
