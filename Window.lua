@@ -143,7 +143,7 @@ end
 -- Name of the NPC of a target in the client's language (French names of pfQuest on a French client), else English.
 function W.NpcName(t)
   local french = GetLocale and GetLocale() == "frFR" and t.fr
-  return french or t.name
+  return french or t.name or "?"
 end
 
 function W.GoTo(t, recipe)
@@ -154,7 +154,7 @@ function W.GoTo(t, recipe)
     if t.vendors then return ns.Print(S.where_zone_only:format(W.VendorText(t))) end
     return ns.Print(t.text and S.where_text:format(t.text) or S.where_none)
   end
-  local label = ns.ZoneLabel(t)
+  local label = ns.ZoneLabel(t) or t.zone or ""   -- pfQuest NPCs carry a map ID but no zone name
   if not t.x then   -- zone only: say the position is unknown, open the map on the zone (out of combat)
     log("zone")
     if t.dropZone then ns.Print(S.where_drop:format(t.text or label))
@@ -172,7 +172,7 @@ function W.GoTo(t, recipe)
       if C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint then C_SuperTrack.SetSuperTrackedUserWaypoint(true) end
     end)
   end
-  ns.Log("frame", ("where: %s (%s) map %d %.1f,%.1f pinned=%s"):format(t.name, t.zone, t.mapID, t.x, t.y, tostring(pinned)))
+  ns.Log("frame", ("where: %s (%s) map %d %.1f,%.1f pinned=%s"):format(tostring(t.name), label, t.mapID, t.x, t.y, tostring(pinned)))
   ns.Print((pinned and S.where_pinned or S.where_coords):format(W.NpcName(t), label, t.x, t.y))
   openMap(t.mapID)
 end

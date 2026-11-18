@@ -1610,6 +1610,19 @@ describe("Où l'apprendre (map button on recipes to learn)", function()
     assert.matches("Repère posé : Mallory", table.concat(printed, "\n"))
   end)
 
+  it("pins a pfQuest NPC that has no zone name (spec/helper_wow_lua51.lua makes %s with nil raise, as in WoW)", function()
+    local ns = start()
+    local calls = {}
+    _G.UiMapPoint = { CreateFromCoordinates = function(map, x, y) return { map = map, x = x, y = y } end }
+    _G.C_Map.SetUserWaypoint = function(p) calls.pin = p end
+    _G.C_Map.OpenWorldMap = function(id) calls.open = id end
+    _G.C_Map.GetMapInfo = function() return nil end
+    local ok, err = pcall(ns.Window.GoTo, { name = "Naal Mistrunner", mapID = 1412, x = 40.2, y = 27.5, kind = "pin" }, "Poisson-chat")
+    assert.is_true(ok, tostring(err))
+    assert.are.equal(1412, calls.pin.map); assert.are.equal(1412, calls.open)
+    assert.matches("Naal Mistrunner", table.concat(printed, "\n"))
+  end)
+
   it("in combat only writes the place in the chat: no pin, no map", function()
     local ns = start()
     local calls = {}

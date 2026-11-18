@@ -1,1 +1,1 @@
-return { default = { ROOT = { "spec" }, pattern = "_spec" } }
+return { default = { ROOT = { "spec" }, pattern = "_spec", helper = "spec/helper_wow_lua51.lua" } }
