@@ -22,8 +22,11 @@ local PROF_KEY = { Herbalism = "Herb Gathering" }
 -- A quest is worth keeping items for when it is not a repeatable city donation (zone "a capital city"), suits the
 -- character's faction, and its level is from 2 below to 5 above the character's.
 function A.QuestRelevant(q, ctx)
+  -- the quest's level: Forever's own when ForeverDB's quest list has it (ns.FdbQuestSeen[title] = level), else the Classic one
+  local seen = ns.FdbQuestSeen and ns.FdbQuestSeen[q.quest]
+  local level = type(seen) == "number" and seen or q.level
   return q.zone ~= "a capital city" and (q.faction == "B" or q.faction == ctx.faction)
-    and q.level + 2 >= ctx.level and q.level <= ctx.level + 5
+    and level + 2 >= ctx.level and level <= ctx.level + 5
 end
 
 -- Turns the generated rows (Data/Recipes.lua) into recipes, and indexes them by ingredient.

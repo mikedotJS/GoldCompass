@@ -218,27 +218,35 @@ end
 -- 6. Items --------------------------------------------------------------------------------------------------------------
 local titles = {}
 for qid, row in pairs(F.qfQuests) do
-  local title, level, _, _, _, _, _, _, _, _, side = row:match("^([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
+  local title, level, _, _, starts, _, _, _, _, _, side = row:match("^([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)|([^|]*)$")
   if title and title ~= "" then
+    -- the side: the quest's own, else the side of the NPC that gives it (ForeverDB's NPC list)
+    local giver = F.npcs[tonumber((starts or ""):match("^n(%d+)"))]
+    if side == "" and giver and (giver[6] == "A" or giver[6] == "H") then side = giver[6] end
     titles[title] = titles[title] or {}
     titles[title][#titles[title] + 1] = { id = qid, level = tonumber(level), side = side }
   end
 end
 local qiExists = tally("6 quest items: the quest exists in Forever (ForeverDB quest list, by title)")
-local qiLevel = tally("6 quest items: quest level")
-local qiSide = tally("6 quest items: quest faction (where ForeverDB knows the side)")
+local qiLevel = tally("6 quest items: quest level used (where ForeverDB has one)")
+local qiSide = tally("6 quest items: quest faction (where ForeverDB knows the quest's or its giver's side)")
 for itemID, list in pairs(ns.QuestItems) do
   for _, q in ipairs(list) do
     local t = titles[q.quest]
     qiExists(t ~= nil, ("item %d: %s"):format(itemID, q.quest))
     if t then
-      local lv, sd = false, nil
+      -- the level the addon uses: Forever's own when the generated data carries it (ns.FdbQuestSeen[title] = level)
+      local seen = ns.FdbQuestSeen and ns.FdbQuestSeen[q.quest]
+      local ours = type(seen) == "number" and seen or q.level
+      local lv, known, sides = false, false, {}
       for _, x in ipairs(t) do
-        lv = lv or x.level == q.level
-        if x.side ~= "" then sd = sd or false; if x.side:upper() == q.faction or q.faction == "B" then sd = true end end
+        if (x.level or 0) > 0 then known = true; lv = lv or x.level == ours end
+        local s = x.side:upper()
+        if s == "A" or s == "H" then sides[s] = true elseif s == "B" then sides.A, sides.H = true, true end
       end
-      qiLevel(lv, ("item %d %s: %s vs %s"):format(itemID, q.quest, tostring(q.level), tostring(t[1].level)))
-      if sd ~= nil then qiSide(sd, ("item %d %s: %s vs %s"):format(itemID, q.quest, q.faction, t[1].side)) end
+      if known then qiLevel(lv, ("item %d %s: %s vs %s"):format(itemID, q.quest, tostring(ours), tostring(t[1].level))) end
+      local theirs = sides.A and sides.H and "B" or sides.A and "A" or sides.H and "H" or nil
+      if theirs then qiSide(theirs == q.faction, ("item %d %s: %s vs %s"):format(itemID, q.quest, q.faction, theirs)) end
     end
   end
 end

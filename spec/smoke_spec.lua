@@ -2718,7 +2718,13 @@ describe("vendor, quest and quest-item facts say what is and is not confirmed on
 
   it("an item kept for a quest Forever's quest list does not have says the quest is not confirmed", function()
     local ns = start()
-    assert.is_true(ns.FdbQuestSeen["Goretusk Liver Pie"])
+    assert.are.equal(12, ns.FdbQuestSeen["Goretusk Liver Pie"])                    -- Forever's quest level, same as the Classic one
+    -- Stranglethorn Fever: level 45 on Forever (35 in the Classic table): kept for it at 44, no longer at 33
+    assert.are.equal(45, ns.FdbQuestSeen["Stranglethorn Fever"])
+    local fever = ns.QuestItems[2799][1]
+    assert.are.equal(35, fever.level)
+    assert.is_true(ns.Advice.QuestRelevant(fever, { level = 44, faction = "H" }))
+    assert.is_false(ns.Advice.QuestRelevant(fever, { level = 33, faction = "H" }))
     assert.are.equal("Goretusk Liver Pie", ns.Fmt.QuestLabel("Goretusk Liver Pie"))
     assert.are.equal("Items of Power (quête Classic, non confirmée sur Forever)", ns.Fmt.QuestLabel("Items of Power"))
     local seen, all = 0, 0

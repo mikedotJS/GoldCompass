@@ -172,8 +172,12 @@ def main():
             for q, side, g, name, m, x, y, title, level in quests[spell]) + " },")
     # the quests of Data/QuestItems.lua (Classic data) that the Forever quest list has, by title: the others are not confirmed on Forever
     qi_titles = sorted(set(re.findall(r'quest = "((?:[^"\\]|\\.)*)"', (ROOT / "Data/QuestItems.lua").read_text(encoding="utf-8"))))
-    out += ["}", "-- ns.FdbQuestSeen[quest title] = true: the quests of Data/QuestItems.lua that exist in Forever's quest list (ForeverDB)",
-            "ns.FdbQuestSeen = { " + ", ".join(f"[{lua_str(t)}] = true" for t in qi_titles if t in by_title) + " }"]
+    def seen_level(title):   # ForeverDB's quest level when every quest of that title has the same one, else just "it exists"
+        levels = {q[4] for q in by_title[title] if q[4] > 0}
+        return str(levels.pop()) if len(levels) == 1 else "true"
+    out += ["}", "-- ns.FdbQuestSeen[quest title] = Forever's quest level | true (no single level known): the quests of Data/QuestItems.lua that",
+            "--   exist in Forever's quest list (ForeverDB); the others are Classic quests nobody confirmed on Forever",
+            "ns.FdbQuestSeen = { " + ", ".join(f"[{lua_str(t)}] = {seen_level(t)}" for t in qi_titles if t in by_title) + " }"]
     out += ["-- ns.FdbTrainers[English profession] = { [npcID] = true | 0 }: the trainers of the profession; 0 = a \"Journeyman ...\" by its Forever",
             "--   title: such a trainer taught nothing from skill 50 up when seen in game (Kamari), so it is proposed for Apprentice recipes only",
             "ns.FdbTrainers = {"]
