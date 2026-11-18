@@ -292,7 +292,6 @@ function ns.RunHere(done)
 end
 
 -- Professions of the character as the game names them (localized), with their skill.
-local NO_WINDOW = { [182] = true, [393] = true, [356] = true } -- Herbalism, Skinning, Fishing: no craft window
 function ns.ProfessionList()
   local out = {}
   if GetProfessions and GetProfessionInfo then
@@ -343,10 +342,12 @@ function ns.RunLeveling(done)
       for _, p in ipairs(list) do
         local entry = { name = p.name, skill = p.skill, max = p.max }
         local data = ns.char.profs[p.name]
-        if NO_WINDOW[p.line] then
-          entry.status = "norecipes"
-        elseif not data then
+        -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
+        -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
+        if not data then
           entry.status = "unseen"
+        elseif next(data.recipes) == nil then
+          entry.status = "norecipes"
         else
           entry.status = "plan"
           -- "Avec mon sac": count what is carried (bags only: no bank, no reagent bank)

@@ -186,8 +186,9 @@ describe("Leveling recipes to learn", function()
     assert.are.same({ 101, 102 }, ids(r.now))
     assert.is_near(-1133.33, r.now[1].perPoint, 0.01)
     assert.are.equal(-750, r.now[2].perPoint)
-    assert.are.same({ 103 }, ids(r.soon))
+    assert.are.same({ 103, 106 }, ids(r.soon))   -- 106 has an unknown reagent price: listed after the priced one
     assert.are.equal(-850, r.soon[1].perPoint)
+    assert.is_true(r.soon[2].unpriced); assert.is_nil(r.soon[2].perPoint)
     assert.are.equal(101, r.best.rec.id)
     assert.are.equal(3, r.nowTotal)      -- 101, 102, 105 (104 is known)
     assert.are.equal(2, r.soonTotal)     -- 103, 106
@@ -215,11 +216,55 @@ describe("Leveling recipes to learn", function()
   it("keeps only recipes whose reagents are carried with the bag filter, and still counts the candidates", function()
     local r = V.Learnable(crafts, 50, learnCtx(), function(id) return id == 10 and 1 or 0 end)
     assert.are.same({ 101 }, ids(r.now))    -- 102 needs 2 x 10
-    assert.are.same({ 103 }, ids(r.soon))
+    assert.are.same({ 103 }, ids(r.soon))   -- 106 needs reagent 99, not carried
     assert.are.equal(1, r.now[1].times)
     assert.are.equal(3, r.candidates)
     local none = V.Learnable(crafts, 50, learnCtx(), function() return 0 end)
     assert.are.equal(0, #none.now + #none.soon)
     assert.are.equal(3, none.candidates)    -- there was something to learn, just nothing craftable now
+  end)
+
+  it("lists unpriced recipes after the priced ones, by required skill, and never makes one the best", function()
+    local c = {
+      { id = 301, skill = 30, learn = 30, out = 30, oq = 1, mats = { { 99, 1 } } },      -- unknown reagent price
+      { id = 302, skill = 20, learn = 20, out = 30, oq = 1, mats = { { 99, 1 } } },      -- unknown, lower skill: first of the unpriced
+      { id = 303, skill = 40, learn = 40, out = 30, oq = 1, mats = { { 10, 2 } } },      -- priced: -750 at orange
+    }
+    -- at skill 45 the priced recipe 303 is orange (gap 5), 301 and 302 are only unpriced
+    local r = V.Learnable(c, 45, learnCtx())
+    assert.are.same({ 303, 302, 301 }, ids(r.now))
+    assert.are.equal(303, r.best.rec.id)
+    assert.are.equal(2, r.unpriced)
+    -- with only unpriced recipes there is no best one
+    local only = V.Learnable({ c[1], c[2] }, 45, learnCtx())
+    assert.are.same({ 302, 301 }, ids(only.now))
+    assert.is_nil(only.best); assert.is_nil(only.gain)
+  end)
+
+  it("prices a reagent: AH, then vendor buy price, then vendor sell value as a floor, then unknown", function()
+    local function cost(id, ctxOver)
+      local c = learnCtx()
+      for k, f in pairs(ctxOver or {}) do c[k] = f end
+      local r = V.Learnable({ { id = 1, skill = 50, learn = 50, out = 30, oq = 1, mats = { { id, 1 } } } }, 50, c)
+      return r.now[1]
+    end
+    local e = cost(10)                                      -- AH 100
+    assert.are.equal(100, e.cost); assert.is_falsy(e.floor)
+    e = cost(20)                                            -- no AH, vendor buy 30
+    assert.are.equal(30, e.cost); assert.is_falsy(e.floor)
+    e = cost(31)                                            -- no AH, no buy price, vendor sell 200: a floor
+    assert.are.equal(200, e.cost); assert.is_true(e.floor); assert.is_falsy(e.unpriced)
+    e = cost(99)                                            -- nothing known
+    assert.is_true(e.unpriced); assert.is_nil(e.perPoint)
+    -- the vendor sell value never beats a real price
+    e = cost(30)                                            -- AH 1000 and vendor 50: AH wins
+    assert.are.equal(1000, e.cost); assert.is_falsy(e.floor)
+  end)
+
+  it("gives no 'beats the best known' gain when the best recipe is valued with a floor", function()
+    local c = { { id = 1, skill = 50, learn = 50, out = 30, oq = 1, mats = { { 31, 1 } } } }
+    local r = V.Learnable(c, 50, learnCtx(), nil, nil, 0)
+    assert.is_true(r.best.floor)
+    assert.is_nil(r.gain)
   end)
 end)

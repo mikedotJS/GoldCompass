@@ -103,7 +103,7 @@ ns.S = {
 
   -- profession leveling tab
   tab_job = "Métier", title_job = "Gold Compass · Monter un métier",
-  job_footer = "~ estimation : coût = ingrédients - revente. Chance d'un point : orange 100 %, jaune ~75 %, vert ~25 %.",
+  job_footer = "~ estimation : coût = ingrédients - revente, hors apprentissage. Sources Classic, non confirmées sur Forever.",
   job_empty_t = "Aucun métier", job_empty_p = "Tu n'as appris aucun métier : apprends-en un chez un entraîneur.",
   job_head = "%s  %s/%s",
   job_unseen = "Ouvre la fenêtre de %s une fois pour que Gold Compass la lise.",
@@ -115,7 +115,7 @@ ns.S = {
   job_best_gain = "Monte avec %s%s : gain ~%s par point",
   job_bag_suffix = " (avec ton sac, ×%d)",
   job_bag_box = "Avec mon sac", job_bag_off = "Voir sans filtre",
-  job_footer_bag = "Composants du sac valorisés au prix du marché.",
+  job_footer_bag = "Sac valorisé au prix du marché.",
   job_nothing_t = "Rien à fabriquer avec ton sac pour ce métier.",
   job_almost = "Presque : %s, il manque %s",
   job_detail = "couleur %s · chance d'un point ~%d %% (estimation)%s",
@@ -128,9 +128,11 @@ ns.S = {
   learn_rank = ", rang supérieur possible",
   learn_beats = "Apprendre %s ferait baisser ton coût par point de ~%s",
   learn_none = "Aucune recette à apprendre pour ce métier.",
-  learn_unpriced = "Des recettes sont à apprendre, mais sans prix pour leurs composants.",
+  learn_best_floor = "Meilleure à apprendre : %s : coût dès ~%s par point",
+  learn_best_floor_gain = "Meilleure à apprendre : %s : gain max ~%s par point",
+  learn_pp_floor = "dès ~%s/pt", learn_pp_floor_gain = "gain max ~%s/pt", learn_pp_unknown = "prix inconnu",
+  learn_no_price = "Pas de prix HV : lance un scan Auctionator à l'hôtel des ventes.",
   learn_nothing_bag = "Rien à apprendre qui soit fabricable avec ton sac.",
-  learn_footer = "Sources des recettes : données Classic, non confirmées sur Forever. Coût d'apprentissage non inclus.",
   src_trainer = "entraîneur", src_v = "vendeur", src_m = "butin de monstre", src_d = "butin", src_q = "quête",
 
   -- map controls

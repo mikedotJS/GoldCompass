@@ -1018,7 +1018,7 @@ describe("profession leveling tab", function()
     assert.is_nil(text:match("bientôt|r"))                          -- the placeholder is gone
     local footer = ns.Window.Footer().text
     assert.matches("non confirmées sur Forever", footer)
-    assert.matches("Coût d'apprentissage non inclus", footer)
+    assert.matches("hors apprentissage", footer)
   end)
 
   it("lists the recipes to learn per profession, never a known one, and leaves Fishing and Herbalism alone", function()
@@ -1037,7 +1037,7 @@ describe("profession leveling tab", function()
     local alch, herb = res.profs[1], res.profs[2]
     assert.is_true(#alch.learn.now > 0 and alch.learn.nowTotal > 0)
     assert.is_nil(herb.learn)
-    assert.are.equal("norecipes", herb.status)
+    assert.are.equal("unseen", herb.status)   -- nothing remembered yet: "open the window once", whatever the profession
     -- everything learnable in reach is already known: the empty message
     ns.char.learned = known
     alch = run().profs[1]
@@ -1081,14 +1081,32 @@ describe("profession leveling tab", function()
     assert.matches("Ouvre la fenêtre de Alchimie une fois", lineTexts(ns))
   end)
 
-  it("says there are no recipes for Fishing, and shows the empty and missing-addon states", function()
+  it("says no recipes only when the window was read and the game listed none; Fishing with a recipe is planned", function()
     setup({ scanned = true, profs = { { 356, 150, "Pêche", 300 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
     ns.char = { learned = {}, profs = {} }
     local res
     ns.RunLeveling(function(r) res = r end)
+    assert.are.equal("unseen", res.profs[1].status)               -- never read: open the window once (Fishing included)
+    ns.char.profs["Pêche"] = { skill = 150, max = 300, recipes = {} } -- window read, the game listed no recipe
+    ns.RunLeveling(function(r) res = r end)
     assert.are.equal("norecipes", res.profs[1].status)
+    -- a Fishing window with one known recipe (Fish Bowl), read through the capture path
+    local T = {
+      GetBaseProfessionInfo = function() return { professionName = "Pêche", skillLevel = 150, maxSkillLevel = 300 } end,
+      GetAllRecipeIDs = function() return { 7620 } end,
+      GetRecipeInfo = function() return { learned = true, name = "Bocal à poisson", relativeDifficulty = 0 } end,
+      GetRecipeSchematic = function() return { outputItemID = 6256, quantityMin = 1, quantityMax = 1,
+        reagentSlotSchematics = { { reagents = { { itemID = 6291 } }, quantityRequired = 1 }, { reagents = { { itemID = 6458 } }, quantityRequired = 1 } } } end,
+    }
+    ns.char.profs["Pêche"] = nil
+    assert.are.equal(1, ns.Learned.Capture(T, ns.char.learned, ns.char.profs))
+    ns.RunLeveling(function(r) res = r end)
+    assert.are.equal("plan", res.profs[1].status)
+    assert.are.equal(7620, res.profs[1].plan.best.rec.id)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.matches("Monte avec", lineTexts(ns))
     setup({ scanned = true })
     ns = loadAddon()
     ns.char = { learned = {}, profs = {} }
@@ -1190,7 +1208,7 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
     ns.Window.Toggle(); ns.Window.SetTab("job")
     local text = lineTexts(ns)
     assert.matches("Monte avec Potion de soins %(avec ton sac, ×2%)", text)
-    assert.matches("Composants du sac valorisés au prix du marché", ns.Window.Footer().text)
+    assert.matches("Sac valorisé au prix du marché", ns.Window.Footer().text)
   end)
 
   it("keeps the full list with the filter off, and remembers the checkbox per character", function()
@@ -1284,5 +1302,71 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
     click("Voir sans filtre")
     assert.is_false(ns.char.onlyBag)
     assert.is_nil(lineTexts(ns):match("Rien à fabriquer"))
+  end)
+end)
+
+describe("recipes to learn without prices, footer and line slots", function()
+  local function lineTexts(ns)
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
+    return table.concat(out, "\n")
+  end
+  local alchemy = { skill = 50, max = 75, recipes = {
+    [1] = { id = 1, name = "Potion de soins", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } } } }
+  local function start(opts)
+    opts.scanned, opts.profs = true, { { 171, 50, "Alchimie", 75 } }
+    setup(opts)
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    return ns
+  end
+
+  it("shows recipes to learn with 'prix inconnu' and the way to get prices, instead of dropping them", function()
+    local ns = start({ pickupNoAh = true, noVendor = true })   -- no AH price, no vendor value for most reagents
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local lr = res.profs[1].learn
+    assert.is_true(lr.unpriced > 0)
+    assert.is_true(#lr.now + #lr.soon > 0)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = lineTexts(ns)
+    assert.matches("prix inconnu", text)
+    assert.matches("lance un scan Auctionator", text)
+    assert.is_nil(text:match("sans prix pour leurs composants"))
+  end)
+
+  it("values reagents without AH price at their vendor sell value and labels the figure as a floor", function()
+    local ns = start({ pickupNoAh = true })                    -- vendor sell value 25 for every item
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local found
+    for _, e in ipairs(res.profs[1].learn.now) do if e.floor then found = true end end
+    assert.is_true(found)
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = lineTexts(ns)
+    assert.is_true(text:find("dès ~", 1, true) ~= nil or text:find("gain max ~", 1, true) ~= nil)
+  end)
+
+  it("keeps the footer within two lines of the footer slot (character budget), with and without the bag filter", function()
+    -- the slot shows about 79 characters per line at the real font (photo): two lines = at most 150 here
+    local ns = start({})
+    assert.is_true(#ns.Window.JobFooter(false) <= 150)
+    assert.is_true(#ns.Window.JobFooter(true) <= 150)
+  end)
+
+  it("draws every line of the tab on its own single-line slot: no wrapping text, no shared slot", function()
+    local ns = start({ counts = { [2447] = 1 } })
+    ns.char.onlyBag = true
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local slots = ns.Window.Layout.list.lines
+    local used = 0
+    for _, l in ipairs(ns.Window.Lines()) do
+      local t = (l.left.text or "")
+      assert.is_nil(t:find("\n"))                              -- a line never contains a line break
+      if t ~= "" then used = used + 1 end
+    end
+    assert.is_true(used > 0)
+    assert.is_true(used <= math.floor((slots.b - slots.t) / 17))
   end)
 end)

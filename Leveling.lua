@@ -17,7 +17,8 @@ V.CHANCE = { [0] = 1, [1] = 0.75, [2] = 0.25, [3] = 0 }
 V.COLOR = { [0] = "orange", [1] = "jaune", [2] = "vert", [3] = "gris" }
 
 -- What buying one unit of a reagent costs: the cheaper of the usable AH price (gross: you pay it) and the vendor buy
--- price. nil when neither is known.
+-- price. When neither is known, `ctx.floor(id)` (optional: the vendor SELL value, a floor of the real cost) is used and
+-- the second result is true. nil when nothing is known.
 local function buyCost(id, ctx)
   local best
   local price, age = ctx.price(id)
@@ -25,17 +26,20 @@ local function buyCost(id, ctx)
   if price and (ctx.ageKnown == false or (age and age <= c.oldDays)) then best = price end
   local buy = ctx.buy and ctx.buy(id)
   if buy and (not best or buy < best) then best = buy end
-  return best
+  if best then return best end
+  local floor = ctx.floor and ctx.floor(id)
+  if floor and floor > 0 then return floor, true end
 end
 
--- Evaluates one recipe. Returns { rec, chance, color, cost, result, net, perPoint, missing = { itemIDs }, noSale }.
+-- Evaluates one recipe. Returns { rec, chance, color, cost, result, net, perPoint, missing = { itemIDs }, noSale, floor }
+-- (floor = a reagent was valued at its vendor sell value, so the cost is a lower bound).
 -- net = reagents - best sale value of the output (negative when crafting earns money); perPoint = net / chance.
 function V.Evaluate(rec, ctx)
   local chance = V.CHANCE[rec.d] or 0
-  local cost, missing = 0, {}
+  local cost, missing, floor = 0, {}, false
   for _, m in ipairs(rec.mats or {}) do
-    local unit = buyCost(m[1], ctx)
-    if unit then cost = cost + unit * m[2] else missing[#missing + 1] = m[1] end
+    local unit, isFloor = buyCost(m[1], ctx)
+    if unit then cost = cost + unit * m[2]; floor = floor or isFloor else missing[#missing + 1] = m[1] end
   end
   local result, noSale = 0, true
   if rec.out then
@@ -44,7 +48,7 @@ function V.Evaluate(rec, ctx)
   end
   local net = cost - result
   return { rec = rec, chance = chance, color = V.COLOR[rec.d] or "?", cost = cost, result = result, net = net,
-    perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale }
+    perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale, floor = floor }
 end
 
 -- How many times the recipe can be crafted from what is carried: min over reagents of floor(owned / needed), and the
@@ -144,16 +148,30 @@ local function byCost(a, b)
   if a.perPoint ~= b.perPoint then return a.perPoint < b.perPoint end
   return a.rec.id < b.rec.id
 end
+local function learnAt(e) return e.rec.learn or e.rec.skill end
+
+-- Priced recipes first (cheapest per point), then the ones with an unknown reagent price by required skill.
+local function byLearnRank(a, b)
+  if a.unpriced ~= b.unpriced then return not a.unpriced end
+  if a.unpriced then
+    if learnAt(a) ~= learnAt(b) then return learnAt(a) < learnAt(b) end
+    return a.rec.id < b.rec.id
+  end
+  return byCost(a, b)
+end
 
 -- Recipes the character does not know, ranked by estimated cost per skill point (same maths as Evaluate; the colour
 -- is the estimate above, taken at the skill the character will have when the recipe can be learned). `ctx.known(id)`
--- says which recipes are known; a craft whose output has no market and no vendor price uses the sale value of the
--- data. The learning fee is unknown and not included.
+-- says which recipes are known. A reagent without an AH price falls back to its vendor buy price (ctx.buy), then to
+-- its vendor sell value (ctx.vendor, a floor: `floor` on the row), then is unknown; a recipe with an unknown reagent
+-- is still listed (`unpriced`, no cost per point) after the priced ones. A craft whose output has no market and no
+-- vendor price uses the sale value of the data. The learning fee is unknown and not included.
 --   now  = learnable at the current skill; soon = learnable within V.SOON more points (limits: { now = n, soon = n }).
 --   count = optional bag count function: only recipes whose reagents are carried are kept ("Avec mon sac").
 --   knownBest = cost per point of the best KNOWN recipe: when the best learnable one is cheaper, `gain` is the
---   difference per point.
--- Returns { now, soon, best, gain, candidates (priced, before the bag filter), unpriced, nowTotal, soonTotal }.
+--   difference per point (not given when that best recipe relies on a floor price).
+-- Returns { now, soon, best (priced rows only), gain, candidates (priced, before the bag filter), unpriced (listed or
+-- not, before the bag filter), nowTotal, soonTotal }.
 function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   limits = limits or {}
   local now, soon, candidates, unpriced, nowTotal, soonTotal = {}, {}, 0, 0, 0, 0
@@ -164,29 +182,32 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       if isNow then nowTotal = nowTotal + 1 else soonTotal = soonTotal + 1 end
       local rec = { id = c.id, name = c.name, skill = c.skill, learn = c.learn, src = c.src, out = c.out, oq = c.oq,
         mats = c.mats, d = V.EstimateColor(math.max(skill, at), c.skill) }
-      local own = setmetatable({ vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end },
-        { __index = ctx })
+      local own = setmetatable({
+        vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
+        floor = function(id) return ctx.vendor(id) end,
+      }, { __index = ctx })
       local e = V.Evaluate(rec, own)
       if e.chance > 0 then
         if #e.missing > 0 or #c.mats == 0 then
+          e.unpriced, e.perPoint = true, nil
           unpriced = unpriced + 1
         else
           candidates = candidates + 1
-          if count then e.times, e.short = V.Craftable(rec, count) end
-          if not count or e.times >= 1 then
-            local list = isNow and now or soon
-            list[#list + 1] = e
-          end
+        end
+        if count then e.times, e.short = V.Craftable(rec, count) end
+        if not count or e.times >= 1 then
+          local list = isNow and now or soon
+          list[#list + 1] = e
         end
       end
     end
   end
-  table.sort(now, byCost)
-  table.sort(soon, byCost)
+  table.sort(now, byLearnRank)
+  table.sort(soon, byLearnRank)
   while #now > (limits.now or 4) do now[#now] = nil end
   while #soon > (limits.soon or 3) do soon[#soon] = nil end
-  local best = now[1]
-  local gain = (best and knownBest and best.perPoint < knownBest) and (knownBest - best.perPoint) or nil
+  local best = now[1] and not now[1].unpriced and now[1] or nil
+  local gain = (best and not best.floor and knownBest and best.perPoint < knownBest) and (knownBest - best.perPoint) or nil
   return { now = now, soon = soon, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
     nowTotal = nowTotal, soonTotal = soonTotal }
 end
