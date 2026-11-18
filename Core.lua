@@ -308,7 +308,8 @@ end
 function ns.OpenTradeSkill()
   local T = C_TradeSkillUI
   if not T then return end
-  local function call(fn, ...) if fn then local ok, v = pcall(fn, ...); if ok then return v end end end
+  local function pass(ok, ...) if ok then return ... end end        -- every value of the call, nothing on an error
+  local function call(fn, ...) if fn then return pass(pcall(fn, ...)) end end
   if call(T.IsTradeSkillLinked) or call(T.IsTradeSkillGuild) or call(T.IsTradeSkillNPC) then return end
   if T.IsTradeSkillReady and not call(T.IsTradeSkillReady) then return end
   local base = call(T.GetBaseProfessionInfo)
@@ -378,7 +379,11 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
   -- where to go to learn each one (a pin, or a text only): recorded trainer, library NPC, Classic coordinates, text
   local env = whereEnv(ctx)
-  for _, bucket in ipairs({ result.now, result.soon, result.gray }) do
+  if result.beyond and result.beyond.rank then   -- where to train the rank that lifts the cap
+    local b = result.beyond
+    b.target = ns.Where.Target({ id = 0, learn = b.max + 1, src = nil, way = { rank = b.rank } }, english, env)
+  end
+  for _, bucket in ipairs({ result.now, result.soon, result.gray, result.books }) do
     for _, row in ipairs(bucket) do
       row.target = ns.Where.Target(row.rec, english, env)
       -- never an empty answer: the source itself ("butin", "conteneur", ...) when no place is known
@@ -485,9 +490,9 @@ function ns.RunLeveling(done)
             for i, s in ipairs(almost.short) do entry.almost.missing[i] = { ns.ItemName(s[1]), s[2] } end
           end
           entry.goal = entry.plan.goal
-          entry.learn = ns.LearnFor(p, ctx, count, best and (entry.goal == "gold" and -best.profit or best.perPoint))
+          entry.learn = ns.LearnFor(p, ctx, count, best and not best.uncertain and (entry.goal == "gold" and -best.profit or best.perPoint) or nil)
           if entry.learn then
-            for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {} }) do
+            for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {}, entry.learn.books or {} }) do
               for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end
             end
           end

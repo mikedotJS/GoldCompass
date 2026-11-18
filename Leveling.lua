@@ -79,7 +79,8 @@ function V.Craftable(rec, count)
 end
 
 -- prof = { skill, max, recipes = { [id] = rec } }. Returns { rows = ranked, best, unpriced = { evaluations with a reagent without
--- price and a chance above 0 }, known = number of recipes }. The goal is to LEVEL the profession: skill points first, money second.
+-- price and a chance above 0 }, known = number of recipes }. A figure resting on an uncertain AH price of the crafted item (`uncertain`:
+-- undated or older than the fresh days) comes after the reliable ones (within a colour) and never gives the "gold" best. The goal is to LEVEL the profession: skill points first, money second.
 --   With `count` ("Avec mon sac"): rows are ranked by the skill points expected now (`points` = times craftable x chance),
 --   then by cost per point. `second` = { e, times, points } is the next recipe the leftover bag can craft, given when the
 --   best one gives fewer points than the gap to its next colour change (`thresholds(id)` -> { orange, yellow, green, gray }).
@@ -125,6 +126,7 @@ function V.Plan(prof, ctx, limit, count, thresholds, goal)
   end
   table.sort(rows, function(a, b)
     if gold then
+      if a.uncertain ~= b.uncertain then return not a.uncertain end      -- a profit that rests on an uncertain AH price comes last
       local ka, kb = count and a.total or a.profit, count and b.total or b.profit
       if ka ~= kb then return ka > kb end
       if a.profit ~= b.profit then return a.profit > b.profit end
@@ -135,6 +137,7 @@ function V.Plan(prof, ctx, limit, count, thresholds, goal)
     elseif a.rec.d ~= b.rec.d then
       return a.rec.d < b.rec.d
     end
+    if a.uncertain ~= b.uncertain then return not a.uncertain end        -- within a colour, reliable figures first
     if a.perPoint ~= b.perPoint then return a.perPoint < b.perPoint end
     return a.rec.id < b.rec.id
   end)
@@ -143,7 +146,7 @@ function V.Plan(prof, ctx, limit, count, thresholds, goal)
   local best, second = rows[1], nil
   if gold then                                                    -- money: nothing earning, or priced from an undated AH price, wins
     best = nil
-    for _, e in ipairs(rows) do if e.profit > 0 and not e.noAge then best = e; break end end
+    for _, e in ipairs(rows) do if e.profit > 0 and not e.uncertain then best = e; break end end
   end
   if count and best and not gold then
     local gap, th = nil, thresholds and thresholds(best.rec.id)
@@ -392,6 +395,8 @@ end
 -- Returns { now, soon, gray, best (priced, recommendable rows only), gain, candidates (priced and not gray, before the bag filter), unpriced
 -- (same, with an unknown reagent price), nowTotal, soonTotal (learnable in reach, gray or not) }. Nothing learnable:
 -- nowTotal + soonTotal = 0; everything gray: candidates + unpriced = 0; hidden by the bag filter: both lists empty.
+-- The rank that raises a profession cap: the cap now -> the rank to train (Apprentice 75, Journeyman 150, Expert 225, Artisan 300).
+local NEXT_RANK = { [75] = "Journeyman", [150] = "Expert", [225] = "Artisan" }
 local SRC_OF_KIND = { vendor = "v", quest = "q", item = "i", container = "c", drop = "d" } -- trainer = nil
 
 V.GOLD_CRAFTS = 10
@@ -400,19 +405,28 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   limits = limits or {}
   local gold = ctx.goal == "gold"
   local now, soon, gray, candidates, unpriced, nowTotal, soonTotal = {}, {}, {}, 0, 0, 0, 0
+  local books, beyond = {}, nil
+  local maxSkill = ctx.maxSkill
+  local nearCap = not maxSkill or skill >= maxSkill - 2 * V.SOON
   for _, c in ipairs(crafts) do
     local offer = ctx.offer and ctx.offer(c.id)
     local skip = (offer and offer.status == "used")             -- the trainer lists it as already known
       or (c.how and c.how.kind == "unknown" and not offer)      -- no known way to get it
     -- a recipe whose learn skill is unknown (and no trainer offers it) is not listed: mostly crafts not learnable yet
     local at = not skip and (offer and math.max(1, offer.skill or 1) or c.learn)
-    if at and not ctx.known(c.id) and at <= skill + V.SOON then
+    if at and not ctx.known(c.id) and at <= skill + V.SOON and maxSkill and at > maxSkill and c.out then
+      -- above the profession cap: a higher rank must be trained first (one line "Au-delà de <max>", not a recipe to learn)
+      beyond = beyond or { max = maxSkill, rank = NEXT_RANK[maxSkill], count = 0 }
+      beyond.count = beyond.count + 1
+    elseif at and not ctx.known(c.id) and at <= skill + V.SOON then
       local isNow = at <= skill
       if isNow then nowTotal = nowTotal + 1 else soonTotal = soonTotal + 1 end
       -- how it is obtained, what it costs to learn, and whether it may be recommended
       local way, fee, src, recommend, feeAge = c.how, nil, c.src, true, nil
       if offer then
-        way, fee, src = { kind = "trainer", confirmed = true, npcs = {} }, offer.cost, nil
+        -- the recorded trainer gives the fee; the rank the recipe needs stays the Forever table's (a recorded offer is no proof the
+        -- rank is trained: the window lists what it teaches, "unavailable" included)
+        way, fee, src = { kind = "trainer", confirmed = true, npcs = {}, rank = c.how and c.how.rank }, offer.cost, nil
       elseif way then
         local kind = way.kind
         local price = way.itemID and ahPrice(way.itemID, ctx)
@@ -425,6 +439,11 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats, way = way,
         d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = fee, feeAge = feeAge,
         npcNames = way and way.npcs, teachItem = way and way.itemID }
+      if not c.out and #c.mats == 0 then
+        -- a rank book or a rank quest (no crafted item, no reagents): never a craft. Near the cap it gets its own line.
+        if isNow then nowTotal = nowTotal - 1 else soonTotal = soonTotal - 1 end
+        if nearCap then books[#books + 1] = { rec = rec, book = true, recommend = false } end
+      else
       local own = setmetatable({
         vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
         floor = function(id) return ctx.vendor(id) end,
@@ -435,6 +454,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       e.useful = math.max(1, (c.gr or at + 60) - math.max(skill, at))      -- skill points it stays useful for from now
       -- a trainer recipe whose rank the character has not trained yet (ctx.maxSkill = profession maximum)
       e.rankGated = ctx.maxSkill and way and way.rank and ctx.maxSkill < (RANK_MAX[way.rank] or 0) or false
+      if offer and offer.status == "unavailable" and isNow then e.rankGated = true end   -- the trainer window itself says it cannot be learned yet
       if e.chance == 0 and not gold then
         e.gray, e.perPoint = true, nil                          -- gives no skill point any more
       elseif #e.missing > 0 or #c.mats == 0 then
@@ -455,8 +475,13 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
         local list = e.gray and gray or (isNow and now or soon)
         list[#list + 1] = e
       end
+      end
     end
   end
+  table.sort(books, function(a, b)
+    if a.rec.learn ~= b.rec.learn then return a.rec.learn < b.rec.learn end
+    return a.rec.id < b.rec.id
+  end)
   table.sort(now, byLearnRank)
   table.sort(soon, byLearnRank)
   table.sort(gray, function(a, b)
@@ -487,7 +512,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   end
   local gain = (best and not best.floor and knownBest and rankValue(best) < knownBest) and (knownBest - rankValue(best)) or nil
   return { now = now, soon = soon, gray = gray, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
-    nowTotal = nowTotal, soonTotal = soonTotal }
+    nowTotal = nowTotal, soonTotal = soonTotal, books = books, beyond = beyond }
 end
 
 -- State of the "Fabriquer" button of the recommended recipe. s = { times = how many can be crafted from the bags,

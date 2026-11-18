@@ -6,10 +6,11 @@ local _, ns = ...
 local L = {}
 ns.Learned = L
 
+-- pcall without the status: every value of the call comes back (GetTradeSkillLine returns several), nothing on an error.
+local function passThrough(ok, ...) if ok then return ... end end
 local function safe(fn, ...)
   if not fn then return end
-  local ok, v = pcall(fn, ...)
-  if ok then return v end
+  return passThrough(pcall(fn, ...))
 end
 
 -- Name, skill and maximum of the open profession window.

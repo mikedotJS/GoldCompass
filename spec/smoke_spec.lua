@@ -17,6 +17,7 @@ local function proxy()
       end
       if k == "RegisterEvent" or k == "RegisterUnitEvent" then self.events = self.events or {}; self.events[a] = true end
       if k == "SetText" then self.text = a end
+      if k == "SetWidth" then self.width = a end
       if k == "Show" then self.shown = true end
       if k == "Hide" then self.shown = false end
       if k == "SetShown" then self.shown = a and true or false end
@@ -176,7 +177,7 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/ForeverNpcs", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format",
     "Prices", "Nodes", "Core", "Learned", "Trainers", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
@@ -1958,7 +1959,8 @@ describe("recipes to learn (stubbed recipe data)", function()
     if lr.best then assert.are_not.equal(2158, lr.best.rec.id) end
     ns.Window.Toggle(); ns.Window.SetTab("job")
     local line
-    for _, l in ipairs(ns.Window.Lines()) do if (l.left.text or ""):find("Fine Leather Boots", 1, true) then line = l.left.text end end
+    local all = ns.Window.Lines()
+    for i, l in ipairs(all) do if (l.left.text or ""):find("Fine Leather Boots", 1, true) then line = l.left.text .. " " .. (all[i + 1].left.text or "") end end   -- name line + detail line
     assert.is_not_nil(line)
     assert.matches("butin", line)
     assert.is_nil(line:find("entraîneur", 1, true))
@@ -2116,7 +2118,7 @@ describe("Où l'apprendre: every map button answers (real Forever data, Horde, L
     assert.is_true(seen > 60)
     assert.are.equal("pin", kinds[3763])           -- Ceinture élégante: a Journeyman trainer
     assert.are.equal("pin", kinds[9062])           -- Petite giberne: a trainer
-    assert.are.equal("text", kinds[1301431])       -- Gustwoven (Vayn Moongaze, Zephras Isle): no map, no coordinates
+    assert.are.equal("pin", kinds[1301431])        -- Gustwoven (Vayn Moongaze, Zephras Isle): new to Forever, ForeverDB saw where she stands
   end)
 
   it("a click always answers: pin, zone or text in the chat, and one log line with the recipe and the decision", function()
@@ -2171,12 +2173,11 @@ describe("Où l'apprendre: the site's location text (real Forever data, Horde, C
     ns.RunLeveling(function(r) res = r end)
     local lr, by = res.profs[1].learn, {}
     for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do for _, row in ipairs(bucket) do by[row.rec.id] = row end end
-    assert.is_not_nil(by[1283400])
-    -- Journeyman Campfire: a pattern with an auction price pins the auction house; the site's drop zone stays on the line
-    assert.is_true(by[1283400].target.auction)
-    assert.matches("Patron en vente à l'HV", by[1283400].target.text)
-    assert.matches("butin : ", by[1283400].target.extra)
-    assert.is_not_nil(by[1283400].target.extra:find("Wailing Caverns", 1, true) or by[1283400].target.extra:find("Zone", 1, true))
+    assert.is_not_nil(by[8238])
+    -- Savory Deviate Delight: a pattern no vendor sells, with an auction price, pins the auction house; the site's drop zone stays on the line
+    assert.is_true(by[8238].target.auction)
+    assert.matches("Patron en vente à l'HV", by[8238].target.text)
+    assert.matches("butin", by[8238].target.extra)                       -- the site says "drop" (and the zone when it names one)
     assert.is_not_nil(by[6417])
     assert.are.equal("quête : Dig Rat Stew", by[6417].target.text)
   end)
@@ -2190,7 +2191,7 @@ describe("Où l'apprendre: the site's location text (real Forever data, Horde, C
     ns.RunLeveling(function(r) res = r end)
     local row
     for _, bucket in ipairs({ res.profs[1].learn.now, res.profs[1].learn.soon, res.profs[1].learn.gray }) do
-      for _, r in ipairs(bucket) do if r.rec.id == 1283400 then row = r end end
+      for _, r in ipairs(bucket) do if r.rec.id == 8238 then row = r end end
     end
     assert.is_true(row.target.auction); assert.are.equal("pin", row.target.kind)
     assert.is_truthy(row.target.name:find("^Auctioneer"))
@@ -2199,9 +2200,10 @@ describe("Où l'apprendre: the site's location text (real Forever data, Horde, C
     local chat = table.concat(printed, "\n", before + 1)
     assert.matches("Auctioneer", chat); assert.matches("Source : pfQuest", chat); assert.matches("Patron en vente à l'HV : ~", chat)
     local tip = table.concat(ns.Window.TargetTooltipLines(row.target), "\n")
-    assert.matches("Patron en vente à l'HV : ~", tip); assert.matches("prix HV", tip); assert.matches("butin : ", tip)
+    assert.matches("Patron en vente à l'HV : ~", tip); assert.matches("prix HV", tip); assert.matches("butin", tip)
     assert.matches("Source : pfQuest %(positions Classic%)%.", tip)
-    assert.is_nil(tip:find("Classic, à vérifier", 1, true))
+    assert.matches("position Classic, non confirmée sur Forever", tip)     -- pfQuest's auctioneer position: never shown as a sure one
+    assert.matches("position Classic, non confirmée sur Forever", chat)
   end)
 end)
 
@@ -2225,8 +2227,10 @@ describe("Où l'apprendre: vendors of the site, by faction (Cooking 124)", funct
     local row = by[7755]                                      -- Poisson-chat moustachu
     assert.is_not_nil(row)
     assert.are.equal("Derak Nightfall (Hillsbrad Foothills), Naal Mistrunner (Thunder Bluff)", row.rec.way.where)
-    assert.are.equal("pin", row.target.kind)                  -- pfQuest knows both Horde vendors: an exact pin, never Lindea (Alliance)
-    assert.is_truthy(row.target.name == "Derak Nightfall" or row.target.name == "Naal Mistrunner")
+    assert.are.equal("pin", row.target.kind)                  -- an exact pin on one of ForeverDB's vendors of the recipe, never Lindea (Alliance)
+    local listed = false
+    for _, id in ipairs(ns.FdbVendors[7755]) do listed = listed or id == row.target.id end
+    assert.is_true(listed); assert.are_not.equal("A", ns.FdbNpcs[row.target.id][5]); assert.is_true(row.target.confirmed)
     local before = #printed
     ns.Window.GoTo(row.target, "Poisson-chat moustachu")
     assert.is_nil(table.concat(printed, "\n", before + 1):find("Lindea", 1, true))
@@ -2325,5 +2329,206 @@ describe("NPC positions recorded in game", function()
     _G.C_Map.GetPlayerMapPosition = function() return { x = 0.5, y = 0.5 } end
     ns.TrainerLog.ScanMerchant()
     assert.are.equal(50, ns.db.npcs[3497].x)
+  end)
+end)
+
+-- Forever truth of "Où l'apprendre" (real data, the owner's Horde professions): a pin is confident only on a position seen on
+-- Forever (ForeverDB.net) or recorded in game; everything else is flagged. GC_REPORT=1 busted prints the table recipe -> place -> evidence.
+describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 124 and Leatherworking 69)", function()
+  local known = dofile("spec/fixtures/owner_profiles.lua")[1].known
+  local function rows(line, skill, name, max, recipes)
+    setup({ scanned = true, faction = "Horde", profs = { { line, skill, name, max } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { [name] = { skill = skill, max = max, recipes = recipes } } }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local by, list = {}, {}
+    for _, bucket in ipairs({ res.profs[1].learn.now, res.profs[1].learn.soon, res.profs[1].learn.gray }) do
+      for _, row in ipairs(bucket) do by[row.rec.id] = row; list[#list + 1] = row end
+    end
+    return ns, by, list
+  end
+  local function cooking()
+    return rows(185, 124, "Cuisine", 150, { [2538] = { id = 2538, name = "x", d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } })
+  end
+  local function leather()
+    local recipes = {}
+    for _, id in ipairs(known) do recipes[id] = { id = id, name = "known" .. id, d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } end
+    return rows(165, 69, "Travail du cuir", 75, recipes)
+  end
+  local function report(title, ns, list)
+    if not os.getenv("GC_REPORT") then return end
+    io.write("\n== " .. title .. "\n")
+    table.sort(list, function(a, b) return a.rec.id < b.rec.id end)
+    for _, row in ipairs(list) do
+      local t = row.target
+      local place = t.mapID and t.x and ("%s, map %d %.1f/%.1f"):format(tostring(t.name), t.mapID, t.x, t.y)
+        or t.mapID and ("zone map %d (%s)"):format(t.mapID, tostring(t.name or t.text))
+        or t.vendors and ns.Window.VendorText(t) or tostring(t.text)
+      local evidence = t.mapID and t.x and ((t.confirmed and "CONFIRMED " or "UNCONFIRMED ") .. tostring(t.source))
+        or t.unverified and ("NO FOREVER SOURCE" .. (t.hint and (" (Classic hint: " .. t.hint .. ")") or ""))
+        or t.onlyFaction and ("only faction " .. t.onlyFaction) or tostring(t.source or "text")
+      io.write(("%-8d %-38s %-9s %-7s %-52s %s\n"):format(row.rec.id, tostring(row.rec.name):sub(1, 38), tostring(row.rec.way and row.rec.way.kind),
+        t.kind .. (t.auction and "/AH" or ""), place, evidence))
+    end
+  end
+
+  it("the catfish recipe (7755) pins Naal Mistrunner IN Thunder Bluff (map 1456), a position seen on Forever, never Mulgore", function()
+    local ns, by = cooking()
+    local row = by[7755]                                      -- Poisson-chat moustachu
+    assert.is_not_nil(row)
+    assert.are.same({ 5494, 2397, 260487, 3497, 2383, 3027, 4553, 3029 }, ns.FdbVendors[7755])   -- ForeverDB: who sells it
+    assert.are.same({ "Naal Mistrunner", 1456, 50.8, 52.2, "H", true }, ns.FdbNpcs[3027])
+    -- a Tauren standing in Mulgore: the Thunder Bluff vendors are the nearest ones
+    local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = "H", db = ns.Npcs,
+      byName = ns.NpcByName, ntrainers = ns.NpcTrainers, fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors, fdbTrainers = ns.FdbTrainers,
+      contOf = { [1456] = "K", [1412] = "K", [1413] = "K", [1424] = "E", [1458] = "E" }, continent = "K",
+      dist = function(m, x) return m == 1456 and (x == 50.8 and 10 or 20) or 900 end }
+    local t = ns.Where.Target(row.rec, "Cooking", env)
+    assert.are.equal("pin", t.kind); assert.are.equal("Naal Mistrunner", t.name); assert.are.equal(3027, t.id)
+    assert.are.equal(1456, t.mapID); assert.are.equal(50.8, t.x); assert.are.equal(52.2, t.y)
+    assert.is_true(t.confirmed); assert.are.equal("foreverdb", t.source)
+    local before = #printed
+    ns.Window.GoTo(t, "Poisson-chat moustachu")
+    local chat = table.concat(printed, "\n", before + 1)
+    assert.matches("Source : ForeverDB.net %(vu en jeu sur Forever%)", chat)
+    assert.is_nil(chat:find("non confirmée", 1, true)); assert.is_nil(chat:find("Lindea", 1, true))
+    -- whoever the player is, no Horde answer is on the Mulgore map (the projection of the city) or an Alliance vendor
+    for _, e in ipairs({ {}, { continent = "E" }, { continent = "K", dist = function() return 5 end } }) do
+      local o = {}
+      for k, v in pairs(env) do o[k] = v end
+      o.continent, o.dist = e.continent, e.dist
+      local any = ns.Where.Target(row.rec, "Cooking", o)
+      assert.are.equal("pin", any.kind); assert.are_not.equal(1412, any.mapID); assert.is_true(any.confirmed)
+      assert.is_true(any.id ~= 2383 and any.id ~= 5494)
+    end
+    -- without ForeverDB's place, pfQuest's Classic one is used on the city map and flagged as unconfirmed
+    env.fdb, env.fdbVendors, env.fdbTrainers = nil, nil, nil
+    local c = ns.Where.Target({ id = 7755, src = "v", way = { site = true, where = "Naal Mistrunner (Thunder Bluff)" } }, "Cooking", env)
+    assert.are.equal(1456, c.mapID); assert.is_false(c.confirmed); assert.are.equal("pfquest", c.source)
+    before = #printed
+    ns.Window.GoTo(c, "Poisson-chat moustachu")
+    assert.matches("position Classic, non confirmée sur Forever", table.concat(printed, "\n", before + 1))
+    assert.matches("position Classic, non confirmée sur Forever", table.concat(ns.Window.TargetTooltipLines(c), "\n"))
+  end)
+
+  it("every Cooking and Leatherworking pin is confirmed on Forever or says it is not; nothing is pinned from Classic names alone", function()
+    for _, p in ipairs({ { "Cooking 124 Horde", cooking }, { "Leatherworking 69 Horde", leather } }) do
+      local ns, _, list = p[2]()
+      assert.is_true(#list > 10)
+      local confirmed = 0
+      for _, row in ipairs(list) do
+        local t = row.target
+        if t.kind == "pin" then
+          assert.is_true(t.confirmed == (t.source == "foreverdb" or t.source == "recorded"), row.rec.name)
+          if t.confirmed then confirmed = confirmed + 1 end
+          local tip = table.concat(ns.Window.TargetTooltipLines(t), "\n")
+          assert.are.equal(not t.confirmed, tip:find("position Classic, non confirmée sur Forever", 1, true) ~= nil, row.rec.name)
+          if row.rec.src ~= nil and t.id and not t.auction and ns.FdbVendors[row.rec.id] then   -- a vendor: one of ForeverDB's vendors of this recipe
+            local listed = false
+            for _, id in ipairs(ns.FdbVendors[row.rec.id]) do listed = listed or id == t.id end
+            assert.is_true(listed, row.rec.name .. ": " .. tostring(t.name))
+          end
+          if t.id and ns.FdbNpcs[t.id] then assert.are_not.equal("A", ns.FdbNpcs[t.id][5], row.rec.name) end
+        end
+      end
+      assert.is_true(confirmed > 5, p[1])
+      report(p[1], ns, list)
+    end
+  end)
+
+  it("the Leatherworking trainer rows pin a Horde trainer ForeverDB lists, at the place it was seen on Forever", function()
+    local ns, by = leather()
+    local t = by[3763].target                                 -- Ceinture élégante en cuir: a trainer recipe
+    assert.are.equal("pin", t.kind); assert.is_true(t.confirmed); assert.are.equal("foreverdb", t.source)
+    assert.is_true(ns.FdbTrainers.Leatherworking[t.id]); assert.are.equal("H", ns.FdbNpcs[t.id][5])
+    assert.are.same({ ns.FdbNpcs[t.id][2], ns.FdbNpcs[t.id][3], ns.FdbNpcs[t.id][4] }, { t.mapID, t.x, t.y })
+  end)
+end)
+
+describe("clients without GetBaseProfessionInfo (GetTradeSkillLine returns several values)", function()
+  it("Learned.Capture records the window by its GetTradeSkillLine name, skill and maximum", function()
+    setup({}); local ns = loadAddon()
+    local window = { GetTradeSkillLine = function() return 165, "Travail du cuir", 61, 75 end,
+      GetAllRecipeIDs = function() return { 2149 } end,
+      GetRecipeInfo = function(id) return { learned = true, name = "r" .. id, relativeDifficulty = 2 } end }
+    local learned, profs = {}, {}
+    ns.Learned.Capture(window, learned, profs)
+    assert.is_not_nil(profs["Travail du cuir"])
+    assert.are.equal(61, profs["Travail du cuir"].skill); assert.are.equal(75, profs["Travail du cuir"].max)
+  end)
+
+  it("ns.OpenTradeSkill returns the profession name from GetTradeSkillLine", function()
+    setup({}); local ns = loadAddon()
+    _G.C_TradeSkillUI = { GetTradeSkillLine = function() return 165, "Travail du cuir", 61, 75 end }
+    assert.are.equal("Travail du cuir", (ns.OpenTradeSkill()))
+  end)
+end)
+
+describe("Métier tab with the owner's professions (real Forever data, Horde)", function()
+  local function plain(s) return ((s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+  local function render(bag)
+    setup({ scanned = true, faction = "Horde", counts = bag and { [2318] = 10 } or nil,
+      profs = { { 165, 61, "Travail du cuir", 75 }, { 356, 150, "Pêche", 150 }, { 185, 124, "Cuisine", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {}, onlyBag = bag or false }
+    for _, p in ipairs(dofile("spec/fixtures/owner_profiles.lua")) do      -- the owner's known recipes (every profession of the fixture)
+      local recipes = {}
+      for _, id in ipairs(p.known) do recipes[id] = { id = id, name = "r" .. id, d = 2, out = 2302, oq = 1, mats = { { 2318, 1 } } } end
+      ns.char.profs[p.name] = { skill = p.skill, max = p.skill > 100 and 150 or 75, recipes = recipes }
+    end
+    _G.GetLocale = function() return "frFR" end
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local due = timers; timers = {}
+    for _, fn in ipairs(due) do pcall(fn) end
+    return ns
+  end
+
+  it("no line is cut: its text fits its slot (about 5.5 px a character), with and without the bag filter", function()
+    for _, bag in ipairs({ false, true }) do
+      local ns = render(bag)
+      local P = ns.Window.LineParts
+      local n, cut = 0, {}
+      for _, l in ipairs(ns.Window.Lines()) do
+        local text = plain(l.left.text)
+        if text ~= "" then
+          n = n + 1
+          local slotRight = l.left.width or P.left.r      -- the width given by setLines
+          local cap = math.floor(slotRight / 5.5)
+          if utf8.len(text) > cap then cut[#cut + 1] = ("%d > %d: %s"):format(utf8.len(text), cap, text) end
+        end
+      end
+      assert.is_true(n > 10)
+      assert.are.same({}, cut)
+    end
+  end)
+
+  it("the Métier tab shows the cap lines: 'Au-delà de 75' for Travail du cuir, rank books near the cap, no gray rank book", function()
+    for _, bag in ipairs({ false, true }) do
+      local ns = render(bag)
+      local all = {}
+      for _, l in ipairs(ns.Window.Lines()) do all[#all + 1] = plain(l.left.text) end
+      local text = table.concat(all, "\n")
+      assert.matches("Au%-delà de 75 : il faut le rang Compagnon", text)
+      assert.matches("Pour dépasser 150 : ", text)
+      assert.is_nil(text:find("prix de la recette inconnu, niv. 125 grise", 1, true))
+    end
+  end)
+
+  it("no recipe above the profession cap is listed under 'Bientôt' (Travail du cuir 61/75)", function()
+    local ns = render(false)
+    local lines = ns.Window.Lines()
+    local inLeather, soon = false, false
+    for i, l in ipairs(lines) do
+      local t = plain(l.left.text)
+      if t:find("^Travail du cuir") then inLeather = true elseif t:find("^Pêche") or t:find("^Cuisine") then inLeather = false end
+      if inLeather then
+        if t:find("^Bientôt") then soon = true elseif t:find("^À apprendre") or t:find("^Déjà grises") then soon = false end
+        local level = soon and t:match("niv%. (%d+)")
+        if level then assert.is_true(tonumber(level) <= 75, t) end
+      end
+    end
   end)
 end)

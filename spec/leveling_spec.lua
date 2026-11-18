@@ -932,3 +932,60 @@ describe("Leveling.Learnable: the best is learnable now, AH figures can be uncer
     assert.are.equal(20000, e.rec.fee); assert.are.equal(3, e.rec.feeAge)
   end)
 end)
+
+describe("Leveling.Learnable: ranks, caps and rank books", function()
+  local function lc(extra)
+    local c = ctx()
+    c.known = function() return false end
+    c.price = function(id) local p = ({ [10] = { 100, 0 }, [30] = { 5000, 0 } })[id]; if p then return p[1], p[2] end end
+    for k, v in pairs(extra or {}) do c[k] = v end
+    return c
+  end
+  local function craft(id, learn, over)
+    local c = { id = id, learn = learn, y = learn + 30, g = learn + 45, gr = learn + 60, out = 30, oq = 1, mats = { { 10, 1 } },
+      how = { kind = "trainer", cost = 100, rank = "Apprentice", npcs = {} } }
+    for k, v in pairs(over or {}) do c[k] = v end
+    return c
+  end
+  local function offer(skill, cost, status) return { skill = skill, cost = cost, status = status or "available", npc = "Kamari", mapID = 1411, x = 1, y = 1 } end
+
+  it("a recorded trainer offer keeps the rank of the Forever table: a Journeyman recipe is gated at cap 75, an Apprentice one is not", function()
+    local journeyman = craft(3761, 50, { how = { kind = "trainer", cost = 900, rank = "Journeyman", npcs = {} } })
+    local apprentice = craft(2149, 55)
+    local c = lc({ maxSkill = 75, offer = function(id) return ({ [3761] = offer(50, 900), [2149] = offer(55, 100) })[id] end })
+    local r = V.Learnable({ journeyman, apprentice }, 61, c)
+    for _, e in ipairs(r.now) do assert.are.equal(e.rec.id == 3761, e.rankGated) end
+    assert.are.equal("Journeyman", r.now[1].rec.way.rank == "Journeyman" and "Journeyman" or r.now[2].rec.way.rank)
+    assert.are.equal(2149, r.best.rec.id)       -- the recipe the character can really learn, not the Journeyman tunic
+  end)
+
+  it("an offer the trainer window lists as unavailable is gated too", function()
+    local c = lc({ maxSkill = 75, offer = function(id) return id == 7 and offer(50, 100, "unavailable") or nil end })
+    local r = V.Learnable({ craft(7, 50) }, 61, c)
+    assert.is_true(r.now[1].rankGated)
+    r = V.Learnable({ craft(7, 50), craft(8, 52) }, 61, c)
+    assert.are.equal(8, r.best.rec.id)
+  end)
+
+  it("'soon' stops at the profession cap: recipes at 80-85 are not listed at 61/75, one 'beyond' line says which rank is needed", function()
+    local r = V.Learnable({ craft(1, 70), craft(2, 80), craft(3, 85) }, 61, lc({ maxSkill = 75 }))
+    assert.are.same({ 1 }, { r.soon[1].rec.id }); assert.are.equal(1, #r.soon)
+    assert.are.equal(1, r.soonTotal)
+    assert.are.equal(75, r.beyond.max); assert.are.equal("Journeyman", r.beyond.rank); assert.are.equal(2, r.beyond.count)
+    assert.is_nil(V.Learnable({ craft(1, 70) }, 61, lc({ maxSkill = 75 })).beyond)
+    assert.are.equal(2, #V.Learnable({ craft(1, 70), craft(2, 80) }, 61, lc()).soon)       -- no cap known: unchanged
+  end)
+
+  it("rank books (no crafted item, no reagents) are never gray crafts: they get their own list, near the cap, with the bag filter on", function()
+    local book = craft(7732, 125, { out = false, mats = {}, how = { kind = "vendor", npcs = {} }, src = "v" })
+    local r = V.Learnable({ craft(1, 100), book }, 124, lc({ maxSkill = 150 }))
+    assert.are.equal(1, #r.books); assert.are.equal(7732, r.books[1].rec.id)
+    for _, bucket in ipairs({ r.now, r.soon, r.gray }) do for _, e in ipairs(bucket) do assert.are_not.equal(7732, e.rec.id) end end
+    assert.are.equal(1, r.nowTotal + r.soonTotal)
+    -- the bag filter hides crafts, not the books
+    local bagged = V.Learnable({ book }, 124, lc({ maxSkill = 150 }), function() return 0 end)
+    assert.are.equal(1, #bagged.books)
+    -- far from the cap: not shown
+    assert.are.equal(0, #V.Learnable({ book }, 124, lc({ maxSkill = 300 })).books)
+  end)
+end)

@@ -572,8 +572,27 @@ local function setLines(entries, tail, area)
   panel.pulse:Stop()
   area = area or W.Layout.list.lines
   local all = {}
-  for _, e in ipairs(entries) do all[#all + 1] = e end
-  for _, e in ipairs(tail) do all[#all + 1] = e end
+  -- a sentence too long for its slot goes on a second line (about 5.5 px a character), never cut: the map button stays on the first
+  local function add(e)
+    local plain = e.left and e.left:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
+    local cap = math.floor(((e.target and W.LineParts.go.l - 4) or W.LineWide.r) / 5.5)
+    if not (e.wide and not e.craft and plain and #plain:gsub("[\128-\191]", "") > cap) then all[#all + 1] = e; return end
+    local colour, body = e.left:match("^(|c%x%x%x%x%x%x%x%x)(.*)|r$")
+    body = body or e.left
+    local line, first = "", true
+    local function flush()
+      local copy = { wide = true, left = (colour or "") .. line .. (colour and "|r" or "") }
+      if first then copy.target, copy.recipe = e.target, e.recipe; first = false end
+      all[#all + 1] = copy
+    end
+    for word in body:gmatch("%S+") do
+      local joined = line == "" and word or (line .. " " .. word)
+      if line ~= "" and #joined:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[\128-\191]", "") > cap then flush(); line = word else line = joined end
+    end
+    flush()
+  end
+  for _, e in ipairs(entries) do add(e) end
+  for _, e in ipairs(tail) do add(e) end
   place(scroll, rect(area.l, area.t, area.r - SCROLLBAR_W, area.b), f)
   contentHeight = #all * LINE_H
   content:SetSize(area.r - area.l - SCROLLBAR_W, math.max(contentHeight, 1))
@@ -764,7 +783,16 @@ end
 -- Returns true when the bag filter left nothing to show (the empty state with its way out).
 local function addLearn(entries, p)
   local lr, L, gold = p.learn, ns.Leveling, p.goal == "gold"
-  local function grey(msg) entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. msg .. "|r" } end
+  -- a dim sentence on as many lines as it needs: a line holds about 68 characters (the slot is ~5.5 px a character), none is cut
+  local function grey(msg)
+    local line = ""
+    for word in msg:gmatch("%S+") do
+      local chars = #(line .. " " .. word):gsub("[\128-\191]", "")
+      if line ~= "" and chars > 68 then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. line .. "|r" }; line = word
+      else line = line == "" and word or (line .. " " .. word) end
+    end
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. line .. "|r" }
+  end
   local function perPoint(e)
     if e.gray then return S.learn_pp_gray end
     if e.unpriced then return S.learn_pp_unknown end
@@ -772,6 +800,16 @@ local function addLearn(entries, p)
     local gain = e.perPoint < 0
     local fmt = e.floor and (gain and S.learn_pp_floor_gain or S.learn_pp_floor) or (gain and S.learn_pp_gain or S.learn_pp)
     return fmt:format(ns.Money(math.abs(e.perPoint))) .. (e.uncertain and S.ah_uncertain_tag or "")
+  end
+  -- rank books (listed near the cap, whatever the bag filter says) and the rank that lifts the cap: never gray crafts
+  for _, b in ipairs(lr.books or {}) do
+    entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_book:format(p.max or 0, b.name or ns.Fmt.RecipeName(b.rec)) .. "|r",
+      target = b.target, recipe = b.name }
+    entries[#entries + 1] = { wide = true, left = S.learn_book2:format(ns.Fmt.Source(b.rec, true), b.rec.learn) }
+  end
+  if lr.beyond and lr.beyond.rank then
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.learn_beyond:format(lr.beyond.max, S.rank_names[lr.beyond.rank] or lr.beyond.rank) .. "|r",
+      target = lr.beyond.target, recipe = S.rank_names[lr.beyond.rank] }
   end
   local total = #lr.now + #lr.soon + #(lr.gray or {})
   if total == 0 then
@@ -783,8 +821,10 @@ local function addLearn(entries, p)
   if #lr.now + #lr.soon == 0 then grey(S.learn_gray) end   -- everything in reach is gray
   local function row(e)
     local t, name = e.rec.trainer, e.name or ns.Fmt.RecipeName(e.rec)
-    entries[#entries + 1] = { left = t and S.learn_row_seen:format(name, ns.Money(e.rec.fee or 0), t.npc)
-      or S.learn_row:format(name, ns.Fmt.Source(e.rec), e.rec.learn), right = perPoint(e), target = e.target, recipe = name }
+    -- two lines like a known recipe: name and figure, then the dim details (the left slot is too narrow for both)
+    entries[#entries + 1] = { left = S.learn_row:format(name), right = perPoint(e), target = e.target, recipe = name }
+    entries[#entries + 1] = { wide = true, left = t and ("  |cff9d9d9d" .. S.learn_row_seen:format(ns.Money(e.rec.fee or 0), t.npc) .. ", niv. " .. e.rec.learn .. "|r")
+      or S.learn_row2:format(ns.Fmt.Source(e.rec), e.rec.learn) }
   end
   if #lr.now > 0 then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_now .. "|r" }
