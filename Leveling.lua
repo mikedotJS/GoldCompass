@@ -236,14 +236,13 @@ function V.Plan(prof, ctx, limit, count, thresholds, goal)
       if a.profit ~= b.profit then return a.profit > b.profit end
       return a.rec.id < b.rec.id
     end
-    if count and math.abs(a.points - b.points) > 1e-9 then return a.points > b.points end
     return V.EasierThan(a, b)
   end)
   table.sort(unpriced, function(a, b) return a.rec.id < b.rec.id end)
   while limit and #rows > limit do rows[#rows] = nil end
   local best, second = rows[1], nil
-  if best and not gold and not count then
-    best = V.EasiestWithin(rows)                                  -- levelling: the easiest recipe (ingredients, then ease)
+  if best and not gold then
+    best = V.EasiestWithin(rows)                                  -- levelling: the easiest recipe (ingredients, then ease), bag or not
     for i, e in ipairs(rows) do if e == best then table.remove(rows, i); break end end
     table.insert(rows, 1, best)
   end

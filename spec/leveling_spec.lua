@@ -683,26 +683,42 @@ describe("Forever trainer table (wowforever.be, in-game observed)", function()
   end)
 end)
 
-describe("Leveling: skill points first, money second (the owner's Leatherworking 61 bag)", function()
+describe("Leveling: the effort rule, with and without the bag (the owner's Leatherworking 61)", function()
   local function counts(t) return function(id) return t[id] or 0 end end
   -- reagent 10: AH 100c; reagent 20: vendor 30c; output 30: AH 1000c (950 net); output 32: vendor 180c
-  -- Brassards (id 1): green, 1 x reagent 10 (100c) -> sells 950: profit 850 per craft, 850 / 0.25 = 3400 "per point" (the old winner)
+  -- Brassards (id 1): green, 2 x reagent 10 (200c) -> sells 950: profit 750 per craft; 2 ingredients / 0.25 = 8 per point
   -- Gants (id 2): orange, 10 x reagent 20 (300c) -> sells 180: costs 120 per craft and per point
   local function prof()
     return { skill = 61, max = 75, recipes = {
-      [1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 10, 1 } } },
+      [1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 10, 2 } } },
       [2] = { id = 2, d = 0, out = 32, oq = 1, mats = { { 20, 10 } } },
     } }
   end
-  local bag = counts({ [10] = 5, [20] = 70 })   -- Brassards x5, Gants x7
+  local bag = counts({ [10] = 10, [20] = 70 })   -- Brassards x5, Gants x7
 
-  it("with the bag, the recipe with the most expected skill points wins: 7 orange crafts beat 5 green ones", function()
+  it("with the bag the same effort rule applies: the Gants (5 ingredients per point, orange) beat the Brassards (8, green)", function()
     local plan = V.Plan(prof(), ctx(), nil, bag)
     assert.are.equal(2, plan.best.rec.id)
     assert.are.equal(7, plan.best.times); assert.are.equal(7, plan.best.points)
     assert.are.equal(1, plan.rows[2].rec.id); assert.are.equal(1.25, plan.rows[2].points)   -- 5 x 0.25
     assert.are.equal(120, plan.best.perPoint)                                                -- costs money, still wins
-    assert.are.equal(200, plan.rows[2].perPoint)                                             -- green: (100 - 50) / 0.25
+    assert.are.equal(600, plan.rows[2].perPoint)                                             -- green: (200 - 50) / 0.25
+  end)
+
+  it("the bag changes only the list (what is craftable) and the quantities, not the rule: orange Gants first in both modes", function()
+    -- B (the Peau légère traitée case): green, 4.46 ingredients per point, 2.2 crafts per point; A (the Gants): orange, 5 per point, 1 craft
+    local th = function(id) return id == 2 and { 20, 45, 60, 74 } or { 40, 70, 85, 100 } end
+    local p = { skill = 61, recipes = {
+      [1] = { id = 1, d = 0, out = 32, oq = 1, mats = { { 20, 10 } } },
+      [2] = { id = 2, d = 2, out = 32, oq = 1, mats = { { 10, 2 } } },
+    } }
+    local c = ctx(); c.owned = function(id) return id == 20 and 70 or (id == 10 and 20 or 0) end
+    local free = V.Plan(p, c, nil, nil, th, "level")
+    assert.is_near(4.46, free.rows[2].unitsPerPoint, 0.01); assert.are.equal(5, free.best.unitsPerPoint)
+    assert.are.equal(1, free.best.rec.id)
+    local bagged = V.Plan(p, c, nil, function(id) return c.owned(id) end, th, "level")
+    assert.are.equal(1, bagged.best.rec.id)
+    assert.are.equal(7, bagged.best.times); assert.are.equal(7, bagged.best.points)           -- the bag still says how many points it gives
   end)
 
   it("cost per point only breaks a tie of expected points", function()
@@ -737,7 +753,7 @@ describe("Leveling: skill points first, money second (the owner's Leatherworking
     assert.is_nil(V.Plan(prof(), ctx(), nil, bag, function(id) return id == 1 and { 40, 49, 57, 65 } or { 40, 66, 85, 100 } end).second)
     -- the second one only gets what the best leaves in the bag: the shared reagent 20 is used up by the best
     local p = prof()
-    p.recipes[1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 20, 7 } } }
+    p.recipes[1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 20, 7 } } }       -- 7 x 0.5 / 0.25 = 14 ingredients per point
     plan = V.Plan(p, ctx(), nil, counts({ [20] = 77 }), th)           -- Gants x7 (7 points) use 70, 7 left: Brassards x1
     assert.are.equal(2, plan.best.rec.id); assert.are.equal(1, plan.second.times)
     -- no second recipe when the bag has nothing left for it
