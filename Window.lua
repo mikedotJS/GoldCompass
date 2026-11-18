@@ -728,7 +728,7 @@ local function addLearn(entries, p)
           math.floor(e.chance * 100 + 0.5)))
       else
         grey(S.learn_detail:format(ns.Fmt.Source(e.rec, true), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
-          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
+          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0 and not (e.rec.way and e.rec.way.cost)) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
       end
       if lr.gain then
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. S.learn_beats:format(label, ns.Money(lr.gain)) .. "|r" }

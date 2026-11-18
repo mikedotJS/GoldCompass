@@ -50,6 +50,15 @@ describe("Where.Target for a trainer recipe", function()
     assert.are.equal("Elwynn Journeyman", Wh.Target(rec, "Alchemy", e).name)
   end)
 
+  it("uses the rank of the Forever table: Journeyman trainers do not teach an Expert recipe of skill 130", function()
+    local e = env({ trainers = trainers, faction = "A", continent = "E" })
+    assert.are.equal("Elwynn Journeyman", Wh.Target({ id = 1, learn = 130, way = { rank = "Journeyman" } }, "Alchemy", e).name)
+    assert.are.equal("Stormwind Expert", Wh.Target({ id = 1, learn = 130, way = { rank = "Expert" } }, "Alchemy", e).name)
+    assert.are.equal("Elwynn Journeyman", Wh.Target({ id = 1, learn = 30, way = { rank = "Apprentice" } }, "Alchemy", e).name)
+    local t = Wh.Target({ id = 1, learn = 130, way = { rank = "Artisan" } }, "Alchemy", e)
+    assert.is_nil(t.mapID)                                    -- no Artisan trainer of the faction on the list
+  end)
+
   it("gives a text-only target when no trainer fits", function()
     local t = Wh.Target(rec, "Alchemy", env({ trainers = {} }))
     assert.is_nil(t.mapID); assert.is_nil(t.text)

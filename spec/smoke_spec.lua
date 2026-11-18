@@ -172,7 +172,7 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Leveling", "Where", "Format",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Leveling", "Where", "Format",
     "Prices", "Nodes", "Core", "Learned", "Trainers", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
@@ -1954,6 +1954,22 @@ describe("recipes to learn from LibProfessionDB (stubbed library)", function()
     assert.is_not_nil(line)
     assert.matches("butin", line)
     assert.is_nil(line:find("entraîneur", 1, true))
+  end)
+
+  it("Forever table: a trainer recipe shows its real fee and no 'non confirmé'; a trainer source absent from the table is dropped", function()
+    local ns = start({ libOverrides = { borrowed = { ["9062requiredSkill"] = "Vanilla" } } })
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = lineTexts(ns)
+    assert.matches("Small Leather Ammo Pouch.-entraîneur · ", text)       -- 9062 (Small Leather Ammo Pouch) is in the table: 1s
+    assert.is_nil(text:find("non confirmé", 1, true))
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local lr = res.profs[1].learn
+    for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do
+      for _, e in ipairs(bucket) do
+        if e.rec.id == 2158 then assert.is_not.equal("trainer", e.rec.way.kind) end   -- Fine Leather Boots: no trainer on Forever
+      end
+    end
   end)
 
   it("unconfirmed trainer sources are labelled as such on the recommended line", function()

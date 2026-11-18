@@ -147,7 +147,11 @@ end
 -- Priority: trainer, vendor, quest, item, container, drop. A recipe with no source and no teaching item but a
 -- requiredSkill of the client's own (captured at a Forever trainer) is a trainer recipe. `confirmed`: the data is the
 -- client's own, not borrowed from Vanilla (trainer: the required skill; vendor and quest: the sources).
-function V.Way(DB, id, e, faction)
+-- `forever` (ns.ForeverTrainers, in-game observed data of wowforever.be) is the truth about trainers when given: a recipe
+-- is trainer-taught on Forever only when it has a cost there (way.cost, way.rank); a trainer source of the library that is
+-- not in the table is dropped, the other sources stay. A vendor of the table is used when the library has none.
+function V.Way(DB, id, e, faction, forever)
+  local ft = forever and forever[id]
   local own = function(field) return not (DB.IsBorrowed and DB:IsBorrowed(id, field)) end
   local ownSkill = e.requiredSkill ~= nil and own("requiredSkill")
   local src = DB.GetRecipeSources and DB:GetRecipeSources(id)
@@ -161,7 +165,9 @@ function V.Way(DB, id, e, faction)
       if n.name and (f == nil or f == wanted) then way.npcs[#way.npcs + 1] = n.name end
     end
   end
-  if has("trainer") then
+  if ft and ft.cost then
+    way.kind, way.confirmed, way.cost, way.rank = "trainer", true, ft.cost, ft.rank
+  elseif not forever and has("trainer") then
     way.kind, way.confirmed = "trainer", ownSkill
   elseif has("vendor") then
     way.kind, way.confirmed = "vendor", own("sources")
@@ -177,6 +183,9 @@ function V.Way(DB, id, e, faction)
         if copper and (not way.vendorCost or copper < way.vendorCost) then way.vendorCost = copper end
       end
     end
+  elseif ft and ft.vendor and not has("quest") then
+    way.kind, way.confirmed = "vendor", true
+    way.npcs[1] = ft.vendor:gsub("%s*%(.*%)%s*$", "")
   elseif has("quest") then
     way.kind, way.confirmed = "quest", own("sources")
     names("quest")
@@ -186,7 +195,7 @@ function V.Way(DB, id, e, faction)
     way.kind = "container"
   elseif has("drop") then
     way.kind = "drop"
-  elseif ownSkill then
+  elseif ownSkill and not forever then
     way.kind, way.confirmed = "trainer", true
   else
     way.kind = "unknown"
@@ -198,11 +207,14 @@ end
 -- V.Crafts plus `how` (V.Way). Never-implemented and auto-granted recipes are left out. The colour thresholds
 -- (yellow, green, gray) are the library's, unless its tiers are unanchored (requiredSkill absent or borrowed and
 -- difficulty[1] == 1: a placeholder), then they are left nil and the estimate applies. `fallback(id)` gives a craft of
--- Data/Recipes.lua (output quantity, vendor value, reagents) for what the library lacks.
-function V.LibCrafts(DB, profId, faction, fallback)
+-- Data/Recipes.lua (output quantity, vendor value, reagents) for what the library lacks. `forever` (ns.ForeverTrainers):
+-- see V.Way; its learn skill replaces the library's, and recipes known from the start are left out.
+function V.LibCrafts(DB, profId, faction, fallback, forever)
   local out = {}
   for id, e in pairs(DB:GetRecipes(profId) or {}) do
-    if not (DB.IsHiddenRecipe and DB:IsHiddenRecipe(id)) and not (DB.IsAutoTaughtRecipe and DB:IsAutoTaughtRecipe(id)) then
+    local ft = forever and forever[id]
+    if not (DB.IsHiddenRecipe and DB:IsHiddenRecipe(id)) and not (DB.IsAutoTaughtRecipe and DB:IsAutoTaughtRecipe(id))
+      and not (ft and ft.start) then
       local d = e.difficulty
       local borrowed = DB.IsBorrowed and DB:IsBorrowed(id, "requiredSkill")
       local unanchored = (e.requiredSkill == nil or borrowed) and d and d[1] == 1
@@ -211,10 +223,10 @@ function V.LibCrafts(DB, profId, faction, fallback)
       table.sort(mats, function(a, b) return a[1] < b[1] end)
       local fb = fallback and fallback(id)
       if #mats == 0 and fb then mats = fb.mats end
-      out[#out + 1] = { id = id, name = e.name, learn = e.requiredSkill, borrowed = borrowed and true or false,
+      out[#out + 1] = { id = id, name = e.name, learn = ft and ft.learn or e.requiredSkill, borrowed = borrowed and not ft and true or false,
         y = (d and not unanchored) and d[2] or nil, g = (d and not unanchored) and d[3] or nil,
         gr = (d and not unanchored) and d[4] or nil, out = e.craftedItemId or (fb and fb.out),
-        oq = fb and fb.oq or 1, sell = fb and fb.sell, mats = mats, how = V.Way(DB, id, e, faction) }
+        oq = fb and fb.oq or 1, sell = fb and fb.sell, mats = mats, how = V.Way(DB, id, e, faction, forever) }
     end
   end
   return out
@@ -224,8 +236,13 @@ end
 function V.Source(rec) return rec.src or "trainer" end
 
 -- Trainer recipes from skill 50 up may need a higher profession rank first (Journeyman 50, Expert 125, Artisan 200,
--- with character level gates 10 / 20 / 35). The rank gates are not modelled: the line says it "may" be required.
-function V.MayNeedRank(rec) return rec.src == nil and rec.learn >= 50 end
+-- with character level gates 10 / 20 / 35). With the Forever table the rank is known (way.rank) and shown by the source
+-- label; without it the line says it "may" be required.
+function V.MayNeedRank(rec) return rec.src == nil and rec.learn >= 50 and not (rec.way and rec.way.rank) end
+
+-- Profession maximum skill a character needs to be at the rank a trainer recipe asks for (rank trained: 150 Journeyman,
+-- 225 Expert, 300 Artisan).
+local RANK_MAX = { Apprentice = 0, Journeyman = 150, Expert = 225, Artisan = 300 }
 
 -- Value a learnable recipe is ranked by: its cost per point, plus the learning fee spread over the points it gives
 -- (`amortised`, see Learnable); the plain cost per point for a recipe with no known fee.
@@ -292,7 +309,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
         local kind = way.kind
         local price = way.itemID and ahPrice(way.itemID, ctx)
         if (kind == "drop" or kind == "container") and price then way = setmetatable({ kind = "item" }, { __index = way }); kind = "item" end
-        if kind == "item" then fee = price elseif kind == "vendor" then fee = way.vendorCost end
+        if kind == "item" then fee = price elseif kind == "vendor" then fee = way.vendorCost elseif kind == "trainer" then fee = way.cost end
         src = SRC_OF_KIND[kind]
         recommend = kind == "trainer" or kind == "vendor" or kind == "quest" or (kind == "item" and price ~= nil)
       end
@@ -305,6 +322,8 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       }, { __index = ctx })
       local e = V.Evaluate(rec, own)
       e.recommend = recommend
+      -- a trainer recipe whose rank the character has not trained yet (ctx.maxSkill = profession maximum)
+      e.rankGated = ctx.maxSkill and way and way.rank and ctx.maxSkill < (RANK_MAX[way.rank] or 0) or false
       if e.chance == 0 then
         e.gray, e.perPoint = true, nil                          -- gives no skill point any more
       elseif #e.missing > 0 or #c.mats == 0 then
@@ -333,7 +352,12 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   while limits.now and #now > limits.now do now[#now] = nil end
   while limits.soon and #soon > limits.soon do soon[#soon] = nil end
   local best
-  for _, e in ipairs(now) do if e.recommend and not e.unpriced then best = e; break end end   -- only a known way to get it
+  -- only a known way to get it; a recipe at a rank already trained is preferred to one that first needs the rank
+  for _, gated in ipairs({ false, true }) do
+    for _, e in ipairs(now) do
+      if not best and e.recommend and not e.unpriced and e.rankGated == gated then best = e end
+    end
+  end
   local gain = (best and not best.floor and knownBest and rankValue(best) < knownBest) and (knownBest - rankValue(best)) or nil
   return { now = now, soon = soon, gray = gray, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
     nowTotal = nowTotal, soonTotal = soonTotal }

@@ -358,7 +358,7 @@ local function libCrafts(p, faction)
   if not libCache[key] then
     local english, byId = SKILL_LINES[p.line], {}
     for _, c in ipairs(english and ns.Leveling.Crafts(ns.RecipeRows or {}, english) or {}) do byId[c.id] = c end
-    libCache[key] = ns.Leveling.LibCrafts(DB, p.line, faction, function(id) return byId[id] end)
+    libCache[key] = ns.Leveling.LibCrafts(DB, p.line, faction, function(id) return byId[id] end, ns.ForeverTrainers)
   end
   return libCache[key]
 end
@@ -373,7 +373,7 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local data = ns.char and ns.char.profs[p.name]
   local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}   -- trainer windows recorded in game
   local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end,
-    offer = function(id) return offers[id] end }, { __index = ctx })
+    offer = function(id) return offers[id] end, maxSkill = p.max }, { __index = ctx })
   local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
   -- where to go to learn each one (a pin, or a text only): recorded trainer, library NPC, Classic coordinates, text
   local env = whereEnv(ctx)

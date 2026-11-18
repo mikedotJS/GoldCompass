@@ -53,3 +53,9 @@ SOFTWARE.
 Gold Compass only calls its public API (LibStub("LibProfessionDB-1.0")); none of its code or data is copied here. It is
 distributed under the MIT licence by its author; see the LICENSE file of the ProfessionDB addon.
 
+
+== wowforever.be (https://wowforever.be/tradeskills/forever/), recipe tables: data only, no licence text published ==
+
+Data/ForeverTrainers.lua holds facts read from the public per-profession recipe tables (build 1.60.1.70862, 7 November 2026): which
+recipes are taught by a trainer on WoW Forever, the fee, the vendor and whether the recipe is known from the start. The site's
+robots.txt allows these pages. Credit: wowforever.be. It is in-game observed data.

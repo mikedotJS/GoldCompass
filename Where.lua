@@ -12,7 +12,10 @@ ns.Where = Wh
 
 -- Trainer rank needed to be taught a recipe of a given learn skill: Journeyman trainers teach up to skill 150, Expert
 -- ones up to 225, Artisan ones the rest (rank 0 = specialisation trainers, never used here).
-function Wh.NeededRank(learn) return learn <= 150 and 1 or (learn <= 225 and 2 or 3) end
+-- `rank` (optional) is the rank name of the Forever table (Apprentice, Journeyman, Expert, Artisan): trainers listed here
+-- are Journeyman or better (1, 2, 3), so an Apprentice recipe needs any of them.
+local RANKS = { Apprentice = 1, Journeyman = 1, Expert = 2, Artisan = 3 }
+function Wh.NeededRank(learn, rank) return RANKS[rank] or (learn <= 150 and 1 or (learn <= 225 and 2 or 3)) end
 
 -- Picks the best candidate { name, zone, x, y }: same continent as the player first, then the nearest one (unknown
 -- distances last), then by name so the answer is stable. Candidates in a zone with no map ID are skipped.
@@ -41,7 +44,7 @@ function Wh.Target(rec, prof, env)
     return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true }
   end
   if rec.src == nil then
-    local rank, found = Wh.NeededRank(rec.learn or 0), {}
+    local rank, found = Wh.NeededRank(rec.learn or 0, rec.way and rec.way.rank), {}
     for _, t in ipairs(env.trainers[prof] or {}) do
       if t[6] >= rank and (t[5] == nil or t[5] == env.faction) then found[#found + 1] = { name = t[1], zone = t[2], x = t[3], y = t[4] } end
     end

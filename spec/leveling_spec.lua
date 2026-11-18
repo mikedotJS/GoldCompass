@@ -2,6 +2,7 @@
 local ns = {}
 assert(loadfile("ZoneRank.lua"))("GoldCompass", ns)
 assert(loadfile("Leveling.lua"))("GoldCompass", ns)
+assert(loadfile("Data/ForeverTrainers.lua"))("GoldCompass", ns)
 local V = ns.Leveling
 
 -- reagent 10: AH 100c (fresh); reagent 20: vendor buy 30c, no AH; output 30: AH 1000c (950 net), vendor sell 50
@@ -588,3 +589,91 @@ describe("Leveling.Learnable with library crafts: the owner's Leatherworking cas
   end)
 end)
 
+
+describe("Forever trainer table (wowforever.be, in-game observed)", function()
+  local FT = ns.ForeverTrainers
+  local DB = fakeLib()
+  local crafts, by = V.LibCrafts(DB, 165, "A", nil, FT), {}
+  for _, c in ipairs(crafts) do by[c.id] = c end
+  local function lcx()
+    local prices = { [2318] = 100, [2320] = 100, [7279] = 1000, [252427] = 1000, [252426] = 1000, [252424] = 1000, [2307] = 60000 }
+    return { price = function(id) if prices[id] then return prices[id], 0 end end, vendor = function() return 0 end,
+      buy = function() end, ageKnown = false, known = function() return false end }
+  end
+
+  it("the owner's Kamari recipes are trainer-taught: Petite giberne for 1s, the Forever boots for 5s", function()
+    assert.are.equal("trainer", by[9062].how.kind); assert.are.equal(100, by[9062].how.cost)
+    for _, id in ipairs({ 1255143, 1255144, 1255146 }) do
+      assert.are.equal("trainer", by[id].how.kind, tostring(id))
+      assert.are.equal(500, by[id].how.cost); assert.are.equal("Apprentice", by[id].how.rank)
+      assert.is_true(by[id].how.confirmed)
+    end
+    assert.are.equal(35, by[1255143].learn)                      -- the table's learn skill, not the library's
+  end)
+
+  it("Fine Leather Boots is not trainer-taught on Forever (not in the table): still a drop", function()
+    assert.is_nil(FT[2158])
+    assert.are.equal("drop", by[2158].how.kind)
+  end)
+
+  it("Fine Leather Belt (learn 55) is taught by a Journeyman trainer, for 3s", function()
+    assert.are.equal("Journeyman", FT[3763].rank); assert.are.equal(300, FT[3763].cost); assert.are.equal(55, FT[3763].learn)
+    local DB2 = fakeLib({ sources = { [1] = { trainer = { { id = 5, name = "Kamari" }, total = 1 } } } })
+    local w = V.Way(DB2, 1, { requiredSkill = 55 }, "A", { [1] = FT[3763] })
+    assert.are.equal("trainer", w.kind); assert.are.equal("Journeyman", w.rank)
+    assert.are.equal(300, w.cost)
+  end)
+
+  it("a library trainer source that is not in the table is dropped; the other sources stay", function()
+    local trainer = { trainer = { { id = 5, name = "Kamari" }, total = 1 } }
+    local DB2 = fakeLib({ sources = { [1] = trainer, [2] = { trainer = trainer.trainer, vendor = { { id = 6, name = "Some vendor" }, total = 1 } } } })
+    assert.are.equal("unknown", V.Way(DB2, 1, { requiredSkill = 40 }, "A", {}).kind)       -- nothing else: not listed
+    assert.are.equal("vendor", V.Way(DB2, 2, { requiredSkill = 40 }, "A", {}).kind)        -- the vendor stays
+    assert.are.equal("trainer", V.Way(DB2, 1, { requiredSkill = 40 }, "A").kind)           -- without the table: as before
+    local r = V.Learnable({ { id = 1, name = "x", learn = 40, mats = { { 2318, 1 } }, out = 7279, oq = 1, how = V.Way(DB2, 1, { requiredSkill = 40 }, "A", {}) } }, 61, lcx())
+    assert.are.equal(0, r.nowTotal + r.soonTotal)
+  end)
+
+  it("recipes known from the start are left out; a vendor of the table is used when the library has none", function()
+    local DB2 = fakeLib()
+    function DB2:GetRecipes() return { [10] = { name = "A", requiredSkill = 1, difficulty = { 1, 2, 3, 4 }, reagents = {} },
+      [11] = { name = "B", requiredSkill = 30, difficulty = { 30, 50, 60, 70 }, reagents = {} } } end
+    local list = V.LibCrafts(DB2, 165, "A", nil, { [10] = { learn = 1, start = true }, [11] = { learn = 30, vendor = "Granny Finespindle (Ironforge)" } })
+    assert.are.equal(1, #list)
+    assert.are.equal("vendor", list[1].how.kind); assert.are.same({ "Granny Finespindle" }, list[1].how.npcs)
+  end)
+
+  it("the real fee goes into the learning-cost amortisation", function()
+    local r = V.Learnable(crafts, 61, lcx())
+    local e
+    for _, o in ipairs(r.now) do if o.rec.id == 9062 then e = o end end
+    assert.are.equal(100, e.rec.fee)
+    assert.is_true(e.amortised > e.perPoint)
+    -- 100c spread over the points left: gray 85 - skill 61 = 24
+    assert.is_near(e.perPoint + 100 / 24, e.amortised, 1e-9)
+  end)
+
+  it("source labels: cost for Apprentice, rank and cost above", function()
+    assert(loadfile("Strings.lua"))("GoldCompass", ns)
+    ns.Money = function(c) return (c // 100) .. "s" end
+    assert(loadfile("Format.lua"))("GoldCompass", ns)
+    assert.are.equal("entraîneur · 1s", ns.Fmt.Source({ way = by[9062].how }, true))
+    assert.are.equal("chez un entraîneur Compagnon · 3s", ns.Fmt.Source({ way = { kind = "trainer", cost = 300, rank = "Journeyman" } }, true))
+    assert.are.equal("entraîneur Expert · 8s", ns.Fmt.Source({ way = { kind = "trainer", cost = 800, rank = "Expert" } }, false))
+  end)
+
+  it("best prefers a recipe at a rank the character has trained, over a cheaper one that needs a rank first", function()
+    local function craft(id, learn, rank, out)
+      return { id = id, name = "r" .. id, learn = learn, mats = { { 2318, 1 } }, out = out, oq = 1, y = learn + 20, g = learn + 35, gr = learn + 50,
+        how = { kind = "trainer", confirmed = true, cost = 100, rank = rank, npcs = {} } }
+    end
+    local cs = { craft(1, 55, "Journeyman", 2307), craft(2, 40, "Apprentice", 7279) }   -- 2307 sells high: recipe 1 is cheaper per point
+    local c = lcx()
+    c.maxSkill = 75
+    assert.are.equal(2, V.Learnable(cs, 61, c).best.rec.id)       -- Apprentice cap: Journeyman not trained yet
+    c.maxSkill = 150
+    assert.are.equal(1, V.Learnable(cs, 61, c).best.rec.id)       -- Journeyman trained: the cheapest wins
+    c.maxSkill = nil
+    assert.are.equal(1, V.Learnable(cs, 61, c).best.rec.id)
+  end)
+end)

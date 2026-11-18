@@ -59,6 +59,13 @@ end
 function F.Source(recipe, long)
   local key = ns.Leveling.Source(recipe)
   local way = recipe.way
+  if key == "trainer" and way and way.cost and not recipe.trainer then   -- Forever table: real fee, rank when above Apprentice
+    local cost = ns.Money(way.cost)
+    if way.rank and way.rank ~= "Apprentice" then
+      return (long and S.src_trainer_rank_long or S.src_trainer_rank):format(S.rank_names[way.rank] or way.rank, cost)
+    end
+    return S.src_trainer_cost:format(cost)
+  end
   if key == "trainer" and way and not way.confirmed and not recipe.trainer then
     return long and S.src_trainer_unc or S.src_trainer_unc_short
   end

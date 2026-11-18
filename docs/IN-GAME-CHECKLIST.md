@@ -184,3 +184,16 @@ Gold Compass reads the ProfessionDB addon (LibProfessionDB, MIT, by Pimptasty). 
 | 98 | Colour on a recipe to learn | The colour follows the library's real thresholds (compare with the trainer window colours), not the old +30/+45/+60 estimate | Yes / no |
 | 99 | Recipes granted with the profession or never implemented | Never listed | Yes / no |
 
+
+## Forever trainer table (wowforever.be)
+
+`Data/ForeverTrainers.lua` is the in-game observed list of what trainers teach on Forever (build 1.60.1.70862). It replaces the library's borrowed trainer sources.
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 100 | Travail du cuir 61: `Métier` tab, Kamari's recipes | `Small Leather Ammo Pouch` shows `entraîneur · 1s`; the Forever boots show `entraîneur · 5s`; no `non confirmé` anywhere. Compare with what Kamari really sells | Screenshot of the tab and of Kamari |
+| 101 | `Bottes élégantes en cuir` (Fine Leather Boots) | Never `entraîneur`: `butin` (it is not in Kamari's list) | Yes / no |
+| 102 | A recipe from skill 50 up (for example `Ceinture en cuir fin`, 55) | `chez un entraîneur Compagnon · 3s`; Kamari (Apprentice) does not offer it | Does Kamari list it: yes / no |
+| 103 | `Meilleure à apprendre` while the profession maximum is still 75 | A recipe at an Apprentice trainer is preferred to a cheaper one that first needs the Compagnon rank | Screenshot |
+| 104 | Map icon of a recipe that needs Compagnon / Expert | The pin goes to the nearest trainer of your faction whose rank is high enough (never a trainer of a lower rank); a trainer window you opened wins | Screenshot |
+| 105 | A trainer recipe the table does not know (the library said trainer) | Not listed as `entraîneur`; if it has no other source it is not listed at all. Tell me any recipe a trainer really offers that is missing | Names |

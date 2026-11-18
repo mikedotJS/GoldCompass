@@ -151,6 +151,8 @@ ns.S = {
   learn_no_price = "Pas de prix HV : lance un scan Auctionator à l'hôtel des ventes.",
   learn_nothing_bag = "Le filtre « Avec mon sac » cache les recettes à apprendre.",
   src_trainer = "entraîneur", src_trainer_unc = "entraîneur (non confirmé sur Forever)", src_trainer_unc_short = "entraîneur ?",
+  src_trainer_cost = "entraîneur · %s", src_trainer_rank = "entraîneur %s · %s", src_trainer_rank_long = "chez un entraîneur %s · %s",
+  rank_names = { Apprentice = "Apprenti", Journeyman = "Compagnon", Expert = "Expert", Artisan = "Artisan" },
   src_i = "objet d'apprentissage", src_i_named = "objet d'apprentissage : %s", src_c = "conteneur", src_v = "vendeur", src_m = "butin de monstre", src_d = "butin", src_q = "quête",
 
   -- map controls
