@@ -521,13 +521,15 @@ describe("review fixes, group B", function()
     _G.C_Map.OpenWorldMap = nil
   end)
 
-  it("marks the four Forever-only zones as level unknown", function()
+  it("the Forever-only zones: Zephras Isle (1-12) and 2548 (38-42) per ForeverDB, the two others still level unknown", function()
     setup({ scanned = true })
     local ns = loadAddon()
-    for _, id in ipairs({ 2482, 2521, 2548, 2652 }) do
+    for _, id in ipairs({ 2482, 2652 }) do
       assert.is_not_nil(ns.Zones[id])
       assert.is_nil(ns.Zones[id][2])
     end
+    assert.are.same({ "Zephras Isle", 1, 12 }, ns.Zones[2521]); assert.are.same({ "?", 38, 42 }, ns.Zones[2548])
+    assert.are.same({ 2521, "Z" }, ns.MapIDs["Zephras Isle"])
   end)
 end)
 
@@ -2195,7 +2197,7 @@ describe("Où l'apprendre: the site's location text (real Forever data, Horde, C
     assert.matches("Patron en vente à l'HV", by[8238].target.text)
     assert.matches("butin", by[8238].target.extra)                       -- the site says "drop" (and the zone when it names one)
     assert.is_not_nil(by[6417])
-    assert.are.equal("quête : Dig Rat Stew", by[6417].target.text)
+    assert.are.equal("quête : Dig Rat Stew (niv. 23)", by[6417].target.text)
   end)
 
   it("the map button of a priced pattern pins the Horde auction house: chat and tooltip give the price, its age, the site's sources", function()
@@ -2441,8 +2443,8 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
           if t.confirmed then confirmed = confirmed + 1 end
           local tip = table.concat(ns.Window.TargetTooltipLines(t), "\n")
           assert.are.equal(not t.confirmed, tip:find("position Classic, non confirmée sur Forever", 1, true) ~= nil, row.rec.name)
-          if row.rec.src == "v" and t.id and not t.auction and ns.FdbVendors[row.rec.id] then   -- a vendor: one of ForeverDB's vendors of this recipe
-            local listed = false
+          if row.rec.src == "v" and t.id and not t.auction and ns.FdbVendors[row.rec.id] then   -- a vendor: one a Forever source names for this recipe
+            local listed = (row.rec.way.where or ""):find(t.name, 1, true) ~= nil      -- the site's list
             for _, id in ipairs(ns.FdbVendors[row.rec.id]) do listed = listed or id == t.id end
             assert.is_true(listed, row.rec.name .. ": " .. tostring(t.name))
           end
@@ -2480,7 +2482,7 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
     local horde = ns10.Leveling.Way(ns10.ForeverDB, 6412, { requiredSkill = 10 }, "H", ns10.ForeverTrainers,
       ns10.Where.Who({ db = ns10.Npcs, byName = ns10.NpcByName, maps = ns10.MapIDs, fdb = ns10.FdbNpcs, fdbVendors = ns10.FdbVendors, fdbQuests = ns10.FdbQuests }))
     assert.are_not.equal("quest", horde.kind); assert.are.equal("A", horde.onlyFaction); assert.is_nil(horde.questID)
-    assert.are.same({ { 4161, "A", 6286, "Zarrin", 1438, 57.1, 61.3 } }, ns10.FdbQuests[6412])
+    assert.are.same({ { 4161, "A", 6286, "Zarrin", 1438, 57.1, 61.3, "Recipe of the Kaldorei", 7 } }, ns10.FdbQuests[6412])
     local way = ns10.Leveling.Way(ns10.ForeverDB, 6412, { requiredSkill = 10 }, "A", ns10.ForeverTrainers,
       ns10.Where.Who({ db = ns10.Npcs, byName = ns10.NpcByName, maps = ns10.MapIDs, fdb = ns10.FdbNpcs, fdbVendors = ns10.FdbVendors, fdbQuests = ns10.FdbQuests }))
     assert.are.equal("quest", way.kind); assert.are.equal(4161, way.questID); assert.is_nil(way.onlyFaction)
@@ -2490,12 +2492,12 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
     local ns, by = cooking()
     local t = by[6417].target                                 -- Dig Rat Stew: Grub, east of the Crossroads
     assert.are.equal("pin", t.kind); assert.are.equal("Grub", t.name); assert.are.equal(1413, t.mapID)
-    assert.is_true(t.confirmed); assert.are.equal("foreverdb", t.source); assert.are.equal("quête : Dig Rat Stew", t.text)
+    assert.is_true(t.confirmed); assert.are.equal("foreverdb", t.source); assert.are.equal("quête : Dig Rat Stew (niv. 23)", t.text)
     assert.are.equal(862, by[6417].rec.way.questID)
     _G.C_QuestLog = { GetTitleForQuestID = function(id) return id == 862 and "Ragoût de rat" or nil end }   -- the client's own title
-    assert.are.equal("Ragoût de rat", ns.Fmt.QuestName(by[6417].rec.way))
+    assert.are.equal("Ragoût de rat (niv. 23)", ns.Fmt.QuestName(by[6417].rec.way))
     _G.C_QuestLog = nil
-    assert.are.equal("Dig Rat Stew", ns.Fmt.QuestName(by[6417].rec.way))
+    assert.are.equal("Dig Rat Stew (niv. 23)", ns.Fmt.QuestName(by[6417].rec.way))
   end)
 
   it("a Merchant's Favor vendor of the site is read as NPC, zone and price: Pawani (The Barrens), 30 Faveur du marchand", function()
@@ -2675,5 +2677,41 @@ describe("recipes follow the Forever client data where the other sources differ 
         assert.matches("%(prix non vérifié%)", ns.Fmt.Source({ id = id, way = by[id].how }, true))
       end
     end
+  end)
+end)
+
+describe("vendor, quest and quest-item facts say what is and is not confirmed on Forever", function()
+  local function start()
+    setup({ scanned = true, faction = "Horde", profs = {} })
+    local ns = loadAddon()
+    local who = ns.Where.Who({ db = ns.Npcs, byName = ns.NpcByName, maps = ns.MapIDs, fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors,
+      fdbQuests = ns.FdbQuests, fdbPrice = ns.FdbPrice, fdbFavor = ns.FdbFavor })
+    return ns, who
+  end
+
+  it("a Merchant's Favor vendor that asks a standing says so: 240 Faveur du marchand, Honoré requis", function()
+    local ns, who = start()
+    local way = ns.Leveling.Way(ns.ForeverDB, 1219579, { requiredSkill = 300 }, "H", ns.ForeverTrainers, who)
+    assert.are.equal("vendor", way.kind); assert.are.equal("Honored", way.standing); assert.are.equal("Beneris (The Barrens)", way.where)
+    assert.are.equal("240 Faveur du marchand, Honoré requis", ns.Fmt.VendorPrice(way))
+  end)
+
+  it("a vendor's gold price is the full one: ForeverDB's when the library captured it with a reputation discount", function()
+    local ns, who = start()
+    assert.are.equal(500, ns.FdbPrice[1255123])                                  -- the library saw 450 at an Alliance vendor (10 % off)
+    local way = ns.Leveling.Way(ns.ForeverDB, 1255123, { requiredSkill = 60 }, "A", ns.ForeverTrainers, who)
+    assert.are.equal("vendor", way.kind); assert.are.equal(500, way.vendorCost)
+    local horde = ns.Leveling.Way(ns.ForeverDB, 7755, { requiredSkill = 100 }, "H", ns.ForeverTrainers, who)
+    assert.are.equal(1200, horde.vendorCost)                                     -- the catfish recipe: 12 silver
+  end)
+
+  it("an item kept for a quest Forever's quest list does not have says the quest is not confirmed", function()
+    local ns = start()
+    assert.is_true(ns.FdbQuestSeen["Goretusk Liver Pie"])
+    assert.are.equal("Goretusk Liver Pie", ns.Fmt.QuestLabel("Goretusk Liver Pie"))
+    assert.are.equal("Items of Power (quête Classic, non confirmée sur Forever)", ns.Fmt.QuestLabel("Items of Power"))
+    local seen, all = 0, 0
+    for _, list in pairs(ns.QuestItems) do for _, q in ipairs(list) do all = all + 1; if ns.FdbQuestSeen[q.quest] then seen = seen + 1 end end end
+    assert.is_true(seen >= 55 and seen < all)
   end)
 end)

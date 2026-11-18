@@ -128,7 +128,7 @@ local function fromDb(ids, env)
   return cands, other
 end
 
--- Side of a quest of ns.FdbQuests ({ questID, side, giver npcID, giver name, mapID, x, y }): ForeverDB's, else the giver's faction.
+-- Side of a quest of ns.FdbQuests ({ questID, side, giver npcID, giver name, mapID, x, y, title, level }): ForeverDB's, else the giver's faction.
 local function questSide(q, env)
   if q[2] ~= "" then return q[2] end
   local _, fac = spawnsOf(q[3], env)
@@ -155,11 +155,11 @@ function Wh.Who(env)
       for _, n in ipairs(ids) do if fits(sideOf(n), faction) then return true end end
       return false
     end,
-    -- quests: ForeverDB's quests of the recipe (second result: the quest id), else the library's quest givers ({ id, faction })
+    -- quests: ForeverDB's quests of the recipe (then: the quest id, its title, its level), else the library's quest givers ({ id, faction })
     quest = function(id, faction, givers)
       local list = env.fdbQuests and env.fdbQuests[id]
       if list then
-        for _, q in ipairs(list) do if fits(questSide(q, env), faction) then return true, q[1] end end
+        for _, q in ipairs(list) do if fits(questSide(q, env), faction) then return true, q[1], q[8], q[9] end end
         return false
       end
       if not givers or #givers == 0 then return nil end
@@ -233,8 +233,8 @@ function Wh.Target(rec, prof, env)
   -- vendors and quest givers: the NPC names of LibProfessionDB (rec.npcNames, no coordinates there) and of the
   -- Classic "where" text, both looked up in the Classic NPC positions
   local info = not (rec.way and rec.way.site) and env.where[rec.id] or nil   -- Classic texts do not apply to what the site observed
-  -- With the Forever data loaded (`strict`), only Forever sources name the NPCs: ForeverDB's vendor list of the recipe (`fv`: the
-  -- whole list, so nobody else is proposed), else the site's vendors and the library's own captures (way.confirmed). The names
+  -- With the Forever data loaded (`strict`), only Forever sources name the NPCs: ForeverDB's vendor list of the recipe (`fv`) and
+  -- the site's vendors (each source misses a few the other has), else the library's own captures (way.confirmed). The names
   -- borrowed from Classic world databases give no pin: they are only quoted as an unverified hint.
   local strict = env.fdb ~= nil
   local fv = env.fdbVendors and env.fdbVendors[rec.id]
@@ -244,7 +244,7 @@ function Wh.Target(rec, prof, env)
     for i = 2, #(info or {}) do names[#names + 1] = info[i] end
   end
   local siteVendors = Wh.ParseVendors(rec.way and rec.way.where)
-  if not fv then for _, v in ipairs(siteVendors) do names[#names + 1] = v.name end end
+  for _, v in ipairs(siteVendors) do names[#names + 1] = v.name end   -- the site is a Forever source too: its vendors always count
   local way = rec.way
   -- a quest recipe: where Forever players were offered the quest (ForeverDB), for the player's faction
   local fq = rec.src == "q" and env.fdbQuests and env.db and env.fdbQuests[rec.id]
@@ -261,13 +261,10 @@ function Wh.Target(rec, prof, env)
   if env.db then   -- the NPC database: the NPCs the sources name, by faction
     local ids, taken = {}, {}
     local function add(id) if not taken[id] then taken[id] = true; ids[#ids + 1] = id end end
-    if fv then
-      for _, id in ipairs(fv) do add(id) end
-    else
-      if not strict or (way and way.confirmed) then for _, id in ipairs(way and way.ids or {}) do add(id) end end
-      for _, v in ipairs(siteVendors) do for _, id in ipairs(idsOfName(v.name, v.zone, env)) do add(id) end end
-      for _, n in ipairs(names) do for _, id in ipairs(idsOfName(n, nil, env)) do add(id) end end
-    end
+    for _, id in ipairs(fv or {}) do add(id) end
+    if not fv and (not strict or (way and way.confirmed)) then for _, id in ipairs(way and way.ids or {}) do add(id) end end
+    for _, v in ipairs(siteVendors) do for _, id in ipairs(idsOfName(v.name, v.zone, env)) do add(id) end end
+    if not fv then for _, n in ipairs(names) do for _, id in ipairs(idsOfName(n, nil, env)) do add(id) end end end
     local cands, other = fromDb(ids, env)
     local best = pick(cands, env)
     if best then best.kind = "pin"; return best end

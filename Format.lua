@@ -38,7 +38,7 @@ end
 
 -- One-line reason under the headline.
 function F.Reason(d, sale)
-  if d.keep > 0 then return S.sub_keep:format(d.quest) end
+  if d.keep > 0 then return S.sub_keep:format(F.QuestLabel(d.quest)) end
   if d.action == "craft" then return S.sub_craft:format(ns.Money(math.max(0, d.unit - sale))) end
   if d.action == "vendor" then return S.sub_vendor end
   if d.maybe then return S.sub_maybe:format(F.RecipeName(d.maybe)) end
@@ -65,7 +65,9 @@ end
 function F.VendorPrice(way)
   if way.vendorCost then return ns.Money(way.vendorCost) end
   local c = way.currency
-  if c and c.id then return ("%d %s"):format(c.amount or 0, F.Currency(c.id)) end
+  -- the standing the vendor asks, when the site gives one ("240 Faveur du marchand, Honoré requis")
+  local standing = way.standing and S.standing_need:format(S.standings[way.standing] or way.standing) or ""
+  if c and c.id then return ("%d %s%s"):format(c.amount or 0, F.Currency(c.id), standing) end
   if c and c.item then return ("%d × %s"):format(c.amount or 0, ns.ItemName and ns.ItemName(c.item) or ("objet " .. c.item)) end
   return S.price_recipe_unknown
 end
@@ -92,7 +94,14 @@ end
 function F.QuestName(way)
   local get = way.questID and C_QuestLog and C_QuestLog.GetTitleForQuestID
   local title = get and get(way.questID)
-  return title and title ~= "" and title or way.questName
+  return (title and title ~= "" and title or way.questName) .. (way.questLevel and way.questLevel > 0 and S.quest_level:format(way.questLevel) or "")
+end
+
+-- A quest of the Classic quest-item data, as shown next to an item kept for it: said to be unconfirmed when Forever's quest list
+-- (ForeverDB) does not have it.
+function F.QuestLabel(name)
+  if ns.FdbQuestSeen and name and not ns.FdbQuestSeen[name] then return name .. S.quest_unseen end
+  return name
 end
 
 function F.SiteSources(way)

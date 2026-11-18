@@ -777,7 +777,7 @@ local function renderHere(res)
   if #res.pickups > 0 then
     entries[#entries + 1] = { head = true, left = S.here_pickups }
     for _, p in ipairs(res.pickups) do
-      entries[#entries + 1] = { left = ("%s ×%d |cff9d9d9d(%s)|r"):format(p.name, p.count, p.quest), right = ns.Money(p.unit) }
+      entries[#entries + 1] = { left = ("%s ×%d |cff9d9d9d(%s)|r"):format(p.name, p.count, ns.Fmt.QuestLabel(p.quest)), right = ns.Money(p.unit) }
     end
   end
   setLines(entries, res.hint and { { wide = true, left = "|cff9d9d9d" .. S.here_hint:format(S.prof_names[res.hint.prof], ns.Money(res.hint.gain)) .. "|r" } } or {})

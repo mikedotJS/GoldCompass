@@ -175,16 +175,21 @@ end
 -- 5. Gathering and zones ------------------------------------------------------------------------------------------------
 local gskill = tally("5 gathering: skill needed for a node's item (addon vs ForeverDB, both Classic's rule)")
 local gitem, tItem = tally("5 gathering: node item is a gathering item for ForeverDB")
-local kinds = {}
-for _, k in pairs(F.gatherData.kinds) do if k.item then kinds[k.item] = k end end
+local kinds = {}                                       -- [item] = { n = a node name, skills = { [skill] = true } }: several nodes give one item
+for _, k in pairs(F.gatherData.kinds) do
+  if k.item then
+    kinds[k.item] = kinds[k.item] or { n = k.n, skills = {} }
+    if k.sk then kinds[k.item].skills[k.sk] = true end
+  end
+end
 for node, g in pairs(ns.GatherNodes) do
   if g.item then
     local k = kinds[g.item]
     gitem(k ~= nil, ("node %d item %d (%s)"):format(node, g.item, g.type))
-    if k and k.sk and g.type ~= "Fishing" then gskill(k.sk == g.skill, ("node %d %s: %s vs %s"):format(node, tostring(k.n), tostring(g.skill), tostring(k.sk))) end
+    if k and next(k.skills) and g.type ~= "Fishing" then gskill(k.skills[g.skill] == true, ("node %d %s: %s"):format(node, tostring(k.n), tostring(g.skill))) end
   end
 end
-local zlevel = tally("5 zones: level range (addon vs ForeverDB)")
+local zlevel = tally("5 zones: level range within 3 levels of ForeverDB's (quest levels players saw)")
 local zsrc = {}
 for map, z in pairs(ns.Zones) do
   local d = F.zoneData[map]
@@ -192,7 +197,9 @@ for map, z in pairs(ns.Zones) do
     local src, lo, hi = d:match("^[^|]*|[^|]*|(%a)|(%d*)%-?(%d*)|")
     zsrc[src or "?"] = (zsrc[src or "?"] or 0) + 1
     if lo and lo ~= "" then
-      zlevel(z[2] == tonumber(lo) and z[3] == tonumber(hi), ("%d %s: %s-%s vs %s-%s (%s)"):format(map, z[1], tostring(z[2]), tostring(z[3]), lo, hi, src))
+      -- the addon's ranges are the nominal ones, ForeverDB's the levels of the quests players saw: the same band within 3 levels
+      zlevel(z[2] ~= nil and math.abs(z[2] - tonumber(lo)) <= 3 and math.abs(z[3] - tonumber(hi)) <= 3,
+        ("%d %s: %s-%s vs %s-%s (%s)"):format(map, z[1], tostring(z[2]), tostring(z[3]), lo, hi, src))
     end
   end
 end

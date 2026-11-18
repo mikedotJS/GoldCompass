@@ -201,7 +201,9 @@ describe("Where.Target with the real NPC database (pfQuest)", function()
 
   it("a Forever-only NPC (not in pfQuest) falls back to the zone and the site's text", function()
     local t = Wh.Target({ id = 9, src = "v", way = { site = true, where = "Vayn Moongaze (Zephras Isle)" } }, "Tailoring", renv("H"))
-    assert.are.equal("text", t.kind); assert.are.equal("Vayn Moongaze", t.vendors[1].name)
+    assert.are.equal("zone", t.kind); assert.are.equal(2521, t.mapID); assert.are.equal("Vayn Moongaze", t.vendors[1].name)
+    local u = Wh.Target({ id = 9, src = "v", way = { site = true, where = "Vayn Moongaze (Nowhere Known)" } }, "Tailoring", renv("H"))
+    assert.are.equal("text", u.kind); assert.are.equal("Vayn Moongaze", u.vendors[1].name)
     local z = Wh.Target({ id = 9, src = "v", way = { site = true, where = "Vayn Moongaze (Durotar)" } }, "Tailoring", renv("H"))
     assert.are.equal("zone", z.kind); assert.are.equal(1411, z.mapID)
   end)
@@ -322,8 +324,12 @@ describe("Where.Target: positions seen on Forever first, Classic ones flagged, F
   it("ForeverDB's vendor list of a recipe rules every other NPC out, and says when only the other faction sells it", function()
     local t = Wh.Target(rec, "Cooking", fenv({ fdbVendors = { [50] = { 4 } }, fdb = { [4] = { "Old Cook", 1411, 31, 32, "H", true } } }))
     assert.are.equal("Old Cook", t.name); assert.is_true(t.confirmed)
-    local a = Wh.Target(rec, "Cooking", fenv({ fdbVendors = { [50] = { 3 } }, fdb = { [3] = { "Alli Cook", 1413, 20, 20, "A", true } } }))
-    assert.are.equal("text", a.kind); assert.are.equal("A", a.onlyFaction)
+    -- the site's own vendors count too (each source misses a few), after the positions seen on Forever
+    local both = Wh.Target(rec, "Cooking", fenv({ fdbVendors = { [50] = { 3 } }, fdb = { [3] = { "Alli Cook", 1413, 20, 20, "A", true } } }))
+    assert.are.equal("pin", both.kind); assert.are.equal("City Cook", both.name); assert.is_false(both.confirmed)
+    local a = Wh.Target({ id = 50, src = "v", npcNames = { "Old Cook" }, way = { ids = { 4 } } }, "Cooking",
+      fenv({ fdbVendors = { [50] = { 3 } }, fdb = { [3] = { "Alli Cook", 1413, 20, 20, "A", true } } }))
+    assert.are.equal("text", a.kind); assert.are.equal("A", a.onlyFaction)        -- Old Cook is a Classic-only name: not proposed
   end)
 
   it("with the Forever data loaded, names only Classic data gives are never pinned: no source, the name as an unverified hint", function()

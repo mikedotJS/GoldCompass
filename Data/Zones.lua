@@ -51,7 +51,10 @@ ns.Zones = {
   -- zone names), so they carry no level: the "my level only" filter hides them and the window says so. What the node
   -- data suggests, NOT verified: 2482 Dreamfoil/Silversage/Demonsage/Heavy Thorium (endgame), 2521 Peacebloom/Silverleaf/
   -- Copper (starting), 2548 Steelbloom/Khadgar's Whisker/Iron/Mithril (mid), 2652 Bruiseweed/Grave Moss/Mithril (mid).
-  [2482] = { "?" }, [2521] = { "?" }, [2548] = { "?" }, [2652] = { "?" },
+  -- From ForeverDB.net (zone data of build 1.60.1.70959): 2521 is Zephras Isle, the Skyborne starting zone, levels 1 to 12 (Blizzard's
+  -- own range); 2548 (Farholde Keep, Powderfuse Port) is 38 to 42 by ForeverDB's derivation from its quests, its name is not in that
+  -- data (the game gives it); 2482 and 2652 are unknown there too.
+  [2482] = { "?" }, [2521] = { "Zephras Isle", 1, 12 }, [2548] = { "?", 38, 42 }, [2652] = { "?" },
 }
 
 -- HAND-MAINTAINED DATA: English zone name -> { uiMapID (Classic numbering, same family as above), continent }.
@@ -71,4 +74,5 @@ ns.MapIDs = {
   ["Felwood"] = { 1448, "K" }, ["Un'Goro Crater"] = { 1449, "K" }, ["Moonglade"] = { 1450, "K" }, ["Silithus"] = { 1451, "K" },
   ["Winterspring"] = { 1452, "K" }, ["Stormwind City"] = { 1453, "E" }, ["Orgrimmar"] = { 1454, "K" },
   ["Ironforge"] = { 1455, "E" }, ["Thunder Bluff"] = { 1456, "K" }, ["Darnassus"] = { 1457, "K" }, ["Undercity"] = { 1458, "E" },
+  ["Zephras Isle"] = { 2521, "Z" },   -- Forever's new island (its own continent, "Z"), see ns.Zones
 }

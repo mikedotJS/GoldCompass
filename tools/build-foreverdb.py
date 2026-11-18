@@ -107,7 +107,7 @@ def main():
     for qid, row in re.findall(r'\[(\d+)\]="((?:[^"\\]|\\.)*)"', section("qfQuests")):
         f = row.replace('\\"', '"').split("|")
         if len(f) >= 11 and f[0]:
-            by_title.setdefault(f[0], []).append((int(qid), f[4], f[10]))
+            by_title.setdefault(f[0], []).append((int(qid), f[4], f[10], f[0], int(f[1] or 0)))
     seen_start = dict(re.findall(r'\[(\d+)\]=\{s="(\w+)', section("qfSeen")))
     npc_spots = dict(re.findall(r'\[(\d+)\]="(\w+)', section("qfNpcSpots")))
     npc_names = dict(re.findall(r'\[(\d+)\]="((?:[^"\\]|\\.)*)"', section("qfNpcNames")))
@@ -132,12 +132,12 @@ def main():
         found = by_title.get(titles) or [q for part in titles.split(", ") for q in by_title.get(part, [])]
         if not found:
             unresolved.append(titles)
-        for qid, starts, side in found:
+        for qid, starts, side, title, level in found:
             giver = int(starts[1:]) if starts.startswith("n") else 0
             code = seen_start.get(str(qid)) or npc_spots.get(str(giver))
             m, x, y = spot(code) if code else (0, 0, 0)
             side = side.upper() if side in ("a", "h") else (npcs[giver][5] if giver in npcs and npcs[giver][5] != "AH" else pfq_fac.get(giver, ""))
-            quests.setdefault(spell, []).append((qid, side, giver, npc_names.get(str(giver), "").replace('\\"', '"'), m, x, y))
+            quests.setdefault(spell, []).append((qid, side, giver, npc_names.get(str(giver), "").replace('\\"', '"'), m, x, y, title, level))
 
     ours = {int(i) for i in re.findall(r"^  \[(\d+)\] = \{", (ROOT / "Data/Npcs.lua").read_text(encoding="utf-8"), re.M)}
     keep = {v for ids in vendors.values() for v in ids} | {v for ids in trainers.values() for v in ids if v in npcs} | (ours & set(npcs))
@@ -164,12 +164,17 @@ def main():
             "ns.FdbPrice = { " + ", ".join(f"[{sp}] = {costs[sp]}" for sp in sorted(costs)) + " }",
             "ns.FdbFavor = { " + ", ".join(f"[{sp}] = {favor[sp]}" for sp in sorted(favor)) + " }",
             "-- ns.FdbQuests[craft spell] = { { questID, side (\"A\" | \"H\" | \"\" unknown), giver npcID (0: not an NPC), giver name, uiMapID (0: place unknown),",
-            "--   x, y }, ... }: the quests that reward the recipe, and where Forever players were offered them",
+            "--   x, y, quest title, quest level }, ... }: the quests that reward the recipe, and where Forever players were offered them",
             "ns.FdbQuests = {"]
     for spell in sorted(quests):
         out.append(f"  [{spell}] = {{ " + ", ".join(
-            f"{{ {q}, {lua_str(side)}, {g}, {lua_str(name)}, {m}, {x:g}, {y:g} }}" for q, side, g, name, m, x, y in quests[spell]) + " },")
-    out += ["}", "-- ns.FdbTrainers[English profession] = { [npcID] = true | 0 }: the trainers of the profession; 0 = a \"Journeyman ...\" by its Forever",
+            f"{{ {q}, {lua_str(side)}, {g}, {lua_str(name)}, {m}, {x:g}, {y:g}, {lua_str(title)}, {level} }}"
+            for q, side, g, name, m, x, y, title, level in quests[spell]) + " },")
+    # the quests of Data/QuestItems.lua (Classic data) that the Forever quest list has, by title: the others are not confirmed on Forever
+    qi_titles = sorted(set(re.findall(r'quest = "((?:[^"\\]|\\.)*)"', (ROOT / "Data/QuestItems.lua").read_text(encoding="utf-8"))))
+    out += ["}", "-- ns.FdbQuestSeen[quest title] = true: the quests of Data/QuestItems.lua that exist in Forever's quest list (ForeverDB)",
+            "ns.FdbQuestSeen = { " + ", ".join(f"[{lua_str(t)}] = true" for t in qi_titles if t in by_title) + " }"]
+    out += ["-- ns.FdbTrainers[English profession] = { [npcID] = true | 0 }: the trainers of the profession; 0 = a \"Journeyman ...\" by its Forever",
             "--   title: such a trainer taught nothing from skill 50 up when seen in game (Kamari), so it is proposed for Apprentice recipes only",
             "ns.FdbTrainers = {"]
     for prof in sorted(trainers):

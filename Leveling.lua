@@ -240,11 +240,13 @@ function V.Way(DB, id, e, faction, forever, who, fixes)
   -- "NPC (Zone) · Merchant's Favor 30 · Honored": the price and the standing asked are not part of the NPC list
   local favor = vtext and tonumber(vtext:match("Merchant's Favor (%d+)"))
   if vtext then vtext = vtext:gsub("%s*\194\183[^,]*", "") end
-  local vendorOK, questOK, questID = true, true, nil
+  -- the standing the vendor asks ("... · Merchant's Favor 240 · Honored")
+  local standing = ft and (ft.vh or ft.va or ft.vendor or ""):match("Merchant's Favor %d+%s*\194\183%s*(%a+)") or nil
+  local vendorOK, questOK, questID, questTitle, questLevel = true, true, nil, nil, nil
   if who then
     vendorOK = who.vendors(id, faction, vtext) ~= false
-    local ok, qid = who.quest(id, faction, libQuest)
-    questOK, questID = ok ~= false, qid
+    local ok, qid, title, level = who.quest(id, faction, libQuest)
+    questOK, questID, questTitle, questLevel = ok ~= false, qid, title, level
   end
   local way = { npcs = {}, ids = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest,
     zoneMore = ft and ft.zmore,     -- the site cut its drop-zone list: there are more zones than `zone` names
@@ -297,6 +299,7 @@ function V.Way(DB, id, e, faction, forever, who, fixes)
     way.npcs[1] = vtext:gsub("%s*%(.*%)%s*$", "")
   elseif has("quest") and questOK then
     way.kind, way.confirmed, way.questID = "quest", own("sources"), questID
+    if questTitle then way.questName, way.questLevel = questTitle, questLevel end   -- the quest ForeverDB names (its giver is the one pinned)
     names("quest")
   elseif has("container") then
     way.kind = "container"
@@ -314,12 +317,16 @@ function V.Way(DB, id, e, faction, forever, who, fixes)
     and ((not vendorOK and (has("vendor") or vtext ~= nil)) or (not questOK and has("quest"))) then
     way.onlyFaction = faction == "H" and "A" or "H"
   end
-  if way.kind == "vendor" and not way.vendorCost and not way.currency then   -- the price: ForeverDB's, else the site's Favor amount
+  if way.kind == "vendor" and not way.currency then
+    -- the price: Merchant's Favor (ForeverDB's, else the site's amount), else gold. The library's gold price was captured with a
+    -- reputation discount where ForeverDB's is higher: the full price is shown.
     local price, fav
     if who then price, fav = who.cost(id) end
     fav = fav or favor
-    if fav then way.currency = { id = V.FAVOR, amount = fav } else way.vendorCost = price end
+    if fav and not way.vendorCost then way.currency = { id = V.FAVOR, amount = fav }
+    elseif price and (not way.vendorCost or price > way.vendorCost) then way.vendorCost = price end
   end
+  if way.kind == "vendor" then way.standing = standing end
   return way
 end
 
