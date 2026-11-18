@@ -1233,3 +1233,108 @@ describe("Leveling: 'Monter le métier' = the fewest ingredients and the least e
     assert.are.equal(2, plan({ [1] = lack, [2] = near, [3] = far }, c).best.rec.id)
   end)
 end)
+
+describe("Leveling.Roadmap", function()
+  -- Items: 10 light leather, 20 thread (a vendor sells it: half an ingredient). Recipes (thresholds orange / yellow / green / gray):
+  --   belt   (1)  3 leather + 1 thread, th 50 / 76 / 77 / 78: orange at 75, gray from 78
+  --   gloves (2)  3 leather + 2 thread, th 50 / 70 / 85 / 100: yellow from 70
+  --   pouch  (3)  2 leather, learnable at 80, th 80 / 95 / 110 / 125
+  local BELT = { id = 1, name = "Belt", d = 0, out = 101, oq = 1, mats = { { 10, 3 }, { 20, 1 } } }
+  local GLOVES = { id = 2, name = "Gloves", d = 1, out = 102, oq = 1, mats = { { 10, 3 }, { 20, 2 } } }
+  local POUCH = { id = 3, name = "Pouch", d = 0, out = 103, oq = 1, mats = { { 10, 2 } }, learn = 80, th = { 80, 95, 110, 125 } }
+  local TH = { [1] = { 50, 76, 77, 78 }, [2] = { 50, 70, 85, 100 } }
+  local function setup(bag, over)
+    over = over or {}
+    local c = { price = function() end, vendor = function() end, buy = function(id) return id == 20 and 30 or nil end,
+      owned = function(id) return bag[id] or 0 end, how = function(id) return id == 10 and "skin" or nil end }
+    local prof = { skill = over.skill or 75, max = over.max or 150, recipes = over.recipes or { [1] = BELT, [2] = GLOVES } }
+    return prof, c, { thresholds = function(id) return TH[id] end, learn = over.learn }
+  end
+  local function names(r)
+    local out = {}
+    for i, s in ipairs(r.steps) do
+      out[i] = s.kind == "learn" and ("learn " .. s.rec.name .. " @" .. s.at)
+        or ("%s x%d %d>%d %s"):format(s.rec.name, s.times, s.from, s.to, s.state)
+    end
+    return out
+  end
+
+  it("the owner's case: the first step is the belt x2 from the bag, then the gloves", function()
+    local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }))
+    assert.are.same({ "Belt x2 75>77 bag", "Gloves x2 77>79 bag" }, { names(r)[1], names(r)[2] })
+    assert.are.equal(0, r.steps[1].d)                       -- the belt is orange at the start
+    assert.are.equal(1, r.steps[2].d)                       -- the gloves are yellow
+  end)
+
+  it("the bag is consumed across steps: what the belt took is not there for the gloves", function()
+    -- 12 leather: the belts take 6, so only 2 gloves (3 each) fit; without that sharing the gloves would be x4
+    local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }))
+    assert.are.equal(2, r.steps[2].times)
+  end)
+
+  it("when the bag runs out the step is the best recipe overall with what is missing, and says where to get it", function()
+    local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }))
+    local s = r.steps[3]
+    assert.are.equal("missing", s.state)
+    assert.are.equal("Gloves", s.rec.name)
+    assert.are.equal(10, s.missing[1].item)
+    assert.are.equal("skin", s.missing[1].how)
+    assert.is_true(s.missing[1].n >= 3)
+  end)
+
+  it("a recipe to learn gets its own step when it beats the best known one, then counts as known", function()
+    local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }, { learn = { { rec = POUCH, recommend = true } } }))
+    local learn
+    for i, s in ipairs(r.steps) do if s.kind == "learn" then learn = i end end
+    assert.is_truthy(learn)
+    assert.are.equal("Pouch", r.steps[learn].rec.name)
+    assert.is_true(r.steps[learn].at >= 80)                 -- not before the skill it needs
+    assert.are.equal("Pouch", r.steps[learn + 1].rec.name)  -- and the next step crafts it
+  end)
+
+  it("never offers a recipe to learn that is unusable (other faction, rank not trained, no way to get it, gray)", function()
+    for _, flag in ipairs({ { recommend = false }, { rankGated = true }, { unpriced = true }, { gray = true } }) do
+      flag.rec = POUCH
+      local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }, { learn = { flag } }))
+      for _, s in ipairs(r.steps) do assert.are_not.equal("learn", s.kind) end
+    end
+  end)
+
+  it("stops at 5 steps", function()
+    local r = V.Roadmap(setup({ [10] = 500, [20] = 500 }, { learn = { { rec = POUCH, recommend = true } }, max = 300 }))
+    assert.is_true(#r.steps <= 5)
+    assert.are.equal("steps", r.stopped)
+  end)
+
+  it("stops at the rank cap", function()
+    local r = V.Roadmap(setup({ [10] = 500, [20] = 500 }, { max = 78 }))
+    assert.are.equal("cap", r.stopped)
+    assert.is_true(r.steps[#r.steps].to <= 78)
+  end)
+
+  it("a capped profession has no step, and names the rank to train", function()
+    local r = V.Roadmap(setup({}, { skill = 150, max = 150 }))
+    assert.is_true(r.capped)
+    assert.are.equal(0, #r.steps)
+    assert.are.equal("Expert", r.nextRank)
+    assert.are.equal(125, r.rankAt)
+  end)
+
+  it("no useful recipe and nothing to learn: no step", function()
+    local r = V.Roadmap(setup({}, { skill = 140 }))        -- belt and gloves are gray
+    assert.are.equal(0, #r.steps)
+    assert.are.equal("none", r.stopped)
+  end)
+
+  it("an intermediate reagent to make first is listed as a craft to do, not as a missing item", function()
+    local CURED = { id = 7, name = "Cured", d = 0, out = 700, oq = 1, mats = { { 10, 1 } } }
+    local SHOE = { id = 8, name = "Shoe", d = 0, out = 800, oq = 1, mats = { { 700, 1 } } }
+    local prof, c, o = setup({ [10] = 0 }, { recipes = { [7] = CURED, [8] = SHOE } })
+    o.thresholds = function(id) return id == 7 and { 10, 20, 30, 40 } or { 50, 90, 100, 110 } end   -- the cured leather is gray, the shoe orange
+    local r = V.Roadmap(prof, c, o)
+    local sub
+    for _, s in ipairs(r.steps) do if s.rec.name == "Shoe" then sub = s end end
+    assert.is_truthy(sub)
+    assert.are.equal(700, sub.subs[1].item)
+  end)
+end)

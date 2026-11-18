@@ -448,6 +448,48 @@ function ns.SectionData(data, line)
   return { skill = data.skill, max = data.max, updated = data.updated, recipes = recipes }
 end
 
+-- Where a missing reagent comes from, for the roadmap: "vendor" (a merchant sells it), "skin", "herb", "ore", "ah" (an auction price is
+-- known) or nil. Read from the item class (Trade Goods: leather 6, metal and stone 7, herb 9).
+local function reagentHow(ctx, id)
+  if ctx.buy(id) then return "vendor" end
+  local _, _, _, _, _, class, sub = C_Item.GetItemInfoInstant(id)
+  if class == 7 and sub == 6 then return "skin" end
+  if class == 7 and sub == 9 then return "herb" end
+  if class == 7 and sub == 7 then return "ore" end
+  if (ctx.price(id)) then return "ah" end
+end
+
+-- "Monter le métier": the roadmap of one profession (Leveling.Roadmap) with the names the window shows, the known recipes by colour
+-- (the collapsible list) and the trainer to visit when the cap is reached.
+function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
+  local L = ns.Leveling
+  local rctx = setmetatable({ how = function(id) return reagentHow(ctx, id) end }, { __index = ctx })
+  local learn = {}
+  for _, bucket in ipairs({ entry.learn and entry.learn.now or {}, entry.learn and entry.learn.soon or {} }) do
+    for _, row in ipairs(bucket) do learn[#learn + 1] = row end
+  end
+  local road = L.Roadmap(data, rctx, { thresholds = thresholds, learn = learn })
+  for _, s in ipairs(road.steps) do
+    s.name = s.row and s.row.name or ns.Fmt.RecipeName(s.rec)
+    if s.kind == "craft" then
+      s.craft = { id = s.rec.id, times = s.times, prof = p.name, line = p.line }
+      for _, m in ipairs(s.missing) do m.name = ns.ItemName(m.item) end
+      for _, m in ipairs(s.subs) do m.name = ns.ItemName(m.item) end
+    else
+      s.target = s.row.target
+    end
+  end
+  local lr = entry.learn
+  road.trainer = lr and ((lr.beyond and lr.beyond.target) or (lr.books and lr.books[1] and lr.books[1].target)) or nil
+  road.recipes = {}
+  for _, rec in pairs(data.recipes) do
+    local th = thresholds(rec.id)
+    road.recipes[#road.recipes + 1] = { name = ns.Fmt.RecipeName(rec), d = th and p.skill and L.ColorAt(p.skill, th) or rec.d or 0, id = rec.id }
+  end
+  table.sort(road.recipes, function(a, b) if a.d ~= b.d then return a.d < b.d end return a.id < b.id end)
+  return road
+end
+
 -- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).
 function ns.RunLeveling(done)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
@@ -489,13 +531,15 @@ function ns.RunLeveling(done)
         else
           entry.status = "plan"
           -- "Avec mon sac": count what is carried (bags only: no bank, no reagent bank)
-          local count = ns.char.onlyBag and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
+          -- the roadmap of "Monter le métier" always uses the bag first: the checkbox only belongs to "Gagner de l'or"
+          local count = ns.char.onlyBag and ns.Goal() == "gold" and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
           entry.filtered = count ~= nil
-          entry.plan = ns.Leveling.Plan(data, ctx, nil, count, function(id)
+          local function thresholds(id)
             local r = ns.ForeverDB:GetRecipes(p.line)
             local e = r and r[id]
             return e and ns.Leveling.Difficulty(e.difficulty, e.requiredSkill, ns.ForeverTrainers[id])
-          end, ns.Goal())
+          end
+          entry.plan = ns.Leveling.Plan(data, ctx, nil, count, thresholds, ns.Goal())
           -- the "Fabriquer" button crafts the recommended recipe as many times as the bags allow, filter or not
           local best = entry.plan.best
           if best then
@@ -525,6 +569,7 @@ function ns.RunLeveling(done)
             end
           end
           entry.missingNames = names
+          if entry.goal ~= "gold" then entry.road = ns.BuildRoadmap(p, data, ctx, entry, thresholds) end
         end
         profs[#profs + 1] = entry
       end

@@ -182,6 +182,10 @@ local function loadAddon()
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
   if _G.stubDB then ns.ForeverDB = _G.stubDB end
+  -- The older Métier tests describe the bag filter, the learn lists and the gold figures, which now belong to "Gagner de l'or": unless a test
+  -- asks for the roadmap with goal = "level", the tab runs in that mode.
+  ns.RealGoal = ns.Goal
+  ns.Goal = function() return ns.char and ns.char.goal == "level" and "level" or "gold" end
   return ns
 end
 
@@ -1078,24 +1082,25 @@ describe("profession leveling tab", function()
     [2] = { id = 2, name = "Elixir vert", d = 2, greenAt = 41, out = 118, oq = 1, mats = { { 2447, 1 } } },
   } }
 
-  it("renders the whole tab: best recipe, estimate labels, remembered data, recipes to learn with the Classic caveat", function()
+  it("renders the whole tab: the roadmap (level) and the learn lists with the Classic caveat (gold), remembered data", function()
     setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy }, goal = "level" }
     assert.has_no.errors(function() ns.Window.Toggle(); ns.Window.SetTab("job") end)
     local text = lineTexts(ns)
     assert.matches("Alchimie  50/75", text)
-    assert.matches("Monte avec", text)
-    assert.matches("ingrédients par point", text); assert.matches("fabrications par point", text)
+    assert.matches("Ton parcours", text)
+    assert.matches("Prochaine étape : rang Compagnon à 50", ns.Window.Footer().text)
+    ns.char.goal = "gold"
+    ns.Window.SetTab("job")
+    text = lineTexts(ns)
     assert.matches("À apprendre maintenant", text)
     assert.matches("Meilleure à apprendre", text)
-    assert.matches("Bientôt %(dans les 25 prochains points%)", text)
     assert.matches("entraîneur", text)
     assert.is_nil(text:match("bientôt|r"))                          -- the placeholder is gone
     local footer = ns.Window.Footer().text
     assert.matches("wowforever.be %(observé en jeu%)", footer)
-    assert.matches("hors apprentissage", footer)
   end)
 
   it("lists the recipes to learn per profession, never a known one, and leaves Fishing and Herbalism alone", function()
@@ -1150,19 +1155,19 @@ describe("profession leveling tab", function()
     setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = {} }
+    ns.char = { learned = {}, profs = {}, goal = "level" }
     local res
     ns.RunLeveling(function(r) res = r end)
     assert.are.equal("unseen", res.profs[1].status)
     ns.Window.Toggle(); ns.Window.SetTab("job")
-    assert.matches("Ouvre la fenêtre de Alchimie une fois", lineTexts(ns))
+    assert.matches("Ouvre ta fenêtre de Alchimie une fois", lineTexts(ns))
   end)
 
   it("says no recipes only when the window was read and the game listed none; Fishing with a recipe is planned", function()
     setup({ scanned = true, profs = { { 356, 150, "Pêche", 300 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = {} }
+    ns.char = { learned = {}, profs = {}, goal = "level" }
     local res
     ns.RunLeveling(function(r) res = r end)
     assert.are.equal("unseen", res.profs[1].status)               -- never read: open the window once (Fishing included)
@@ -1183,7 +1188,7 @@ describe("profession leveling tab", function()
     assert.are.equal("plan", res.profs[1].status)
     assert.are.equal(7620, res.profs[1].plan.best.rec.id)
     ns.Window.Toggle(); ns.Window.SetTab("job")
-    assert.matches("Monte avec", lineTexts(ns))
+    assert.matches("Ton parcours", lineTexts(ns))
     setup({ scanned = true })
     ns = loadAddon()
     ns.char = { learned = {}, profs = {} }
@@ -1215,7 +1220,7 @@ describe("profession leveling tab", function()
     setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy }, goal = "level" }
     local res
     ns.RunLeveling(function(r) res = r end)
     local nameNoApi = res.profs[1].plan.best.name
@@ -1280,12 +1285,19 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
     end
   end
 
-  it("shows only what the bags can craft, with the quantity and 'avec ton sac'", function()
+  it("the roadmap uses the bag first: the first step is what the bags can craft, with its quantity, and the checkbox is hidden", function()
     local ns = start({ on = true, counts = { [2447] = 5 } }) -- recipe 1: floor(5/2) = 2 ; recipe 2 lacks 2448
+    ns.char.goal = "level"
     ns.Window.Toggle(); ns.Window.SetTab("job")
     local text = lineTexts(ns)
-    assert.matches("Monte avec Potion de soins : ×2, ton sac donne ~2 points", text)   -- 2 orange crafts: 2 points
-    assert.matches("Sac valorisé au prix du marché", ns.Window.Footer().text)
+    assert.matches("Potion de soins ×2", text)                       -- 2 orange crafts
+    local sub
+    for _, l in ipairs(ns.Window.Lines()) do if l.craft and l.craft.entry then sub = l.craft.entry.sub end end
+    assert.matches("tout est dans ton sac", sub)                     -- the dim line of the step with the button
+    assert.is_false(ns.Window.IsBagBoxShown())
+    ns.char.goal = "gold"
+    ns.Window.SetTab("job")
+    assert.is_true(ns.Window.IsBagBoxShown())
   end)
 
   it("keeps the full list with the filter off, and remembers the checkbox per character", function()
@@ -1415,14 +1427,16 @@ describe("recipes to learn without prices, footer and line slots", function()
 
   it("values reagents without AH price at their vendor sell value (a floor), and levelling shows ingredients, not a gold figure", function()
     local ns = start({ pickupNoAh = true })                    -- vendor sell value 25 for every item
+    ns.char.goal = "level"
     local res
     ns.RunLeveling(function(r) res = r end)
     local found
     for _, e in ipairs(res.profs[1].learn.now) do if e.floor then found = true end end
     assert.is_true(found)
     ns.Window.Toggle(); ns.Window.SetTab("job")
-    assert.is_nil(lineTexts(ns):find("dès ~", 1, true))          -- levelling: ingredients, no gold figure
-    assert.matches("ingr%./pt", lineTexts(ns))
+    assert.is_nil(lineTexts(ns):find("dès ~", 1, true))          -- levelling: no gold figure, no per-point figure
+    assert.is_nil(lineTexts(ns):find("ingr%./pt"))
+    assert.matches("Ton parcours", lineTexts(ns))
   end)
 
   it("keeps the footer within two lines of the footer slot (character budget), with and without the bag filter", function()
@@ -1505,7 +1519,8 @@ describe("scrollable lists (bags, here, Métier)", function()
     setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = { Alchimie = data } }
+    ns.char = { learned = {}, profs = { Alchimie = data }, goal = "level" }
+    ns.Window.recipesOpen = true                                       -- the known-recipes list is the long one
     ns.Window.Toggle(); ns.Window.SetTab("job")
     return ns
   end
@@ -1520,13 +1535,14 @@ describe("scrollable lists (bags, here, Métier)", function()
     assert.are.equal(fewRows * 17, fewHeight)
     assert.is_nil(lineTexts(ns):find("autres", 1, true))
     for i = 1, 30 do assert.matches("Recette " .. i .. " ", lineTexts(ns) .. " ") end -- every known recipe is listed
-    assert.matches("Autres recettes connues", lineTexts(ns))
+    assert.matches("Recettes connues", lineTexts(ns))
   end)
 
   it("recycles lines: shrinking the list empties the leftover lines completely", function()
     local ns = start(big())
     local many = #ns.Window.Lines()
     ns.char.profs.Alchimie = { skill = 50, max = 75, recipes = { [1] = { id = 1, name = "Potion", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } } } }
+    ns.Window.recipesOpen = false
     ns.Window.Refresh()
     local lines = ns.Window.Lines()
     assert.are.equal(many, #lines)                                    -- lines are kept, not destroyed
@@ -1723,7 +1739,7 @@ describe("Fabriquer (craft button on the recommended recipe)", function()
     for k, v in pairs(tradeskill or {}) do _G.C_TradeSkillUI[k] = v end
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy }, goal = "level" }   -- the roadmap carries the craft buttons
     ns.Window.Toggle(); ns.Window.SetTab("job")
     return ns
   end
@@ -1797,10 +1813,12 @@ describe("Fabriquer (craft button on the recommended recipe)", function()
     assert.is_false(st.enabled); assert.are.equal("Indisponible en combat.", st.reason)
     craftButton().scripts.OnClick(craftButton())
     assert.are.equal(0, #calls.craft)
+    -- an empty bag: no step can be crafted now, so the roadmap offers no button, only what is missing
     ns = start({ counts = {} }, openAlchemy)
-    st = ns.Window.CraftState(craftButton().entry)
-    assert.is_false(st.enabled); assert.are.equal("Rien à fabriquer avec ton sac.", st.reason)
-    assert.are.equal("Fabriquer", craftButton().label.text)
+    assert.is_nil(craftButton())
+    local all = {}
+    for _, l in ipairs(ns.Window.Lines()) do all[#all + 1] = l.left.text or "" end
+    assert.matches("il te manque", table.concat(all, "\n"))
   end)
 
   it("reports a failed CraftRecipe and stays usable", function()
@@ -2058,6 +2076,7 @@ describe("Métier tab: objective toggle", function()
     local ns = loadAddon()
     ns.db = { buy = {} }
     ns.char = { learned = {}, profs = { Alchimie = alchemy }, onlyBag = true }
+    ns.Goal = ns.RealGoal                                           -- this describe tests the real default
     ns.Window.Toggle(); ns.Window.SetTab("job")
     return ns
   end
@@ -2065,8 +2084,8 @@ describe("Métier tab: objective toggle", function()
   it("defaults to Monter le métier and remembers the choice per character", function()
     local ns = start()
     assert.are.equal("level", ns.Goal())
-    assert.matches("Monte avec Potion de soins : ×2, ton sac donne ~2 points", lineTexts(ns))     -- 2 orange crafts beat 5 green ones (1.25)
-    assert.matches("Objectif : monter le métier", ns.Window.Footer().text)
+    assert.matches("Potion de soins ×2", lineTexts(ns))                                        -- 2 orange crafts beat 5 green ones (1.25)
+    assert.matches("Prochaine étape", ns.Window.Footer().text)
     ns.Window.SetGoal("gold")
     assert.are.equal("gold", ns.char.goal)                                                     -- saved with the character
     assert.are.equal("gold", ns.Goal())
@@ -2306,7 +2325,7 @@ describe("the craft button belongs to its own section (Travail du cuir vs Dépe�
     setup({ scanned = true, counts = { [2318] = 10 }, profs = { { 165, 61, "Travail du cuir", 75 }, { 393, 110, "Dépeçage", 150 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = { ["Travail du cuir"] = lw, ["Dépeçage"] = skin }, onlyBag = true }
+    ns.char = { learned = {}, profs = { ["Travail du cuir"] = lw, ["Dépeçage"] = skin }, onlyBag = true, goal = "level" }
     return ns
   end
 
@@ -2828,7 +2847,7 @@ describe("Métier tab, 'Monter le métier': no AH resale note, the chance is exa
     setup({ scanned = true, profs = { { 165, 75, "Travail du cuir", 150 } } })
     local ns = loadAddon()
     ns.db = { buy = {} }
-    ns.char = { learned = {}, profs = { ["Travail du cuir"] = { skill = 75, max = 150, recipes = {
+    ns.char = { goal = "level", learned = {}, profs = { ["Travail du cuir"] = { skill = 75, max = 150, recipes = {
       [2161] = { id = 2161, name = "Bottes", d = 0, out = 2309, oq = 1, mats = { { 2318, 6 }, { 2320, 2 } } } } } } }
     _G.GetLocale = function() return "frFR" end
     ns.Window.Toggle(); ns.Window.SetTab("job")
@@ -2837,12 +2856,12 @@ describe("Métier tab, 'Monter le métier': no AH resale note, the chance is exa
     local text = {}
     for _, l in ipairs(ns.Window.Lines()) do text[#text + 1] = ((l.left.text or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
     local all = table.concat(text, "\n")
-    assert.matches("Monte avec ", all)
-    assert.matches("ingrédients par point %(6 Item2318, 2 Item2320%)", all)
-    assert.is_nil(all:find("coût", 1, true))                                        -- levelling talks effort, not gold
-    assert.matches("chance d'un point ~100 %%\n", all .. "\n")                   -- thresholds known (orange): exact, no "(estimation)"
-    assert.is_nil(all:find("rentable seulement", 1, true))
-    assert.is_nil(all:find("prix HV du jour", 1, true))
+    assert.matches("Ton parcours", all)
+    assert.matches("Apprendre", all)                                                -- a recipe to learn is a step of the roadmap
+    assert.matches("il te manque %d+ ×", all)
+    for _, word in ipairs({ "coût", "rentable seulement", "prix HV", "estimation", "Presque", "Bientôt", "Prix manquant", "ingr." }) do
+      assert.is_nil(all:find(word, 1, true), word)                                  -- the roadmap talks effort, not gold or estimates
+    end
   end)
 end)
 
@@ -2878,6 +2897,26 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
         assert.is_nil((l.right.text or ""):find("Interface\\", 1, true), "coin icon in the figure: " .. tostring(l.right.text))
       end
     end
+  end)
+
+  it("the roadmap has none of the removed wording, hides the bag checkbox, and the known recipes open on demand", function()
+    local ns = render("level", true)
+    local function text()
+      local out = {}
+      for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) .. " " .. plain(l.right.text) end
+      return table.concat(out, "\n")
+    end
+    assert.matches("Ton parcours", text())
+    for _, word in ipairs({ "Presque", "Bientôt", "Réservé à l'Alliance", "Prix manquant", "estimation", "Meilleure à apprendre", "te ferait passer", "ingr." }) do
+      assert.is_nil(text():find(word, 1, true), word)
+    end
+    assert.is_false(ns.Window.IsBagBoxShown())
+    assert.matches("Prochaine étape : rang", plain(ns.Window.Footer().text))
+    assert.is_nil(text():find("Recettes connues", 1, true))                    -- collapsed by default
+    ns.Window.recipesOpen = true
+    ns.Window.SetTab("job")
+    for _, fn in ipairs(timers) do pcall(fn) end
+    assert.matches("Recettes connues", text())
   end)
 
   it("gold mode keeps its gold wording", function()

@@ -33,7 +33,9 @@ W.Layout = {
   -- second row: the objective toggle "Objectif : Monter le métier | Gagner de l'or"
   job = { bagBox = rect(PAD, 52, 230, 52 + LINE_H - 1), bagOff = rect(296, 50, 446, 68),
     goalLabel = rect(PAD, 76, 72, 92), goalLevel = rect(74, 72, 254, 94), goalGold = rect(258, 72, 446, 94),
-    lines = rect(PAD, 98, FRAME_W - PAD, 52 + LINES * LINE_H) },
+    lines = rect(PAD, 98, FRAME_W - PAD, 52 + LINES * LINE_H),
+    -- roadmap: the map pin of "Plafond atteint" (bottom left, under the footer text) and the "Recettes >" link (bottom right, before Actualiser)
+    recipes = rect(236, 470, 350, 488), pin = rect(PAD, 470, PAD + 18, 488) },
   panel = { panel = rect(PAD, 80, FRAME_W - PAD, 300) },
 }
 
@@ -48,6 +50,8 @@ local SCROLLBAR_W = 20
 W.LineParts = { left = rect(0, 0, 222, LINE_H), right = rect(226, 0, 386, LINE_H), go = rect(390, 0, 406, 16) }
 -- Long sentences take the whole line (the right slot is then empty), so coin icons never push them into the figure.
 W.LineWide = rect(0, 0, 406, LINE_H)
+-- Roadmap rows: a left column for the skill range, the text after it.
+local LV_W = 58
 
 -- Scale that keeps the whole frame on screen whatever the UI scale makes of UIParent's size.
 function W.FitScale(parentWidth, parentHeight)
@@ -114,7 +118,7 @@ local TABS = {
 local f, rows, lines, panel, selected, titleFS
 local scroll, content, scrollKind, contentHeight = nil, nil, nil, 0
 local current, token = "map", 0
-local lastMap, renderMap, jobRefreshPending
+local lastMap, lastJob, renderMap, jobRefreshPending
 local mapState = "loading" -- loading | off | ready: drives the "Voir sur la carte" button
 
 -- Opening the map is a protected UI-panel operation when done through Blizzard's FrameXML (ShowUIPanel is protected in
@@ -277,6 +281,7 @@ end
 function W.ContentHeight() return contentHeight end -- height of the scrolled content (rows shown x line height)
 function W.ScrollKind() return scrollKind end
 function W.Footer() return f.footer end
+function W.IsBagBoxShown() return f.bagBox:IsShown() and true or false end
 
 -- Lines of the row tooltip: full name, level range, nodes with their value, price freshness, assumptions.
 function W.RowTooltipLines(row)
@@ -465,6 +470,28 @@ local function build()
     b:SetScript("OnClick", function() W.SetGoal(g[1]) end)
     f.goalBtns[g[1]] = b
   end
+  -- roadmap footer: "Recettes >" link (collapsed by default, remembered for the session) and the map pin of "Plafond atteint"
+  f.recipesBtn = CreateFrame("Button", nil, f)
+  place(f.recipesBtn, L.job.recipes, f)
+  f.recipesBtn.label = text(f.recipesBtn, "GameFontHighlightSmall", GOLD, "RIGHT")
+  f.recipesBtn.label:SetAllPoints()
+  f.recipesBtn:EnableMouse(true)
+  f.recipesBtn:RegisterForClicks("LeftButtonUp")
+  f.recipesBtn:SetScript("OnClick", function()
+    W.recipesOpen = not W.recipesOpen
+    W.UpdateControls()
+    if lastJob then W.RenderJob(lastJob) end
+  end)
+  f.footPin = CreateFrame("Button", nil, f)
+  place(f.footPin, L.job.pin, f)
+  f.footPin.icon = f.footPin:CreateTexture(nil, "ARTWORK")
+  f.footPin.icon:SetAllPoints()
+  f.footPin.icon:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
+  f.footPin.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
+  f.footPin:EnableMouse(true)
+  f.footPin:RegisterForClicks("LeftButtonUp")
+  f.footPin:SetScript("OnClick", function(self) if self.target then W.GoTo(self.target, self.recipe) end end)
+  f.footPin:Hide()
   f.profBtn = button(f, "", L.map.profBtn.r - L.map.profBtn.l)
   place(f.profBtn, L.map.profBtn, f)
   f.profBtn:SetScript("OnClick", function()
@@ -573,7 +600,12 @@ function W.UpdateCraft()
       local st = W.CraftState(c)
       l.craft.label:SetText(st.label)
       l.craft:SetBusy(not st.enabled)
-      l.left:SetText("|cff9d9d9d" .. st.reason .. "|r")
+      -- roadmap: the first craftable step is the primary button, the others a dimmer one
+      if st.enabled and c.primary ~= nil then
+        if c.primary then l.craft.fill:SetColorTexture(0.6, 0.12, 0.06) else l.craft.fill:SetColorTexture(0.2, 0.07, 0.05) end
+      end
+      -- the reason a click does nothing, else the dim line of the step (roadmap: "tout est dans ton sac")
+      l.left:SetText(st.reason ~= "" and ("|cff9d9d9d" .. st.reason .. "|r") or c.sub or "|cff9d9d9d|r")
     end
   end
 end
@@ -590,13 +622,13 @@ local function setLines(entries, tail, area)
   -- a sentence too long for its slot goes on a second line (about 5.5 px a character), never cut: the map button stays on the first
   local function add(e)
     local plain = e.left and e.left:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-    local cap = math.floor(((e.target and W.LineParts.go.l - 4) or W.LineWide.r) / 5.5)
+    local cap = math.floor((((e.target and W.LineParts.go.l - 4) or W.LineWide.r) - (e.lv and LV_W or 0)) / 5.5)
     if not (e.wide and not e.craft and plain and #plain:gsub("[\128-\191]", "") > cap) then all[#all + 1] = e; return end
     local colour, body = e.left:match("^(|c%x%x%x%x%x%x%x%x)(.*)|r$")
     body = body or e.left
     local line, first = "", true
     local function flush()
-      local copy = { wide = true, left = (colour or "") .. line .. (colour and "|r" or "") }
+      local copy = { wide = true, left = (colour or "") .. line .. (colour and "|r" or ""), lv = e.lv and (first and e.lv or "") or nil }
       if first then copy.target, copy.recipe = e.target, e.recipe; first = false end
       all[#all + 1] = copy
     end
@@ -643,6 +675,8 @@ local function setLines(entries, tail, area)
       end)
       go:SetScript("OnLeave", function() GameTooltip:Hide() end)
       l.go = go
+      l.lv = text(content, "GameFontHighlightSmall")
+      place(l.lv, rect(0, top, LV_W - 4, top + LINE_H), content)
       l.top = top
       lines[i] = l
     end
@@ -660,9 +694,14 @@ local function setLines(entries, tail, area)
     l.go.target = e and e.target or nil
     l.go.recipe = e and e.recipe or nil
     l.go:SetShown(l.go.target ~= nil)
+    -- a roadmap row has its skill range in a column on the left, the text starts after it
+    local shift = (e and e.lv) and LV_W or 0
+    l.lv:SetText(e and e.lv or "")
+    l.left:ClearAllPoints()
+    l.left:SetPoint("TOPLEFT", content, "TOPLEFT", W.LineParts.left.l + shift, -l.top)
     -- a line with a map button leaves its room (the button sits at the right end)
-    l.left:SetWidth((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or W.LineWide.r)
-      or (e and e.craft and W.LineWide.r - 154) or W.LineParts.left.r)
+    l.left:SetWidth(((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or W.LineWide.r)
+      or (e and e.craft and W.LineWide.r - 154) or W.LineParts.left.r) - shift)
     l.left:SetFontObject(e and e.head and GameFontNormalSmall or GameFontHighlightSmall)
     l.left:SetText(e and e.left or "")
     l.right:SetText(e and e.right or "")
@@ -918,7 +957,72 @@ local function saleNote(e)
   return #parts > 0 and table.concat(parts, " · ") or nil
 end
 
+-- Colour of a recipe by difficulty (0 orange .. 3 gray), as the game's skill-up colours.
+local DIFF_COLOUR = { [0] = "|cffff8040", [1] = "|cffffff00", [2] = "|cff40c040", [3] = "|cff808080" }
+
+-- "Monter le métier": the roadmap of one profession ("Ton parcours"): up to 5 steps, two lines each. Left column: the skill range;
+-- main line: the recipe coloured by its difficulty and the number of crafts; dim line: what is in the bag, what is missing, or where to
+-- learn it; a "Fabriquer" button on a step the bag can feed (the first one is the primary button), the map pin on a recipe to learn.
+local function addRoadmap(entries, p)
+  local r = p.road
+  local rank = r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
+  if r.capped then
+    entries[#entries + 1] = { wide = true, left = "|cffffd100" .. (rank and S.road_capped:format(rank) or S.road_max) .. "|r",
+      target = rank and r.trainer or nil, recipe = rank }
+    return
+  end
+  if #r.steps == 0 then
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank }
+    return
+  end
+  entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_title .. "|r" }
+  local primary = true
+  for _, s in ipairs(r.steps) do
+    if s.kind == "learn" then
+      local zone = s.target and (ns.ZoneLabel(s.target) or s.target.zone)
+      local source = ns.Fmt.Source(s.rec)
+      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_learn:format(s.name) }
+      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(source, zone) or source) .. "|r",
+        target = s.target, recipe = s.name }
+    else
+      local range = s.to > s.from and S.road_range:format(s.from, s.to) or tostring(s.from)
+      entries[#entries + 1] = { lv = "|cffa89c80" .. range .. "|r", wide = true,
+        left = DIFF_COLOUR[s.d] .. ("%s ×%d"):format(s.name, s.times) .. "|r" }
+      if s.state == "bag" and s.learned then      -- the recipe is learned in an earlier step: nothing to craft yet
+        entries[#entries + 1] = { lv = "", wide = true, left = "|cff1eff00" .. S.road_bag .. "|r" }
+      elseif s.state == "bag" then
+        entries[#entries + 1] = { lv = "", left = "", craft = { id = s.craft.id, times = s.times, prof = s.craft.prof, line = s.craft.line,
+          sub = "|cff1eff00" .. S.road_bag .. "|r", primary = primary } }
+        primary = false
+      else
+        local line
+        local sub, miss = s.subs[1], s.missing[1]
+        if sub then line = S.road_first:format(sub.need, sub.name)
+        elseif miss then
+          local how = miss.how and S.road_hows[miss.how]
+          line = S.road_missing:format(miss.n, miss.name, how and S.road_how:format(how) or "")
+        end
+        if line then entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. line .. "|r" } end
+      end
+    end
+  end
+end
+
+-- The footer line of the roadmap: the rank that lifts the cap (with its pin once the cap is reached), from the first profession that has one.
+local function roadFooter(res)
+  for _, p in ipairs(res.profs) do
+    local r = p.road
+    local rank = r and r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
+    if rank then
+      if r.capped then return S.road_capped:format(rank), r.trainer, rank end
+      return S.road_next:format(rank, r.rankAt)
+    end
+  end
+  return ""
+end
+
 local function renderJob(res)
+  lastJob = res
   render(res, "job")
   if res.state ~= "ok" then
     f.bagOff:Hide()
@@ -928,17 +1032,36 @@ local function renderJob(res)
   f.subtitle:SetText("")
   f.banner:SetText("")
   local filtered = ns.char.onlyBag
-  f.footer:SetText(W.JobFooter(filtered, ns.Goal()))
+  local level = ns.Goal() ~= "gold"
+  f.footPin:Hide()
+  if level then
+    local line, target, rank = roadFooter(res)
+    f.footer:SetText(line)
+    if target then
+      f.footPin.target, f.footPin.recipe = target, rank
+      f.footPin:Show()
+    end
+  else
+    f.footer:SetText(W.JobFooter(filtered, ns.Goal()))
+  end
   local entries, nothing = {}, false -- the checkbox sits above the scroll area
   for _, p in ipairs(res.profs) do
     entries[#entries + 1] = { head = true, left = S.job_head:format(p.name, tostring(p.skill or "?"), tostring(p.max or "?")) }
     if p.status == "unseen" then
-      entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_unseen:format(p.name) .. "|r" }
+      entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (level and S.road_unseen or S.job_unseen):format(p.name) .. "|r" }
     elseif p.status == "norecipes" then
       entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_norecipes .. "|r" }
     else
       local plan, gold = p.plan, p.goal == "gold"
-      if plan.best and gold then
+      if not gold then
+        addRoadmap(entries, p)
+        if W.recipesOpen then
+          entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_recipes_title .. "|r" }
+          for _, o in ipairs(p.road.recipes) do
+            entries[#entries + 1] = { left = o.name, right = DIFF_COLOUR[o.d] .. ns.Leveling.COLOR[o.d] .. "|r" }
+          end
+        end
+      elseif plan.best then
         local e = plan.best
         local name, money = e.name or ns.Fmt.RecipeName(e.rec), ns.Money(math.abs(e.profit))
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (p.filtered
@@ -954,40 +1077,6 @@ local function renderJob(res)
               right = (o.profit >= 0 and S.job_gold_row_gain or S.job_gold_row_cost):format(ns.Money(math.abs(o.profit))) }
           end
         end
-      elseif plan.best then
-        local e = plan.best
-        local name = e.name or ns.Fmt.RecipeName(e.rec)
-        -- the effort first: ingredients and crafts per skill point; the gold cost is a dim secondary figure
-        local ingredients = {}
-        for i, m in ipairs(e.rec.mats or {}) do
-          if i > 3 then ingredients[#ingredients + 1] = "..."; break end
-          ingredients[#ingredients + 1] = ("%d %s"):format(m[2], ns.ItemName(m[1]))
-        end
-        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (p.filtered
-          and S.job_best_bag:format(name, e.times or 0, fmtPoints(e.points or 0), (e.points or 0) >= 1.5 and "s" or "",
-            fmtPoints(e.unitsPerPoint), fmtPoints(e.craftsPerPoint), (e.craftsPerPoint or 0) >= 1.5 and "s" or "")
-          or S.job_best:format(name, fmtPoints(e.unitsPerPoint), table.concat(ingredients, ", "), fmtPoints(e.craftsPerPoint))) .. "|r" }
-        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.d or e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
-          e.exact and "" or S.chance_estimate, ((e.d or e.rec.d) == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
-        for _, sub in ipairs(e.subs or {}) do      -- an intermediate reagent to make first (or buy): "Peau légère traitée"
-          entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_subcraft:format(sub.need, ns.ItemName(sub.item)) .. "|r" }
-        end
-        local note = (e.resale or e.oldAh) and saleNote(e)
-        if note then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. note .. "|r" } end
-        if plan.second then
-          local s2 = plan.second
-          entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_then:format(s2.e.name or ns.Fmt.RecipeName(s2.e.rec),
-            s2.times, fmtPoints(s2.points)) .. "|r" }
-        end
-        if p.craft then entries[#entries + 1] = { left = "", craft = p.craft } end
-        if #plan.rows > 1 then
-          entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_others .. "|r" }
-          for i = 2, #plan.rows do
-            local o = plan.rows[i]
-            entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.d or o.rec.d] or "?"),
-              right = S.job_ingr_row:format(fmtPoints(o.unitsPerPoint)) }
-          end
-        end
       elseif p.filtered and plan.known > 0 and (plan.craftable or 0) == 0 then
         nothing = true
         entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_nothing_t .. "|r" }
@@ -995,15 +1084,15 @@ local function renderJob(res)
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (plan.known == 0 and S.job_none_known
           or (gold and S.job_gold_none or S.job_no_best)) .. "|r" }
       end
-      if p.almost then
+      if gold and p.almost then
         local parts = {}
         for i, m in ipairs(p.almost.missing) do parts[i] = ("%d × %s"):format(m[2], m[1]) end
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_almost:format(p.almost.name, table.concat(parts, ", ")) .. "|r" }
       end
-      if #(p.missingNames or {}) > 0 then
+      if gold and #(p.missingNames or {}) > 0 then
         entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_missing:format(table.concat(p.missingNames, ", ")) .. "|r" }
       end
-      if p.learn then nothing = addLearn(entries, p) or nothing end
+      if gold and p.learn then nothing = addLearn(entries, p) or nothing end
     end
   end
   f.bagOff:SetShown(filtered and nothing)
@@ -1018,6 +1107,10 @@ end
 function W.UpdateControls()
   f.levelBox:SetOn(ns.db.onlyLevel and true or false)
   f.bagBox:SetOn(ns.char and ns.char.onlyBag and true or false)
+  -- the roadmap always uses the bag first: the checkbox belongs to "Gagner de l'or" only
+  f.bagBox:SetShown(current == "job" and ns.Goal() == "gold")
+  f.recipesBtn:SetShown(current == "job" and ns.Goal() == "level")
+  f.recipesBtn.label:SetText(W.recipesOpen and S.road_recipes_open or S.road_recipes)
   for key, b in pairs(f.goalBtns) do        -- the active objective is lit gold, the other dim
     local on = ns.Goal() == key
     b.edge:SetColorTexture(on and 0.83 or 0.35, on and 0.69 or 0.15, on and 0.22 or 0.1)
@@ -1026,6 +1119,8 @@ function W.UpdateControls()
   end
   f.profBtn.label:SetText(S.prof_label:format(ns.db.profession and S.prof_names[ns.db.profession] or S.prof_all))
 end
+
+W.RenderJob = renderJob
 
 -- Objective of the Métier tab ("level" or "gold"), remembered per character.
 function W.SetGoal(goal)
@@ -1074,7 +1169,7 @@ function W.SetTab(key)
   f.note:SetShown(key == "map")
   f.levelBox:SetShown(key == "map")
   f.profBtn:SetShown(key == "map")
-  f.bagBox:SetShown(key == "job")
+  f.footPin:Hide()
   f.goalLabel:SetShown(key == "job")
   for _, b in pairs(f.goalBtns) do b:SetShown(key == "job") end
   f.bagOff:Hide()

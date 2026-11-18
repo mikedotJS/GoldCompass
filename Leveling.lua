@@ -599,7 +599,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       end
       local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats, way = way,
         d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = fee, feeAge = feeAge,
-        npcNames = way and way.npcs, teachItem = way and way.itemID }
+        npcNames = way and way.npcs, teachItem = way and way.itemID, th = { at, c.y or at + 30, c.g or at + 45, c.gr or at + 60 } }
       -- where to go (ctx.place -> Where.Target): a recipe whose every way belongs to the other faction is no recipe for this player
       local place = ctx.place and ctx.place(rec)
       if place and place.onlyFaction then
@@ -714,6 +714,167 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   end
   return { now = now, soon = soon, gray = gray, best = best, gain = gain, gainFrom = from, gainTo = to, candidates = candidates, unpriced = unpriced,
     nowTotal = nowTotal, soonTotal = soonTotal, books = books, beyond = beyond, otherFaction = otherFaction }
+end
+
+-- ---------------------------------------------------------------------------------------------------------------------
+-- Roadmap ("Monter le métier", tab Métier): the next few steps to level a profession, simulated from the current skill and a COPY of the
+-- bag. Pure: no WoW API, the caller gives everything.
+--   prof = { skill, max, recipes = { [id] = rec } } (the known recipes)
+--   ctx  = like V.Plan (price, vendor, buy, owned = bag count of an item) plus optional `how(itemID)` -> where to get a missing reagent
+--   opts = { thresholds(id) -> { orange, yellow, green, gray } of a known recipe, learn = the rows of V.Learnable (now + soon; each row has
+--            rec.th), steps = 5 }
+-- Each step is the best recipe by the effort rule (V.EasiestWithin), the ones the simulated bag can craft first. Crafts of one recipe
+-- are grouped while it stays within 15 % of the leanest and the bag allows; the points are expected ones (the Classic chance per craft
+-- at the simulated skill), the range is rounded. When the bag cannot feed any useful recipe the step is the best recipe overall with
+-- what is missing; a recipe to learn gets a step of its own when it beats the best known one by more than 15 % ingredients per point.
+-- Returns { steps, stopped = "cap" | "steps" | "none", capped, skill, skillEnd, cap, nextRank, rankAt }; a step is
+--   { kind = "craft", rec, d, state = "bag" | "missing", from, to, times, subs = { {item, need} }, missing = { {item, n, how} } } or
+--   { kind = "learn", rec, row, at }.
+V.ROADMAP_STEPS = 5
+
+function V.Roadmap(prof, ctx, opts)
+  opts = opts or {}
+  local maxSteps, cap = opts.steps or V.ROADMAP_STEPS, prof.max or math.huge
+  local start = prof.skill or 0
+  local skill = start                                -- expected skill, fractional
+  local function rounded(x) return math.floor(x + 0.5) end
+  local bag = {}
+  local function owned(id)
+    if bag[id] == nil then bag[id] = ctx.owned and ctx.owned(id) or 0 end
+    return bag[id]
+  end
+  local known, byOut, thOf = {}, {}, {}
+  local function adopt(rec, th)
+    known[rec.id] = rec
+    thOf[rec.id] = th
+    if rec.out then byOut[rec.out] = rec end
+  end
+  for _, rec in pairs(prof.recipes or {}) do adopt(rec, opts.thresholds and opts.thresholds(rec.id) or nil) end
+  local sctx = setmetatable({ owned = owned, sub = function(item) return byOut[item] end }, { __index = ctx })
+  local result = { steps = {}, skill = rounded(start), cap = prof.max, nextRank = NEXT_RANK[prof.max or 0],
+    rankAt = prof.max and prof.max - 25 or nil }
+  result.capped = prof.max ~= nil and start >= prof.max
+  if result.capped then result.stopped, result.skillEnd = "cap", result.skill; return result end
+
+  -- the recipes with a chance of a point at the simulated skill, evaluated against the simulated bag, best first
+  local function rank(free)
+    local rows = {}
+    for _, rec in pairs(known) do
+      local e = V.Evaluate(rec, sctx, "level", skill, thOf[rec.id])
+      if e.chance > 0 and e.unitsPerPoint then
+        e.craftNow = not free and V.Craftable(rec, owned) >= 1
+        rows[#rows + 1] = e
+      end
+    end
+    table.sort(rows, V.EasierThan)
+    return rows
+  end
+  -- the pick among rows: the leanest within 15 % (craftable first), the recipe already being crafted kept while it stays in that window
+  local function pick(rows, current)
+    local best = V.EasiestWithin(rows)
+    if best and current then
+      for _, e in ipairs(rows) do
+        if e.rec.id == current and e.unitsPerPoint <= rows[1].unitsPerPoint * 1.15 then best = e end
+      end
+    end
+    return best
+  end
+  local function craftable(rows)
+    local out = {}
+    for _, e in ipairs(rows) do if e.craftNow then out[#out + 1] = e end end
+    return out
+  end
+  -- the best recipe to learn at the simulated skill when it beats the known best (15 % fewer ingredients per point), else nil
+  local learned = {}
+  local function learnPick(knownUnits)
+    local list = {}
+    for _, row in ipairs(opts.learn or {}) do
+      local rec = row.rec
+      if not learned[rec.id] and not known[rec.id] and row.recommend ~= false and not row.unpriced and not row.rankGated and not row.gray
+        and rec.th and rec.learn and rec.learn <= skill and (rec.learn <= cap) then
+        local e = V.Evaluate(rec, sctx, "level", math.max(skill, rec.learn), rec.th)
+        if e.chance > 0 and e.unitsPerPoint and (not knownUnits or e.unitsPerPoint < knownUnits * 0.85) then
+          e.craftNow, e.row = false, row
+          list[#list + 1] = e
+        end
+      end
+    end
+    table.sort(list, V.EasierThan)
+    return list[1]
+  end
+
+  local steps, step, current = result.steps, nil, nil
+  local function close()
+    if not step then return end
+    step.to = math.min(rounded(skill), cap)
+    local missing, subs = {}, {}
+    for item, n in pairs(step.short or {}) do
+      if byOut[item] and byOut[item] ~= step.rec then subs[#subs + 1] = { item = item, need = n }
+      else missing[#missing + 1] = { item = item, n = n, how = ctx.how and ctx.how(item) or nil } end
+    end
+    local function order(a, b) if (a.n or a.need) ~= (b.n or b.need) then return (a.n or a.need) > (b.n or b.need) end return a.item < b.item end
+    table.sort(missing, order)
+    table.sort(subs, order)
+    step.missing, step.subs, step.short = missing, subs, nil
+    steps[#steps + 1] = step
+    step = nil
+  end
+  local function open(e, state)
+    step = { kind = "craft", rec = e.rec, d = e.d, state = state, from = rounded(skill), times = 0, short = {},
+      learned = learned[e.rec.id] or nil }               -- a recipe learned earlier in the roadmap: not craftable before that
+  end
+  local loops = 0
+  while skill < cap and loops < 4000 do
+    loops = loops + 1
+    -- a step of missing reagents goes on while its recipe stays the best overall (what is left in the bag never interrupts it)
+    local e
+    if step and step.state == "missing" then
+      local best = pick(rank(true), step.rec.id)
+      if best and best.rec == step.rec and not learnPick(best.unitsPerPoint) then e = best else close() end
+    end
+    if not e then
+      e = pick(craftable(rank(false)), current)                   -- the bag first
+      if e and step and step.rec ~= e.rec then close() end
+    end
+    if step and not e then close() end
+    if #steps >= maxSteps then break end
+    if not e then
+      -- the bag feeds nothing useful: a recipe to learn when it beats the best known one, else the best known one with what is missing
+      local free = rank(true)
+      local best = pick(free, nil)
+      local l = learnPick(best and best.unitsPerPoint)
+      if l then
+        steps[#steps + 1] = { kind = "learn", rec = l.rec, row = l.row, at = rounded(skill), d = l.d }
+        learned[l.rec.id] = true
+        adopt(l.rec, l.rec.th)
+        current = nil
+      elseif best then
+        open(best, "missing")
+        e = best
+      else
+        result.stopped = "none"
+        break
+      end
+    elseif not step then
+      open(e, "bag")
+    end
+    if e then
+      -- one craft: the bag gives what it has, the rest is missing
+      for _, m in ipairs(e.rec.mats or {}) do
+        local have = owned(m[1])
+        local take = math.min(have, m[2])
+        bag[m[1]] = have - take
+        if take < m[2] then step.short[m[1]] = (step.short[m[1]] or 0) + (m[2] - take) end
+      end
+      step.times = step.times + 1
+      skill = math.min(skill + e.chance, cap)
+      current = e.rec.id
+    end
+  end
+  close()
+  result.stopped = result.stopped or (skill >= cap and "cap") or (#steps >= maxSteps and "steps") or "none"
+  result.skillEnd = math.min(rounded(skill), cap)
+  return result
 end
 
 -- State of the "Fabriquer" button of the recommended recipe. s = { times = how many can be crafted from the bags,
