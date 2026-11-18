@@ -148,6 +148,51 @@ function W.GoTo(t)
 end
 function W.Rows() return rows end
 function W.Lines() return lines end
+-- "Fabriquer": inputs of Leveling.CraftButton for a craft entry { id, times, prof, line }, read from the game.
+local crafting, craftClicks = false, 0
+local function craftInputs(c)
+  local open, openID = ns.OpenTradeSkill()
+  return { times = c.times, open = open ~= nil and (open == c.prof or openID == c.line), combat = InCombatLockdown(),
+    crafting = crafting }
+end
+
+-- Label, enabled state and reason text of a craft entry in the current conditions.
+function W.CraftState(c)
+  local st = ns.Leveling.CraftButton(craftInputs(c))
+  local canOpen = C_TradeSkillUI and C_TradeSkillUI.OpenTradeSkill ~= nil
+  if st.state == "busy" then st.label, st.reason = S.craft_busy, S.craft_busy
+  elseif st.state == "combat" then st.label, st.reason = c.times > 0 and S.craft_btn:format(c.times) or S.craft_btn_none, S.craft_r_combat
+  elseif st.state == "none" then st.label, st.reason = S.craft_btn_none, S.craft_r_none
+  elseif st.state == "closed" then st.label, st.reason = S.craft_open:format(c.prof), (not canOpen) and S.craft_r_manual or ""
+  else st.label, st.reason = S.craft_btn:format(c.times), "" end
+  return st
+end
+
+-- Click on the craft button (a hardware event): opens the profession window, or crafts the recipe as many times as
+-- the bags allow. Only public functions, each in a pcall; the result is logged (a blocked action shows right after it).
+function W.Craft(c)
+  local st = W.CraftState(c)
+  if not st.enabled then return end
+  local T = C_TradeSkillUI
+  if st.action == "open" then
+    local ok = T and T.OpenTradeSkill and pcall(T.OpenTradeSkill, c.line)
+    ns.Log("frame", ("craft: OpenTradeSkill(%s) for %s -> %s"):format(tostring(c.line), c.prof, tostring(ok)))
+    ns.Print((ok and S.craft_opening or S.craft_open_fail):format(c.prof))
+    return
+  end
+  local ok, err = pcall(T.CraftRecipe, c.id, c.times)
+  ns.Log("frame", ("craft: CraftRecipe(%d, %d) -> %s %s"):format(c.id, c.times, tostring(ok), ok and "" or tostring(err)))
+  if not ok then return ns.Print(S.craft_fail) end
+  crafting = true
+  craftClicks = craftClicks + 1
+  local click = craftClicks
+  -- no cast started after 2 s: nothing is being crafted, release the button; 60 s at most in any case
+  C_Timer.After(2, function() if crafting and click == craftClicks and not W.CastSeen then crafting = false; W.UpdateCraft() end end)
+  C_Timer.After(60, function() if crafting and click == craftClicks then crafting = false; W.UpdateCraft() end end)
+  W.CastSeen = false
+  W.UpdateCraft()
+end
+
 -- Tooltip of the map button: NPC, zone (client language when known), coordinates, and the Classic caveat.
 function W.TargetTooltipLines(t)
   local tip = { S.where_title }
@@ -438,6 +483,20 @@ local function showPanel(title, body, canRetry, loading)
   if loading then panel.pulse:Play() else panel.pulse:Stop() panel.title:SetAlpha(1) end
 end
 
+-- Refreshes the craft buttons (label, enabled, reason) without recomputing the tab: window opened or closed, combat,
+-- a cast started or stopped.
+function W.UpdateCraft()
+  for _, l in ipairs(lines) do
+    local c = l.craft and l.craft.entry
+    if c then
+      local st = W.CraftState(c)
+      l.craft.label:SetText(st.label)
+      l.craft:SetBusy(not st.enabled)
+      l.left:SetText("|cff9d9d9d" .. st.reason .. "|r")
+    end
+  end
+end
+
 -- Fills the scrolled lines: every entry then every tail entry, none cut. entries = { { left, right, head, wide }, ... }.
 -- `area` is the slot of the scroll frame (the Métier tab starts lower than the other tabs, under its checkbox).
 -- A recycled line is fully reset (width, font, both texts), so nothing from the previous row leaks.
@@ -477,17 +536,30 @@ local function setLines(entries, tail, area)
       end)
       go:SetScript("OnLeave", function() GameTooltip:Hide() end)
       l.go = go
+      l.top = top
       lines[i] = l
     end
     local e = all[i]
+    -- the craft button (recommended recipe) is created when a line first needs it
+    if e and e.craft and not l.craft then
+      l.craft = button(content, "", 150)
+      place(l.craft, rect(W.LineWide.r - 150, l.top, W.LineWide.r, l.top + LINE_H), content)
+      l.craft:SetScript("OnClick", function(self) if self.entry then W.Craft(self.entry) end end)
+    end
+    if l.craft then
+      l.craft.entry = e and e.craft or nil
+      l.craft:SetShown(l.craft.entry ~= nil)
+    end
     l.go.target = e and e.target or nil
     l.go:SetShown(l.go.target ~= nil)
     -- a line with a map button leaves its room (the button sits at the right end)
-    l.left:SetWidth((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or W.LineWide.r) or W.LineParts.left.r)
+    l.left:SetWidth((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or W.LineWide.r)
+      or (e and e.craft and W.LineWide.r - 154) or W.LineParts.left.r)
     l.left:SetFontObject(e and e.head and GameFontNormalSmall or GameFontHighlightSmall)
     l.left:SetText(e and e.left or "")
     l.right:SetText(e and e.right or "")
   end
+  W.UpdateCraft()
   scroll:Show()
   scroll:SetVerticalScroll(math.min(scroll:GetVerticalScroll() or 0, math.max(0, contentHeight - (area.b - area.t))))
   -- the bar only when there is something to scroll
@@ -690,6 +762,7 @@ local function renderJob(res)
           e.name or ns.Fmt.RecipeName(e.rec), suffix, ns.Money(math.abs(e.perPoint))) .. "|r" }
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
           (e.rec.d == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+        if p.craft then entries[#entries + 1] = { left = "", craft = p.craft } end
         if #plan.rows > 1 then
           entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_others .. "|r" }
           for i = 2, #plan.rows do
@@ -788,18 +861,53 @@ local watcher = CreateFrame("Frame")
 for _, e in ipairs({ "BAG_UPDATE_DELAYED", "ZONE_CHANGED_NEW_AREA", "PLAYER_REGEN_DISABLED", "PLAYER_REGEN_ENABLED" }) do
   watcher:RegisterEvent(e)
 end
-watcher:SetScript("OnEvent", function(_, event)
+-- Craft button: the profession window opening or closing, and the player's own casts. Registered in a pcall, so an
+-- event this client does not know can never break the addon.
+for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE", "TRADE_SKILL_LIST_UPDATE" }) do pcall(watcher.RegisterEvent, watcher, e) end
+for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED",
+  "UNIT_SPELLCAST_SUCCEEDED" }) do
+  pcall(watcher.RegisterUnitEvent or watcher.RegisterEvent, watcher, e, "player")
+end
+
+-- One redraw of the Métier tab per second at most, never in combat.
+local function refreshJobLater()
+  if InCombatLockdown() or jobRefreshPending then return end
+  jobRefreshPending = true
+  C_Timer.After(1, function()
+    jobRefreshPending = false
+    if f and f:IsShown() and current == "job" and not InCombatLockdown() then W.Refresh() end
+  end)
+end
+
+local castToken = 0
+watcher:SetScript("OnEvent", function(_, event, unit)
   if not (f and f:IsShown()) then return end
-  if event:sub(1, 13) == "PLAYER_REGEN_" then return updateMapButton() end
-  if event == "BAG_UPDATE_DELAYED" and current == "job" and ns.char and ns.char.onlyBag then
-    -- one redraw per second at most, never in combat
-    if InCombatLockdown() or jobRefreshPending then return end
-    jobRefreshPending = true
-    C_Timer.After(1, function()
-      jobRefreshPending = false
-      if f and f:IsShown() and current == "job" and not InCombatLockdown() then W.Refresh() end
-    end)
+  if event:sub(1, 13) == "PLAYER_REGEN_" then
+    if current == "job" then W.UpdateCraft() end
+    return updateMapButton()
+  end
+  if event:sub(1, 14) == "UNIT_SPELLCAST" then
+    if unit ~= "player" or current ~= "job" then return end
+    castToken = castToken + 1
+    if event == "UNIT_SPELLCAST_START" then
+      W.CastSeen, crafting = true, true
+    else
+      -- a batch starts the next cast right after one stops: only release when nothing new started for a moment
+      local mine = castToken
+      C_Timer.After(0.6, function()
+        if mine == castToken then
+          crafting = false
+          W.UpdateCraft()
+          refreshJobLater()                         -- the counts changed: redraw the tab with the new quantities
+        end
+      end)
+    end
+    return W.UpdateCraft()
+  end
+  if event:sub(1, 11) == "TRADE_SKILL" then
+    if current == "job" then W.UpdateCraft() end
     return
   end
+  if event == "BAG_UPDATE_DELAYED" and current == "job" then return refreshJobLater() end
   if (event == "BAG_UPDATE_DELAYED" and current == "bags") or (event == "ZONE_CHANGED_NEW_AREA" and current == "here") then W.Refresh() end
 end)

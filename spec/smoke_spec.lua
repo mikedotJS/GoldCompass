@@ -15,7 +15,7 @@ local function proxy()
         self.children[#self.children + 1] = child
         return child
       end
-      if k == "RegisterEvent" then self.events = self.events or {}; self.events[a] = true end
+      if k == "RegisterEvent" or k == "RegisterUnitEvent" then self.events = self.events or {}; self.events[a] = true end
       if k == "SetText" then self.text = a end
       if k == "Show" then self.shown = true end
       if k == "Hide" then self.shown = false end
@@ -1228,7 +1228,7 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
   it("keeps the full list with the filter off, and remembers the checkbox per character", function()
     local ns = start({ counts = {} })
     ns.Window.Toggle(); ns.Window.SetTab("job")
-    assert.is_nil(lineTexts(ns):match("avec ton sac"))
+    assert.is_nil(lineTexts(ns):match("%(avec ton sac"))
     ns.char.onlyBag = true
     ns.Window.Refresh()
     assert.matches("Rien à fabriquer avec ton sac", lineTexts(ns))
@@ -1315,7 +1315,7 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
     assert.matches("Rien à fabriquer avec ton sac", lineTexts(ns))
     click("Voir sans filtre")
     assert.is_false(ns.char.onlyBag)
-    assert.is_nil(lineTexts(ns):match("Rien à fabriquer"))
+    assert.is_nil(lineTexts(ns):match("Rien à fabriquer avec ton sac pour ce métier"))
   end)
 end)
 
@@ -1617,6 +1617,154 @@ describe("Où l'apprendre (map button on recipes to learn)", function()
     b.scripts.OnClick(b)
     assert.are.equal(b.target, seen)
     ns.Window.GoTo = real
+  end)
+end)
+
+describe("Fabriquer (craft button on the recommended recipe)", function()
+  local alchemy = { skill = 50, max = 75, recipes = {
+    [1] = { id = 1, name = "Potion de soins", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } } } }
+  local calls
+  local function start(opts, tradeskill)
+    opts = opts or {}
+    opts.scanned, opts.profs = true, { { 171, 50, "Alchimie", 75 } }
+    setup(opts)
+    calls = { craft = {}, open = {} }
+    _G.C_TradeSkillUI = {
+      CraftRecipe = function(id, n) calls.craft[#calls.craft + 1] = { id, n } end,
+      OpenTradeSkill = function(line) calls.open[#calls.open + 1] = line end,
+    }
+    for k, v in pairs(tradeskill or {}) do _G.C_TradeSkillUI[k] = v end
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy } }
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    return ns
+  end
+  local function craftButton()
+    for _, fr in ipairs(frames) do if fr.entry and fr.label and fr.shown then return fr end end
+  end
+  local function fire(event, ...)
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events[event] and fr.scripts.OnEvent and fr.events.UNIT_SPELLCAST_START then fr.scripts.OnEvent(fr, event, ...) end
+    end
+  end
+  local openAlchemy = { IsTradeSkillReady = function() return true end,
+    GetBaseProfessionInfo = function() return { professionName = "Alchimie", professionID = 171 } end }
+
+  it("asks for the window first: 'Ouvrir <métier>', and opens it through OpenTradeSkill", function()
+    local ns = start()
+    local b = craftButton()
+    assert.are.equal("Ouvrir Alchimie", b.label.text)
+    assert.are.equal(2, b.entry.times)                       -- 4 carried, 2 needed each
+    b.scripts.OnClick(b)
+    assert.are.same({ 171 }, calls.open)
+    assert.are.equal(0, #calls.craft)
+    assert.matches("Ouverture de Alchimie", table.concat(printed, "\n"))
+    assert.is_not_nil(ns)
+  end)
+
+  it("tells the user to open the window by hand when OpenTradeSkill does not exist or fails", function()
+    local ns = start({}, { OpenTradeSkill = false })
+    _G.C_TradeSkillUI.OpenTradeSkill = nil
+    ns.Window.UpdateCraft()
+    local b = craftButton()
+    assert.matches("à la main", ns.Window.CraftState(b.entry).reason)
+    b.scripts.OnClick(b)
+    assert.matches("Impossible d'ouvrir Alchimie", table.concat(printed, "\n"))
+    _G.C_TradeSkillUI.OpenTradeSkill = function() error("blocked") end
+    printed = {}
+    b.scripts.OnClick(b)
+    assert.matches("Impossible d'ouvrir Alchimie", table.concat(printed, "\n"))
+  end)
+
+  it("crafts with the recipe id and the count the bags allow when the matching window is open", function()
+    local ns = start({}, openAlchemy)
+    local b = craftButton()
+    assert.are.equal("Fabriquer ×2", b.label.text)
+    b.scripts.OnClick(b)
+    assert.are.same({ { 1, 2 } }, calls.craft)               -- CraftRecipe(recipeID, N)
+    assert.are.equal("Fabrication en cours...", b.label.text)
+    assert.is_false(b.enabled ~= false and ns.Window.CraftState(b.entry).enabled)
+    b.scripts.OnClick(b)                                     -- a second click while busy does nothing
+    assert.are.equal(1, #calls.craft)
+  end)
+
+  it("does not treat another profession's window as the right one", function()
+    start({}, { IsTradeSkillReady = function() return true end,
+      GetBaseProfessionInfo = function() return { professionName = "Forge", professionID = 164 } end })
+    assert.are.equal("Ouvrir Alchimie", craftButton().label.text)
+  end)
+
+  it("ignores linked and guild windows, and a window that is not ready", function()
+    start({}, { IsTradeSkillReady = function() return false end,
+      GetBaseProfessionInfo = function() return { professionName = "Alchimie", professionID = 171 } end })
+    assert.are.equal("Ouvrir Alchimie", craftButton().label.text)
+    local ns = start({}, { IsTradeSkillReady = function() return true end, IsTradeSkillLinked = function() return true end,
+      GetBaseProfessionInfo = function() return { professionName = "Alchimie", professionID = 171 } end })
+    assert.is_nil(ns.OpenTradeSkill())
+  end)
+
+  it("is disabled with a reason in combat, and when nothing can be crafted", function()
+    local ns = start({ combat = true }, openAlchemy)
+    local st = ns.Window.CraftState(craftButton().entry)
+    assert.is_false(st.enabled); assert.are.equal("Indisponible en combat.", st.reason)
+    craftButton().scripts.OnClick(craftButton())
+    assert.are.equal(0, #calls.craft)
+    ns = start({ counts = {} }, openAlchemy)
+    st = ns.Window.CraftState(craftButton().entry)
+    assert.is_false(st.enabled); assert.are.equal("Rien à fabriquer avec ton sac.", st.reason)
+    assert.are.equal("Fabriquer", craftButton().label.text)
+  end)
+
+  it("reports a failed CraftRecipe and stays usable", function()
+    local ns = start({}, openAlchemy)
+    _G.C_TradeSkillUI.CraftRecipe = function() error("blocked") end
+    local b = craftButton()
+    b.scripts.OnClick(b)
+    assert.matches("Fabrication impossible", table.concat(printed, "\n"))
+    assert.is_true(ns.Window.CraftState(b.entry).enabled)
+  end)
+
+  it("is disabled while the player casts, then released with the counts refreshed (no redraw in combat)", function()
+    local ns = start({}, openAlchemy)
+    local runs, real = 0, ns.RunLeveling
+    ns.RunLeveling = function(...) runs = runs + 1; return real(...) end
+    fire("UNIT_SPELLCAST_START", "player")
+    local b = craftButton()
+    assert.is_false(ns.Window.CraftState(b.entry).enabled)
+    assert.are.equal("Fabrication en cours...", b.label.text)
+    fire("UNIT_SPELLCAST_START", "someone")                 -- other units are ignored (start already seen: still busy)
+    timers = {}
+    fire("UNIT_SPELLCAST_STOP", "player")
+    for _, fn in ipairs(timers) do fn() end                  -- the release debounce, then the throttled refresh
+    for _, fn in ipairs(timers) do fn() end
+    assert.is_true(ns.Window.CraftState(craftButton().entry).enabled)
+    assert.is_true(runs >= 1)                                -- quantities redrawn
+  end)
+
+  it("a cast of another unit alone never disables the button", function()
+    local ns = start({}, openAlchemy)
+    fire("UNIT_SPELLCAST_START", "target")
+    assert.is_true(ns.Window.CraftState(craftButton().entry).enabled)
+  end)
+
+  it("follows the window opening: TRADE_SKILL_SHOW turns 'Ouvrir' into 'Fabriquer'", function()
+    local ready = false
+    local ns = start({}, { IsTradeSkillReady = function() return ready end,
+      GetBaseProfessionInfo = function() return { professionName = "Alchimie", professionID = 171 } end })
+    assert.are.equal("Ouvrir Alchimie", craftButton().label.text)
+    ready = true
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.TRADE_SKILL_SHOW and fr.events.UNIT_SPELLCAST_START then fr.scripts.OnEvent(fr, "TRADE_SKILL_SHOW") end
+    end
+    assert.are.equal("Fabriquer ×2", craftButton().label.text)
+    assert.is_not_nil(ns)
+  end)
+
+  it("S8 spike line lists the APIs", function()
+    local ns = start({}, openAlchemy)
+    SlashCmdList.GOLDCOMPASS("spike")
+    assert.matches("S8 APIs: C_Map.SetUserWaypoint.*CraftRecipe true.*OpenTradeSkill true.*IsTradeSkillReady true", table.concat(printed, "\n"))
   end)
 end)
 

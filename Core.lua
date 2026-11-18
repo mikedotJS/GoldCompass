@@ -303,6 +303,22 @@ function ns.ProfessionList()
   return out
 end
 
+-- Name of the profession whose window is open and ready ("" nothing), as the game names it. Linked, guild and NPC
+-- windows are ignored (nothing of ours can be crafted there).
+function ns.OpenTradeSkill()
+  local T = C_TradeSkillUI
+  if not T then return end
+  local function call(fn, ...) if fn then local ok, v = pcall(fn, ...); if ok then return v end end end
+  if call(T.IsTradeSkillLinked) or call(T.IsTradeSkillGuild) or call(T.IsTradeSkillNPC) then return end
+  if T.IsTradeSkillReady and not call(T.IsTradeSkillReady) then return end
+  local base = call(T.GetBaseProfessionInfo)
+  if type(base) == "table" and base.professionName then return base.professionName, base.professionID end
+  if T.GetTradeSkillLine then
+    local _, name = call(T.GetTradeSkillLine)
+    return name
+  end
+end
+
 -- Environment for Where.Target: faction, the continent the player is on and a distance function (world coordinates of
 -- the player and of a map position; nil when the game cannot tell, then only the continent decides).
 local function whereEnv(ctx)
@@ -393,6 +409,12 @@ function ns.RunLeveling(done)
           local count = ns.char.onlyBag and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
           entry.filtered = count ~= nil
           entry.plan = ns.Leveling.Plan(data, ctx, nil, count)
+          -- the "Fabriquer" button crafts the recommended recipe as many times as the bags allow, filter or not
+          local best = entry.plan.best
+          if best then
+            local times = ns.Leveling.Craftable(best.rec, function(id) return C_Item.GetItemCount(id, false, false, false) end)
+            entry.craft = { id = best.rec.id, times = times, prof = p.name, line = p.line }
+          end
           for _, row in ipairs(entry.plan.rows) do row.name = ns.Fmt.RecipeName(row.rec) end
           local almost = entry.plan.almost
           if almost then

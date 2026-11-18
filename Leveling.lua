@@ -212,3 +212,15 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   return { now = now, soon = soon, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
     nowTotal = nowTotal, soonTotal = soonTotal }
 end
+
+-- State of the "Fabriquer" button of the recommended recipe. s = { times = how many can be crafted from the bags,
+-- open = the profession's window is open (and ready), combat, crafting = a craft is in progress }.
+-- Returns { state, enabled, action }: state is busy, combat, none (nothing craftable), closed (window not open: the
+-- button opens it) or ready; action is "craft" or "open" when a click does something.
+function V.CraftButton(s)
+  if s.crafting then return { state = "busy", enabled = false } end
+  if s.combat then return { state = "combat", enabled = false } end
+  if (s.times or 0) < 1 then return { state = "none", enabled = false } end
+  if not s.open then return { state = "closed", enabled = true, action = "open" } end
+  return { state = "ready", enabled = true, action = "craft" }
+end

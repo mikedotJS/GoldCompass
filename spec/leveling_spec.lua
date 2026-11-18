@@ -324,3 +324,20 @@ describe("Leveling recipes to learn", function()
     assert.is_nil(r.gain)
   end)
 end)
+
+describe("Leveling.CraftButton", function()
+  it("is busy, then combat, then nothing to craft, then closed (opens the window), then ready (crafts)", function()
+    local function st(over)
+      local s = { times = 3, open = true, combat = false, crafting = false }
+      for k, v in pairs(over) do s[k] = v end
+      return V.CraftButton(s)
+    end
+    assert.are.same({ state = "ready", enabled = true, action = "craft" }, st({}))
+    assert.are.same({ state = "closed", enabled = true, action = "open" }, st({ open = false }))
+    assert.are.same({ state = "none", enabled = false }, st({ times = 0 }))
+    assert.are.same({ state = "combat", enabled = false }, st({ combat = true }))
+    assert.are.same({ state = "busy", enabled = false }, st({ crafting = true, combat = true }))   -- busy wins
+    assert.are.same({ state = "none", enabled = false }, st({ times = 0, open = false }))            -- nothing to craft, whatever the window
+  end)
+end)
+

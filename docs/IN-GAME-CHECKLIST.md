@@ -143,3 +143,16 @@ Sources (`entraîneur`, `vendeur`, `butin de monstre`, `butin`, `quête`) come f
 | 79 | Click in combat | Only a chat line `Indisponible en combat : ...`, no map, no pin | The chat line |
 | 80 | Check the chosen trainer | It is of your faction, teaches your skill level, and is on your continent when one is | Yes / no, and the wrong ones |
 
+
+## "Fabriquer" button (Métier tab)
+
+The button sits on its own line right under the recommended recipe (`Monte avec ...`), with the reason on its left.
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 81 | `Métier` tab, profession window closed | Button `Ouvrir <métier>`. Click: the window opens (chat `Ouverture de <métier>...`), or `Impossible d'ouvrir ...` and you open it by hand (then tell Claude) | Screenshot, and whether it opened |
+| 82 | Open the matching profession window | The button becomes `Fabriquer ×N` within a second (N = crafts the bags allow, bank not counted). Another profession's window leaves it on `Ouvrir` | Screenshot |
+| 83 | Click `Fabriquer ×N` | The game crafts N times; the button reads `Fabrication en cours...` and is grey, then goes back to `Fabriquer ×M` with the new count | Screenshot, and whether N were crafted |
+| 84 | `/gc log` right after the click | `craft: CraftRecipe(<id>, <N>) -> true`; no `blocked` line. If a `blocked` or error line appears, send it | The lines |
+| 85 | In combat, or with nothing in the bags | Button grey with `Indisponible en combat.` or `Rien à fabriquer avec ton sac.`; no craft happens | Screenshot |
+| 86 | Interrupt a craft (move) | The button is released within a second, with the count refreshed | Yes / no |
