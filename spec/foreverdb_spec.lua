@@ -62,3 +62,56 @@ describe("Leatherworking 61 with the vendored data (owner's case)", function()
     end)
   end
 end)
+
+describe("the site's observed sources and thresholds against the library's borrowed ones", function()
+  local function crafts(line, faction, forever)
+    local by = {}
+    for _, c in ipairs(V.LibCrafts(DB, line, faction or "H", nil, forever)) do by[c.id] = c end
+    return by
+  end
+  local site = crafts(185, "H", ns.ForeverTrainers)          -- Cooking, with the site's data
+  local lib = crafts(185, "H")                                -- Cooking, the library alone
+
+  it("Dig Rat Stew: the library's borrowed vendor becomes the quest the site observed", function()
+    assert.are.equal("vendor", lib[6417].how.kind)           -- borrowed world-database source
+    assert.are.equal("quest", site[6417].how.kind)
+    assert.are.equal("Dig Rat Stew", site[6417].how.questName)
+  end)
+
+  it("the library's own Forever vendors are kept", function()
+    assert.is_true(DB:HasOwnVendors(25704)); assert.is_false(DB:HasOwnVendors(6417))
+    local mine = V.Way(DB, 25704, DB:GetRecipes(185)[25704] or DB:GetRecipes(171)[25704] or {}, "A", { [25704] = { k = "q", quest = "x" } })
+    assert.are.equal("vendor", mine.kind)                      -- seen on live merchants: the site's "quest" does not replace it
+  end)
+
+  it("a borrowed drop with a site zone carries the zone text; the site's kinds with no zone leave it empty", function()
+    local camp = site[1283400]                                -- Journeyman Campfire
+    assert.are.equal("drop", camp.how.kind); assert.are.equal("Wailing Caverns", camp.how.zone)
+  end)
+
+  it("degenerate library thresholds are replaced by the site's: Journeyman Campfire 95/100/105, Camp Tent 20/22/25", function()
+    assert.are.same({ 90, 95, 95, 95 }, DB:GetRecipes(185)[1283400].difficulty)      -- the library: yellow == green == gray
+    assert.are.same({ 95, 100, 105 }, { site[1283400].y, site[1283400].g, site[1283400].gr })
+    local tent = crafts(165, "H", ns.ForeverTrainers)[1229432]
+    assert.are.same({ 20, 22, 25 }, { tent.y, tent.g, tent.gr })                    -- the library says 20/20/20/20
+  end)
+
+  it("non-degenerate library thresholds are kept even when the site's differ", function()
+    local c = crafts(165, "H", ns.ForeverTrainers)[435819]                          -- Faintly Glowing Leather: lib 205/210/220, site 200/210/220
+    assert.are.same({ 205, 210, 220 }, { c.y, c.g, c.gr })
+  end)
+
+  it("the colours the game gave the owner (recorded profession windows) all agree with the thresholds used", function()
+    local checked = 0
+    for _, p in ipairs(dofile("spec/fixtures/owner_profiles.lua")) do
+      for id, d in pairs(p.recorded) do
+        local e, ft = DB:GetRecipes(p.line)[id], ns.ForeverTrainers[id]
+        assert.is_not_nil(e, tostring(id))
+        local th = V.Difficulty(e.difficulty, ft and ft.learn or e.requiredSkill, ft)
+        assert.are.equal(d, V.EstimateColor(p.skill, th[1], th[2], th[3], th[4]), ("%s %d %s"):format(p.english, id, e.name))
+        checked = checked + 1
+      end
+    end
+    assert.are.equal(33, checked)
+  end)
+end)

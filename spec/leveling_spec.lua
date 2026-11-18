@@ -265,6 +265,7 @@ describe("Leveling recipes to learn", function()
     local data = {}
     assert(loadfile("Data/Recipes.lua"))("GoldCompass", data)
     for _, p in ipairs(dofile("spec/fixtures/owner_profiles.lua")) do
+     if not p.recordedOnly then
       local known = {}
       for _, id in ipairs(p.known) do known[id] = true end
       local function run(price)
@@ -278,6 +279,7 @@ describe("Leveling recipes to learn", function()
         assert.is_true(#priced.now + #priced.soon > 0, p.english .. " (priced)")
         assert.is_true(#unpriced.now + #unpriced.soon > 0, p.english .. " (no prices)")
       end
+     end
     end
   end)
 
@@ -613,7 +615,7 @@ describe("Forever trainer table (wowforever.be, in-game observed)", function()
   end)
 
   it("Fine Leather Boots is not trainer-taught on Forever (not in the table): still a drop", function()
-    assert.is_nil(FT[2158])
+    assert.is_nil(FT[2158].cost)                                  -- the site lists it (drop, fishing, pickpocket) but no trainer fee
     assert.are.equal("drop", by[2158].how.kind)
   end)
 

@@ -56,7 +56,7 @@ function Wh.Target(rec, prof, env)
   end
   -- vendors and quest givers: the NPC names of LibProfessionDB (rec.npcNames, no coordinates there) and of the
   -- Classic "where" text, both looked up in the Classic NPC positions
-  local info = env.where[rec.id]
+  local info = not (rec.way and rec.way.site) and env.where[rec.id] or nil   -- Classic texts do not apply to what the site observed
   local names, found = {}, {}
   for _, n in ipairs(rec.npcNames or {}) do names[#names + 1] = n end
   for i = 2, #(info or {}) do names[#names + 1] = info[i] end

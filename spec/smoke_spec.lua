@@ -2135,3 +2135,21 @@ describe("Où l'apprendre: every map button answers (real Forever data, Horde, L
     assert.matches("where click: " .. line.go.recipe:gsub("%p", "%%%0"), logged(ns))
   end)
 end)
+
+describe("Où l'apprendre: the site's location text (real Forever data, Horde, Cooking 124)", function()
+  it("a drop shows where it drops, a quest recipe the quest", function()
+    setup({ scanned = true, faction = "Horde", profs = { { 185, 124, "Cuisine", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Cuisine = { skill = 124, max = 150, recipes = { [2538] = { id = 2538, name = "x", d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } } } } }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local lr, by = res.profs[1].learn, {}
+    for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do for _, row in ipairs(bucket) do by[row.rec.id] = row end end
+    assert.is_not_nil(by[1283400])
+    assert.matches("butin : ", by[1283400].target.text)             -- Journeyman Campfire: drops in Wailing Caverns
+    assert.is_not_nil(by[1283400].target.text:find("Wailing Caverns", 1, true) or by[1283400].target.text:find("Zone", 1, true))
+    assert.is_not_nil(by[6417])
+    assert.are.equal("quête : Dig Rat Stew", by[6417].target.text)
+  end)
+end)

@@ -379,7 +379,22 @@ function ns.LearnFor(p, ctx, count, knownBest)
     for _, row in ipairs(bucket) do
       row.target = ns.Where.Target(row.rec, english, env)
       -- never an empty answer: the source itself ("butin", "conteneur", ...) when no place is known
-      if not row.target.mapID and not row.target.text then row.target.text = ns.Fmt.Source(row.rec, true) end
+      local t, way = row.target, row.rec.way
+      if not t.mapID then
+        -- the site's location text: where it drops ("butin : Les Mortemines") or the quest that gives it
+        if way and way.zone and (way.kind == "drop" or way.kind == "container" or way.kind == "item") then
+          local zones = {}
+          for part in way.zone:gmatch("[^,]+") do
+            local z = part:match("^%s*(.-)%s*$")
+            zones[#zones + 1] = ns.ZoneLabel({ mapID = ns.MapIDs[z] and ns.MapIDs[z][1], zone = z })
+          end
+          t.text = way.kind == "item" and ("%s (%s : %s)"):format(ns.Fmt.Source(row.rec, true), S.src_d, table.concat(zones, ", "))
+            or ns.Fmt.Source(row.rec, true) .. " : " .. table.concat(zones, ", ")
+        elseif way and way.questName and way.kind == "quest" then
+          t.text = ns.Fmt.Source(row.rec, true) .. " : " .. way.questName
+        end
+        if not t.text then t.text = ns.Fmt.Source(row.rec, true) end
+      end
       if row.rec.src == "i" and row.rec.teachItem then row.rec.itemName = ns.ItemName(row.rec.teachItem) end
     end
   end
@@ -436,7 +451,8 @@ function ns.RunLeveling(done)
           entry.filtered = count ~= nil
           entry.plan = ns.Leveling.Plan(data, ctx, nil, count, function(id)
             local r = ns.ForeverDB:GetRecipes(p.line)
-            return r and r[id] and r[id].difficulty
+            local e = r and r[id]
+            return e and ns.Leveling.Difficulty(e.difficulty, e.requiredSkill, ns.ForeverTrainers[id])
           end, ns.Goal())
           -- the "Fabriquer" button crafts the recommended recipe as many times as the bags allow, filter or not
           local best = entry.plan.best

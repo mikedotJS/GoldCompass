@@ -210,9 +210,21 @@ function V.Way(DB, id, e, faction, forever)
   local own = function(field) return not (DB.IsBorrowed and DB:IsBorrowed(id, field)) end
   local ownSkill = e.requiredSkill ~= nil and own("requiredSkill")
   local src = DB.GetRecipeSources and DB:GetRecipeSources(id)
+  -- The site observed in game where the recipe comes from: its kinds (ft.k) win over sources the library borrowed from world
+  -- databases (flag "s") or lacks; the library's own Forever sources (vendors seen on live merchants) stay.
+  local site = false                                -- the site's kinds replaced the library's (way.site)
+  local ownVendors = DB.HasOwnVendors and DB:HasOwnVendors(id)
+  if ft and ft.k and ft.k ~= "" and (not src or (DB.IsBorrowed and DB:IsBorrowed(id, "sources") and not ownVendors)) then
+    src = {}
+    site = true
+    if ft.k:find("v", 1, true) then src.vendor = { total = 1 } end
+    if ft.k:find("q", 1, true) then src.quest = { total = 1 } end
+    if ft.k:find("[dpf]") then src.drop = { total = 1 } end
+  end
   local function has(kind) local l = src and src[kind]; return l and (l.total or #l) > 0 end
   local item = DB.GetRecipeItem and DB:GetRecipeItem(id)
-  local way = { npcs = {}, itemID = item, where = ft and ft.vendor }   -- where: "NPC (Zone)" of wowforever.be
+  -- where: "NPC (Zone)" of wowforever.be; zone: where it drops; questName: the quest that gives it
+  local way = { npcs = {}, itemID = item, site = site, where = ft and ft.vendor, zone = ft and ft.zone, questName = ft and ft.quest }
   local wanted = faction == "H" and "Horde" or "Alliance"
   local function names(kind)
     for _, n in ipairs(src[kind]) do
@@ -222,6 +234,7 @@ function V.Way(DB, id, e, faction, forever)
   end
   -- a vendor counts only if one of its vendors can be used by the player's faction (or has none)
   local function vendorUsable()
+    if #src.vendor == 0 then return true end        -- the site's vendor kind: no NPC list, no faction to check
     for _, n in ipairs(src.vendor) do
       local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
       if f == nil or f == wanted then return true end
@@ -232,8 +245,9 @@ function V.Way(DB, id, e, faction, forever)
   elseif not forever and has("trainer") then
     way.kind, way.confirmed = "trainer", ownSkill
   elseif has("vendor") and vendorUsable() then
-    way.kind, way.confirmed = "vendor", own("sources")
+    way.kind, way.confirmed = "vendor", own("sources") or (ft ~= nil and ft.k ~= nil and #src.vendor == 0)
     names("vendor")
+    if #way.npcs == 0 and ft and ft.vendor then way.npcs[1] = (ft.vendor:gsub("%s*%(.*%)%s*$", "")) end
     for _, n in ipairs(src.vendor) do
       local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
       local parts = n.cost or (DB.GetVendorCost and DB:GetVendorCost(id, n.id))
@@ -277,13 +291,21 @@ end
 -- difficulty[1] == 1: a placeholder), then they are left nil and the estimate applies. `fallback(id)` gives a craft of
 -- Data/Recipes.lua (output quantity, vendor value, reagents) for what the library lacks. `forever` (ns.ForeverTrainers):
 -- see V.Way; its learn skill replaces the library's, and recipes known from the start are left out.
+-- Thresholds { orange, yellow, green, gray } of a recipe: the library's (they match the game), unless they are degenerate (the
+-- orange placeholder 1 below the learn skill, or yellow == green == gray): then the site's `th` of the Forever table, when it has one.
+function V.Difficulty(d, learn, ft)
+  local degenerate = d and ((learn and learn > 1 and d[1] < learn) or (d[2] == d[3] and d[3] == d[4]))
+  if degenerate and ft and ft.th then return ft.th end
+  return d
+end
+
 function V.LibCrafts(DB, profId, faction, fallback, forever)
   local out = {}
   for id, e in pairs(DB:GetRecipes(profId) or {}) do
     local ft = forever and forever[id]
     if not (DB.IsHiddenRecipe and DB:IsHiddenRecipe(id)) and not (DB.IsAutoTaughtRecipe and DB:IsAutoTaughtRecipe(id))
       and not (ft and ft.start) then
-      local d = e.difficulty
+      local d = V.Difficulty(e.difficulty, ft and ft.learn or e.requiredSkill, ft)
       local borrowed = DB.IsBorrowed and DB:IsBorrowed(id, "requiredSkill")
       local unanchored = (e.requiredSkill == nil or borrowed) and d and d[1] == 1
       local mats = {}

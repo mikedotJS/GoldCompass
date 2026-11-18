@@ -63,6 +63,9 @@ function DB:IsBorrowed(id, field)
   return flag and has(id, flag) and "Vanilla" or nil
 end
 
+-- Are this recipe's vendors Forever's own (seen on live merchants), although the library lists its sources as borrowed?
+function DB:HasOwnVendors(id) return has(id, "o") end
+
 local function find(id)
   for _, rows in pairs(byLine) do if rows[id] then return rows[id] end end
 end

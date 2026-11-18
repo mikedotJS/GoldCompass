@@ -28,6 +28,11 @@ loadfile("Data/Recipes.lua")("GoldCompass", data)
 for _, r in ipairs(data.RecipeRows) do have[r[1]] = true end
 local names = {}
 
+-- recipes whose vendors are Forever's OWN (seen on live merchants, VendorSources.lua): the library still lists them as borrowed
+local ownVendor = {}
+local vs = assert(io.open(dir .. "/Data/Forever/_core/VendorSources.lua")):read("a")
+for id in vs:sub(1, vs:find("lib:LoadSourceNames", 1, true) - 1):gmatch("\n%[(%d+)%]={v=") do ownVendor[tonumber(id)] = true end
+
 local out = {}
 local function w(s) out[#out + 1] = s end
 local function sortedKeys(t) local k = {}; for key in pairs(t) do k[#k + 1] = key end; table.sort(k); return k end
@@ -39,7 +44,7 @@ w("-- THIRD-PARTY), WoW Forever data of build " .. BUILD .. ", vendored so no ot
 w("-- recipe names come from the game (English fallbacks: Data/Recipes.lua). Read it through ns.ForeverDB (ForeverDB.lua).")
 w("-- recipes[skillLine] = { { spellID, requiredSkill (0 = none), orange, yellow, green, gray, craftedItem (0 = none),")
 w("--   \"item:count,...\" reagents, teachingItem (0 = none), flags }, ... } with flags h hidden (never implemented), a granted with the")
-w("--   profession, r requiredSkill borrowed from Vanilla, s sources borrowed from Vanilla, x hidden flag borrowed.")
+w("--   profession, r requiredSkill borrowed from Vanilla, s sources borrowed from Vanilla, x hidden flag borrowed, o vendors seen on live Forever merchants.")
 w("-- src[spellID] = \"tvqcd\" kinds (trainer, vendor, quest, container, drop) or { kinds, { vendor NPC ids }, { quest NPC ids } }.")
 w("-- name[spellID] = English name of a recipe Data/Recipes.lua lacks (last-resort label; the game's own name wins).")
 w("-- npc[id] = English name, faction[id] = \"A\"|\"H\" (vendors only one faction can use), cost[spellID][npcID] = parts")
@@ -62,7 +67,7 @@ for _, line in ipairs(lines) do
     for i, item in ipairs(mats) do mats[i] = item .. ":" .. e.reagents[item] end
     local flags = (lib:IsHiddenRecipe(id) and "h" or "") .. (lib:IsAutoTaughtRecipe(id) and "a" or "")
       .. (lib:IsBorrowed(id, "requiredSkill") and "r" or "") .. (lib:IsBorrowed(id, "sources") and "s" or "")
-      .. (lib:IsBorrowed(id, "hidden") and "x" or "")
+      .. (lib:IsBorrowed(id, "hidden") and "x" or "") .. (ownVendor[id] and "o" or "")
     assert(e.requiredSkill ~= 0)
     w(("    { %d, %d, %d, %d, %d, %d, %d, %q, %d, %q },"):format(id, e.requiredSkill or 0, d[1], d[2], d[3], d[4],
       e.craftedItemId or 0, table.concat(mats, ","), (lib:GetRecipeItem(id)) or 0, flags))
