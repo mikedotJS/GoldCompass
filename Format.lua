@@ -103,6 +103,7 @@ function F.SiteSources(way)
     local z = part:match("^%s*(.-)%s*$")
     zones[#zones + 1] = ns.ZoneLabel({ mapID = ns.MapIDs[z] and ns.MapIDs[z][1], zone = z })
   end
+  if way.zoneMore and #zones > 0 then zones[#zones + 1] = S.zone_more end   -- the site cut the list
   local out, zoneUsed = {}, #zones == 0
   for letter, label in pairs({ d = S.site_d, p = S.site_p, f = S.site_f }) do
     if k:find(letter, 1, true) then out[#out + 1] = { letter, label } end

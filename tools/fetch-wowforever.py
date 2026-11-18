@@ -45,6 +45,20 @@ KIND_LETTER = {"trainer": "t", "vendor": "v", "quest": "q", "drop": "d", "pickpo
                "crafted": "c"}   # "unknown" ("Not known yet") has no letter: the site observed no source
 
 
+def clean(text):
+    """Text the game font can draw (Latin-1): typographic quotes, dashes and ligatures are written plainly."""
+    for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u2013", "-"), ("\u2014", "-"), ("\u0153", "oe"), ("\u0152", "Oe")):
+        text = text.replace(a, b)
+    return text
+
+
+def cut_list(zone):
+    """The site cuts a long drop-zone list after three zones and ends it with an ellipsis: (the zones it gives, True when cut)."""
+    if zone and zone.rstrip().endswith("\u2026"):
+        return zone.rstrip().rstrip("\u2026").rstrip(" ,"), True
+    return zone, False
+
+
 def where_texts(kinds, spans):
     """Location texts of a source cell: vendor NPC lists have a "(Zone)" in them: two lists are the Alliance's then the Horde's
     (the site lists a neutral vendor in both), one list has no known faction; the other spans are the quest name and the drop
@@ -79,7 +93,7 @@ def parse_rows(page):
         cell = re.search(r'<td class="wf-ts__source"[^>]*>(.*?)</td>', row, re.S)
         cell = cell.group(1) if cell else ""
         cost = re.search(r'wf-ts__muted[^>]*>\s*·\s*([^<]*)<', cell)
-        wheres = [html.unescape(w).strip() for w in re.findall(r'wf-ts__where[^>]*>([^<]*)<', cell)]
+        wheres = [clean(html.unescape(w).strip()) for w in re.findall(r'wf-ts__where[^>]*>([^<]*)<', cell)]
         out.append({
             "item": int(item.group(2)) if item and item.group(1) == "item" else None,
             "spell": int(item.group(2)) if item and item.group(1) == "spell" else None, "name": html.unescape(name.group(1)).strip() if name else "", "learn": learn,
@@ -87,7 +101,8 @@ def parse_rows(page):
             "cost": money(cost.group(1)) if cost else None, "start": "starter" in kinds,
             "vendors": where_texts(kinds, wheres)[0] if "vendor" in kinds else [],
             "vendor": (where_texts(kinds, wheres)[0] or [None])[0] if "vendor" in kinds else None,
-            "quest": where_texts(kinds, wheres)[1], "zone": where_texts(kinds, wheres)[2],
+            "quest": where_texts(kinds, wheres)[1], "zone": cut_list(where_texts(kinds, wheres)[2])[0],
+            "zmore": cut_list(where_texts(kinds, wheres)[2])[1],
             "letters": "".join(KIND_LETTER[k] for k in ("trainer", "vendor", "quest", "drop", "pickpocket", "fished", "starter", "crafted") if k in kinds),
         })
     return out
@@ -165,6 +180,7 @@ def main():
                 entry["quest"] = r["quest"]
             if r["zone"]:
                 entry["zone"] = r["zone"]
+                entry["zmore"] = r["zmore"]
             if r["trainer"] and r["cost"] is not None:
                 entry["cost"], entry["rank"] = r["cost"], rank_of(r["learn"])
                 taught += 1
@@ -186,7 +202,8 @@ def main():
         "--   p pickpocket, f fishing, s known from the start, c crafted; \"\" = not known yet), cost = trainer fee in copper (the recipe IS",
         "--   taught by a trainer), rank = profession rank a trainer needs (Apprentice | Journeyman | Expert | Artisan), va / vh = the Alliance /",
         "--   Horde vendors \"NPC (Zone), ...\" (the site lists a neutral vendor in both), vendor = the one list of unknown faction,",
-        "--   quest = quest name, zone = drop zone(s), start = true when known from the start. A recipe with no cost here is not taught by a trainer.",
+        "--   quest = quest name, zone = drop zone(s) (zmore = true: the site cut the list, there are more zones), start = true when known from",
+        "--   the start. A recipe with no cost here is not taught by a trainer. All texts are Latin-1 (what the game font draws).",
         "local _, ns = ...",
         "ns.ForeverTrainers = {",
     ]
@@ -200,6 +217,8 @@ def main():
             parts.append(f"quest = {q(e['quest'])}")
         if "zone" in e:
             parts.append(f"zone = {q(e['zone'])}")
+        if e.get("zmore"):
+            parts.append("zmore = true")
         if "cost" in e:
             parts += [f"cost = {e['cost']}", f"rank = {q(e['rank'])}"]
         if "vendor" in e:
@@ -210,7 +229,9 @@ def main():
             parts.append("start = true")
         out.append(f"  [{sid}] = {{ {', '.join(parts)} }},")
     out.append("}")
-    (ROOT / "Data/ForeverTrainers.lua").write_text("\n".join(out) + "\n", encoding="utf-8")
+    text = "\n".join(out) + "\n"
+    text.encode("latin-1")                                  # the game font draws Latin-1 only: fail loudly on anything else
+    (ROOT / "Data/ForeverTrainers.lua").write_text(text, encoding="utf-8")
     for slug, rows, matched, taught in stats:
         print(f"{slug}: {rows} rows, {matched} matched to a craft spell, {taught} trainer-taught")
     print(f"total: {sum(s[1] for s in stats)} rows, {sum(s[3] for s in stats)} trainer-taught, {len(unmatched)} unmatched")

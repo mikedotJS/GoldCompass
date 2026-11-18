@@ -282,3 +282,110 @@ describe("Where.Target for teaching items (patterns)", function()
     end
   end)
 end)
+
+describe("Where.Target: positions seen on Forever first, Classic ones flagged, Forever sources rule", function()
+  local maps = { ["Thunder Bluff"] = { 1456, "K" }, Mulgore = { 1412, "K" }, ["The Barrens"] = { 1413, "K" }, Durotar = { 1411, "K" } }
+  local function fenv(over)
+    local e = { trainers = {}, npcs = {}, where = {}, maps = maps, faction = "H", contOf = { [1456] = "K", [1412] = "K", [1413] = "K", [1411] = "K" },
+      db = { [1] = { "City Cook", "H", { { 1412, 40.2, 27.5 }, { 1456, 51, 52.5 } } }, [2] = { "Far Cook", "H", { { 1413, 10, 10 } } },
+        [3] = { "Alli Cook", "A", { { 1413, 20, 20 } } }, [4] = { "Old Cook", "H", { { 1411, 30, 30 } } } },
+      byName = { ["City Cook"] = { 1 }, ["Far Cook"] = { 2 }, ["Alli Cook"] = { 3 }, ["Old Cook"] = { 4 } } }
+    for k, v in pairs(over or {}) do e[k] = v end
+    return e
+  end
+  local rec = { id = 50, src = "v", way = { site = true, where = "City Cook (Thunder Bluff), Far Cook (The Barrens)" } }
+
+  it("a city NPC is pinned on the city map, never on the zone around it, and a Classic position is not confirmed", function()
+    local t = Wh.Target(rec, "Cooking", fenv({ dist = function(m) return m == 1412 and 1 or 5 end }))
+    assert.are.equal("City Cook", t.name); assert.are.equal(1456, t.mapID); assert.are.equal(51, t.x)
+    assert.is_false(t.confirmed); assert.are.equal("pfquest", t.source)
+  end)
+
+  it("a position seen on Forever wins over a nearer Classic one; ForeverDB's Classic places stay unconfirmed", function()
+    local far = function(m) return m == 1413 and 900 or 1 end
+    local t = Wh.Target(rec, "Cooking", fenv({ dist = far, fdb = { [2] = { "Far Cook", 1413, 11, 12, "H", true } } }))
+    assert.are.equal("Far Cook", t.name); assert.are.same({ 1413, 11, 12 }, { t.mapID, t.x, t.y })
+    assert.is_true(t.confirmed); assert.are.equal("foreverdb", t.source)
+    local c = Wh.Target(rec, "Cooking", fenv({ dist = far, fdb = { [2] = { "Far Cook", 1413, 11, 12, "H", false } } }))
+    assert.are.equal("City Cook", c.name); assert.is_false(c.confirmed)          -- nothing confirmed: the nearest one, flagged
+    local only = Wh.Target({ id = 50, src = "v", way = { site = true, where = "Far Cook (The Barrens)" } }, "Cooking",
+      fenv({ fdb = { [2] = { "Far Cook", 1413, 11, 12, "H", false } } }))
+    assert.is_false(only.confirmed); assert.are.equal("fdbclassic", only.source)
+  end)
+
+  it("an NPC new to Forever, known to ForeverDB only, is found by its name", function()
+    local t = Wh.Target({ id = 50, src = "v", way = { site = true, where = "New Cook (Zephras Isle)" } }, "Cooking",
+      fenv({ fdb = { [900] = { "New Cook", 2521, 63.8, 36, "AH", true } } }))
+    assert.are.equal("pin", t.kind); assert.are.equal(900, t.id); assert.are.equal(2521, t.mapID); assert.is_true(t.confirmed)
+  end)
+
+  it("ForeverDB's vendor list of a recipe rules every other NPC out, and says when only the other faction sells it", function()
+    local t = Wh.Target(rec, "Cooking", fenv({ fdbVendors = { [50] = { 4 } }, fdb = { [4] = { "Old Cook", 1411, 31, 32, "H", true } } }))
+    assert.are.equal("Old Cook", t.name); assert.is_true(t.confirmed)
+    local a = Wh.Target(rec, "Cooking", fenv({ fdbVendors = { [50] = { 3 } }, fdb = { [3] = { "Alli Cook", 1413, 20, 20, "A", true } } }))
+    assert.are.equal("text", a.kind); assert.are.equal("A", a.onlyFaction)
+  end)
+
+  it("with the Forever data loaded, names only Classic data gives are never pinned: no source, the name as an unverified hint", function()
+    local classic = { id = 51, src = "v", npcNames = { "Old Cook" }, way = { ids = { 4 } } }
+    assert.are.equal("pin", Wh.Target(classic, "Cooking", fenv()).kind)          -- no Forever data: the older behaviour
+    local t = Wh.Target(classic, "Cooking", fenv({ fdb = {} }))
+    assert.are.equal("text", t.kind); assert.is_true(t.unverified); assert.are.equal("Old Cook", t.hint); assert.is_nil(t.mapID)
+    local own = Wh.Target({ id = 51, src = "v", npcNames = { "Old Cook" }, way = { ids = { 4 }, confirmed = true } }, "Cooking", fenv({ fdb = {} }))
+    assert.are.equal("pin", own.kind)                                            -- the library's own Forever capture names it
+  end)
+
+  it("a trainer ForeverDB does not list for the profession is not proposed", function()
+    local learn = { id = 1, learn = 1, src = nil, way = { rank = "Apprentice" } }
+    local e = { ntrainers = { Cooking = { { 2, 3 }, { 4, 3 } } }, fdb = {}, fdbTrainers = { Cooking = { [4] = true } } }
+    assert.are.equal("Old Cook", Wh.Target(learn, "Cooking", fenv(e)).name)
+    e.fdbTrainers = { Cooking = {} }
+    local t = Wh.Target(learn, "Cooking", fenv(e))
+    assert.are.equal("text", t.kind); assert.is_true(t.unverified)
+  end)
+
+  it("a quest recipe pins where Forever players were offered the quest, for the player's faction only", function()
+    local quest = { id = 60, src = "q", way = { kind = "quest", site = true, questName = "Stew" } }
+    local e = { fdb = {}, fdbQuests = { [60] = { { 7, "A", 3, "Alli Cook", 1413, 20, 20 }, { 8, "", 4, "Old Cook", 1411, 33, 34 } } } }
+    local t = Wh.Target(quest, "Cooking", fenv(e))
+    assert.are.equal("Old Cook", t.name); assert.are.same({ 1411, 33, 34 }, { t.mapID, t.x, t.y }); assert.is_true(t.confirmed)
+    local who = Wh.Who(fenv(e))
+    assert.are.same({ true, 8 }, { who.quest(60, "H") }); assert.are.same({ true, 7 }, { who.quest(60, "A") })
+    e.fdbQuests[60][2] = nil
+    assert.is_false((Wh.Who(fenv(e)).quest(60, "H")))
+    assert.is_nil(Wh.Who(fenv(e)).quest(61, "H")); assert.is_false(Wh.Who(fenv(e)).quest(61, "H", { { id = 3 } }))
+    assert.is_true(Wh.Who(fenv(e)).quest(61, "H", { { id = 3 }, { id = 99, faction = "Horde" } }))
+  end)
+
+  it("Who.vendors: false only when every vendor a source names belongs to the other faction", function()
+    local who = Wh.Who(fenv({ fdbVendors = { [50] = { 3 } }, fdb = { [3] = { "Alli Cook", 1413, 20, 20, "A", true } } }))
+    assert.is_false(who.vendors(50, "H")); assert.is_true(who.vendors(50, "A"))
+    assert.is_false(who.vendors(51, "H", "Alli Cook (The Barrens)"))             -- the site's text, the NPC data knows the faction
+    assert.is_true(who.vendors(51, "H", "Alli Cook (The Barrens), Far Cook (The Barrens)"))
+    assert.is_nil(who.vendors(51, "H", "Nobody Known (Durotar)")); assert.is_nil(who.vendors(51, "H", nil))
+  end)
+end)
+
+describe("shipped text is Latin-1 (what the game font draws)", function()
+  it("no data or string file holds a character above U+00FF, and no cut list keeps its ellipsis", function()
+    for _, f in ipairs({ "Strings.lua", "Data/ForeverTrainers.lua", "Data/Npcs.lua", "Data/ForeverNpcs.lua", "Data/ForeverRecipes.lua",
+      "Data/Locations.lua", "Data/Recipes.lua", "Data/QuestItems.lua", "Data/Zones.lua", "Data/GatherNodes.lua" }) do
+      local h = assert(io.open(f, "rb"))
+      local text = h:read("a")
+      h:close()
+      for _, c in utf8.codes(text) do assert.is_true(c <= 255, ("%s: U+%04X"):format(f, c)) end
+    end
+    local data = {}
+    assert(loadfile("Data/ForeverTrainers.lua"))("GoldCompass", data)
+    assert(loadfile("Data/Zones.lua"))("GoldCompass", data)
+    local cut = 0
+    for id, e in pairs(data.ForeverTrainers) do
+      if e.zmore then
+        cut = cut + 1
+        assert.is_nil(e.zone:find("%.%.%.")); assert.is_truthy(e.zone:match("%a$"), id .. ": " .. e.zone)
+      end
+    end
+    assert.is_true(cut > 50)
+    assert.is_true(data.ForeverTrainers[3505].zmore); assert.are.equal("Scarlet Monastery, Arathi Highlands, Badlands", data.ForeverTrainers[3505].zone)
+  end)
+end)

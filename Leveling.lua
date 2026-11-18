@@ -247,6 +247,7 @@ function V.Way(DB, id, e, faction, forever, who)
     questOK, questID = ok ~= false, qid
   end
   local way = { npcs = {}, ids = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest,
+    zoneMore = ft and ft.zmore,     -- the site cut its drop-zone list: there are more zones than `zone` names
     kinds = ft and ft.k }          -- the site's source kinds (t v q d p f s c): where the recipe comes from, to show next to a teaching item
   local wanted = faction == "H" and "Horde" or "Alliance"
   local function names(kind)

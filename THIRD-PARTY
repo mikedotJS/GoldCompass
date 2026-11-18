@@ -103,3 +103,11 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+----------------------------------------------------------------------------------------------------------------------------------------
+ForeverDB (https://foreverdb.net) - data of Data/ForeverNpcs.lua
+Data from ForeverDB.net. Licence: GNU General Public License version 3 (https://www.gnu.org/licenses/gpl-3.0.txt), with an additional
+term under its section 7(b): reuse requires the credit "Data from ForeverDB.net" (stated in the header of each of its data files:
+"Data: ForeverDB.net (https://foreverdb.net), build 1.60.1.70959. Reuse requires this credit: see NOTICE.txt (GPL-3.0 section 7(b))").
+Gold Compass shows that credit as the source of every place taken from it ("Source : ForeverDB.net"), in the header of the generated
+file and in NOTICE. The file is a selection and a reshaping of NPCs.lua, Recipes.lua and QuestForever.lua (tools/build-foreverdb.py).

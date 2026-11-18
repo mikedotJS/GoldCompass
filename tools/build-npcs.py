@@ -51,8 +51,15 @@ def parse_units(path):
     return units
 
 
+def clean(text):
+    """Text the game font can draw (Latin-1): typographic quotes, dashes and ligatures are written plainly."""
+    for a, b in (("\u2019", "'"), ("\u2018", "'"), ("\u2013", "-"), ("\u2014", "-"), ("\u2026", "..."), ("\u0153", "oe"), ("\u0152", "Oe")):
+        text = text.replace(a, b)
+    return text
+
+
 def parse_names(path):
-    return {int(i): n.replace('\\"', '"').replace("\\'", "'") for i, n in re.findall(r'^  \[(\d+)\] = "(.*)",$', read(path), re.M)}
+    return {int(i): clean(n.replace('\\"', '"').replace("\\'", "'")) for i, n in re.findall(r'^  \[(\d+)\] = "(.*)",$', read(path), re.M)}
 
 
 def lua_str(s):
@@ -175,7 +182,9 @@ def main():
     for n in sorted(names):
         tail.append(f"  [{lua_str(n)}] = {{ {', '.join(str(i) for i in names[n])} }},")
     tail.append("}")
-    (ROOT / "Data/Npcs.lua").write_text("\n".join(header + out + tail) + "\n", encoding="utf-8")
+    text = "\n".join(header + out + tail) + "\n"
+    text.encode("latin-1")                                  # the game font draws Latin-1 only: fail loudly on anything else
+    (ROOT / "Data/Npcs.lua").write_text(text, encoding="utf-8")
     print(f"NPCs written: {len(out)}; name references resolved: {len(resolved_ids)}, unresolved: {len(unresolved)}; ids missing in pfQuest: {len(missing_ids)}")
     for (name, zone), kind in unresolved.items():
         print(f"unresolved ({kind}): {name}" + (f" ({zone})" if zone else ""))

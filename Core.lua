@@ -398,6 +398,7 @@ function ns.LearnFor(p, ctx, count, knownBest)
             local z = part:match("^%s*(.-)%s*$")
             zones[#zones + 1] = ns.ZoneLabel({ mapID = ns.MapIDs[z] and ns.MapIDs[z][1], zone = z })
           end
+          if way.zoneMore then zones[#zones + 1] = S.zone_more end   -- the site cut the list
           t.text = way.kind == "item" and ("%s (%s : %s)"):format(ns.Fmt.Source(row.rec, true), S.src_d, table.concat(zones, ", "))
             or ns.Fmt.Source(row.rec, true) .. " : " .. table.concat(zones, ", ")
         elseif way and way.questName and way.kind == "quest" then
