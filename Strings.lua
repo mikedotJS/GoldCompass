@@ -189,7 +189,7 @@ ns.S = {
   -- map controls
   nolevel_t = "Aucune zone à ton niveau", nolevel_p = "Décoche « Mon niveau seulement » pour voir toutes les zones.",
   only_level = "Mon niveau seulement", prof_label = "Métier : %s",
-  prof_all = "Tous", far_tag = "niveau %d-%d", level_classic = " (Classic, non vérifié)",
+  prof_all = "Tous", far_tag = "niveau %d-%d", level_classic = " (Classic, non vérifié)", level_derived = " (estimation, non vérifiée)",
   npc_none = "Aucun PNJ enregistré. Ouvre la fenêtre d'un marchand, d'un entraîneur ou de l'hôtel des ventes : sa position est notée.",
   npc_header = "%d PNJ enregistrés en jeu (position confirmée sur Forever). Tape /reload pour les écrire sur le disque.",
   npc_line = "  %s · %s %.1f, %.1f", node_unverified = " (non vérifié sur Forever)",

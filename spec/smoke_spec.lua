@@ -528,7 +528,10 @@ describe("review fixes, group B", function()
       assert.is_not_nil(ns.Zones[id])
       assert.is_nil(ns.Zones[id][2])
     end
-    assert.are.same({ "Zephras Isle", 1, 12, true }, ns.Zones[2521]); assert.are.same({ "?", 38, 42 }, ns.Zones[2548])
+    assert.are.same({ "Zephras Isle", 1, 12, true }, ns.Zones[2521]); assert.are.same({ "?", 38, 42, "d" }, ns.Zones[2548])
+    -- 2548 is a Forever zone: its range is ForeverDB's estimate, not a Classic one
+    local derived = table.concat(ns.Window.RowTooltipLines({ name = "?", zone = 2548, spots = 3, detail = {} }), "\n")
+    assert.matches("niveau 38%-42 %(estimation, non vérifiée%)", derived); assert.is_nil(derived:find("Classic", 1, true))
     -- a range no Forever source gives is shown as the Classic one, Zephras Isle's (Blizzard's own) as it is
     local classic = table.concat(ns.Window.RowTooltipLines({ name = "Les Tarides", zone = 1413, spots = 3, detail = {} }), "\n")
     assert.matches("niveau 10%-25 %(Classic, non vérifié%)", classic)

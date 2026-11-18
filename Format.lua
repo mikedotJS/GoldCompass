@@ -97,6 +97,13 @@ function F.QuestName(way)
   return (title and title ~= "" and title or way.questName) .. (way.questLevel and way.questLevel > 0 and S.quest_level:format(way.questLevel) or "")
 end
 
+-- What to say after a zone's level range (ns.Zones row): nothing when the range is Forever's own, else that it is the Classic one or
+-- an estimate nobody verified.
+function F.LevelNote(info)
+  if info[4] == true then return "" end
+  return info[4] == "d" and S.level_derived or S.level_classic
+end
+
 -- A quest of the Classic quest-item data, as shown next to an item kept for it: said to be unconfirmed when Forever's quest list
 -- (ForeverDB) does not have it.
 function F.QuestLabel(name)

@@ -1,6 +1,7 @@
 -- HAND-MAINTAINED DATA, written from memory of the original Classic zones, NOT verified on Forever.
--- ns.Zones[uiMapID] = { English zone name, lowest level, highest level, true when the range is Forever's own (a Forever source
--- gives it) }. Without that fourth value the range is the original Classic one: the window shows it as "Classic, non vérifié".
+-- ns.Zones[uiMapID] = { English zone name, lowest level, highest level, true when the range is Forever's own (Blizzard's, given by a
+-- Forever source) | "d" when a Forever source only derived it }. Without that fourth value the range is the original Classic one:
+-- the window shows it as "Classic, non vérifié", a derived one as "estimation, non vérifiée".
 -- tools/audit-forever.lua compares the ranges with ForeverDB.net's (quest levels players saw): 35 of 42 are within 3 levels.
 -- Map IDs follow the Classic numbering that GatherMate2 uses (1411 = Durotar, PLAN.md section 3). The English name
 -- is what Data/QuestItems.lua uses; the levels drive the "my level only" filter. Spike S4 checks the IDs in game.
@@ -56,7 +57,7 @@ ns.Zones = {
   -- From ForeverDB.net (zone data of build 1.60.1.70959): 2521 is Zephras Isle, the Skyborne starting zone, levels 1 to 12 (Blizzard's
   -- own range); 2548 (Farholde Keep, Powderfuse Port) is 38 to 42 by ForeverDB's derivation from its quests, its name is not in that
   -- data (the game gives it); 2482 and 2652 are unknown there too.
-  [2482] = { "?" }, [2521] = { "Zephras Isle", 1, 12, true }, [2548] = { "?", 38, 42 }, [2652] = { "?" },
+  [2482] = { "?" }, [2521] = { "Zephras Isle", 1, 12, true }, [2548] = { "?", 38, 42, "d" }, [2652] = { "?" },
 }
 
 -- HAND-MAINTAINED DATA: English zone name -> { uiMapID (Classic numbering, same family as above), continent }.
