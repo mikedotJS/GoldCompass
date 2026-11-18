@@ -6,7 +6,7 @@
 ## SavedVariables: GoldCompassDB
 ## OptionalDeps: GatherMate2, Auctionator
 ## X-TocFile: plain
-## X-License: MIT
+## X-License: GPL-3.0
 
 Strings.lua
 Log.lua

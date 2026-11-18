@@ -36,4 +36,4 @@ In-game checks: [docs/IN-GAME-CHECKLIST.md](docs/IN-GAME-CHECKLIST.md). Design a
 
 ## Licence
 
-MIT, see [LICENSE](LICENSE). Recipe and quest data are vendored from [Forever Ledger](https://github.com/ivellos/forever-ledger) (MIT), see [NOTICE](NOTICE) and [THIRD-PARTY](THIRD-PARTY).
+GPL-3.0, see [LICENSE](LICENSE) (the addon includes ForeverDB.net data, which is GPL-3.0; credit: "Data from ForeverDB.net"). Recipe and quest data are also vendored from [Forever Ledger](https://github.com/ivellos/forever-ledger) (MIT), see [NOTICE](NOTICE) and [THIRD-PARTY](THIRD-PARTY).
