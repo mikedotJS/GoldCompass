@@ -1,0 +1,18 @@
+## Interface: 16001
+## Title: GoldCompass
+## Notes: Ranks zones by estimated gold per hour of herb and ore gathering. Reads GatherMate2 and Auctionator, never automates anything.
+## Author: GoldCompass
+## Version: 0.1.0-alpha
+## SavedVariables: GoldCompassDB
+## OptionalDeps: GatherMate2, Auctionator
+## X-TocFile: forever-suffix
+## X-License: MIT
+
+Strings.lua
+Data\GatherNodes.lua
+ZoneRank.lua
+Prices.lua
+Nodes.lua
+Core.lua
+Spike.lua
+Window.lua

@@ -1,0 +1,42 @@
+-- User-visible strings (French, as in docs/mockup.html). Code and comments stay in English.
+local _, ns = ...
+
+ns.S = {
+  prefix = "|cffffd100Gold Compass|r",
+  title = "Gold Compass · Carte de rentabilité",
+  tab_map = "Carte",
+  estimate = "estimation",
+  footer = "~ estimation : 60 points de récolte par heure, 2 objets chacun, taxe HV de 5 %. Calculée d'après ton dernier scan, pas une garantie.",
+  stale_banner = "Prix de plus de 7 jours : remplacés par le prix marchand.",
+  age_unknown = "Âge des prix inconnu (Auctionator ne le donne pas).",
+  hypothetical = "Si tu apprends Herboristerie / Minage (niveau de métier supposé : %d)",
+  mine = "Classement pour tes métiers de récolte",
+
+  loading_t = "Lecture des données en cours",
+  loading_p = "Lecture des points de récolte et des prix...",
+  nogather_t = "Aucune donnée de ressources",
+  nogather_p = "GatherMate2 ne connaît encore aucun point de récolte. Installe GatherMate2_Data, puis tape /gathermate et clique sur Importer.",
+  noscan_t = "Pas encore de prix",
+  noscan_p = "Ouvre l'hôtel des ventes et lance un scan Auctionator pour classer les zones.",
+  nogm_t = "GatherMate2 n'est pas installé",
+  nogm_p = "Installe GatherMate2 et GatherMate2_Data (CurseForge, WoW Forever), puis /reload.",
+  noauc_t = "Auctionator n'est pas installé",
+  noauc_p = "Installe Auctionator (CurseForge, WoW Forever), puis /reload.",
+  error_t = "Lecture des prix impossible",
+  error_p = "Auctionator ne répond pas. Vérifie qu'il est activé pour WoW Forever, puis réessaie.",
+  unexpected_t = "Erreur inattendue",
+  retry = "Réessayer",
+  refresh = "Actualiser",
+  to_map = "Voir sur la carte",
+  map_note = "Les points restent affichés par GatherMate",
+  map_fail = "Impossible d'ouvrir la carte.",
+
+  item_unknown = "objet #%d",
+  tag_old = "prix anciens",
+  tag_partial = "partiel",
+  per_hour = "~%s/h (estimation)",
+  price_age = "prix %s",
+  age_days = "%d j",
+  age_fresh = "du jour",
+  none = "—",
+}

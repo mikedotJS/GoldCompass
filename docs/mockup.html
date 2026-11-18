@@ -1,0 +1,335 @@
+<title>Gold Compass maquette</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Alegreya+Sans:wght@400;500;700&family=Cinzel:wght@500;700&display=swap">
+<style>
+/* Layout: designer's bench above, a faux WoW client below. The game UI is the subject; the bench stays quiet. */
+:root{
+  color-scheme:dark;
+  --bench:#0c0e13; --bench-2:#141821; --bench-line:#262c38; --bench-fg:#d9dde6; --bench-mute:#8b93a3;
+  --accent:#3fe0c5;
+  --tip-bg:rgba(9,9,22,.95); --tip-line:#6b6b80; --txt:#f4f4f4; --gold:#ffd100; --mute:#9d9d9d;
+  --q-poor:#9d9d9d; --q-common:#ffffff; --q-unc:#1eff00; --q-rare:#0070dd;
+  --good:#1eff00; --bad:#ff4a3d; --coin-g:#ffd75a; --coin-s:#d4d6dd; --coin-c:#e9a066; --ledger:#4db8ff;
+  --frame-bg:#0e0c09; --frame-line:#6a5526; --btn-a:#7a1410; --btn-b:#400806;
+  --serif:'Cinzel',Georgia,serif; --sans:'Alegreya Sans','Trebuchet MS',sans-serif;
+}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bench);color:var(--bench-fg);font:15px/1.45 var(--sans);
+  padding-left:max(16px,env(safe-area-inset-left,0px));padding-right:max(16px,env(safe-area-inset-right,0px));padding-block:22px 40px}
+.wrap{max-width:1180px;margin:0 auto;display:flex;flex-direction:column;gap:18px}
+header{display:flex;flex-wrap:wrap;gap:8px 24px;align-items:baseline;justify-content:space-between}
+h1{font:700 26px/1.1 var(--serif);margin:0;letter-spacing:.02em}
+.sub{color:var(--bench-mute);font-size:14px;max-width:62ch}
+.sub b{color:var(--bench-fg);font-weight:500}
+nav{display:flex;flex-wrap:wrap;gap:6px}
+nav button,.chip{font:500 14px var(--sans);color:var(--bench-fg);background:var(--bench-2);border:1px solid var(--bench-line);padding:7px 14px;border-radius:6px;cursor:pointer}
+nav button[aria-selected=true],.chip[aria-pressed=true]{border-color:var(--accent);color:var(--accent)}
+nav button:focus-visible,.chip:focus-visible,button:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.controls{display:flex;flex-wrap:wrap;gap:8px;align-items:center;color:var(--bench-mute);font-size:13px}
+.stage{background:
+  radial-gradient(900px 420px at 70% 20%,#1d2f2b 0,transparent 70%),
+  radial-gradient(700px 360px at 15% 85%,#2a2418 0,transparent 70%),
+  linear-gradient(180deg,#15202a,#0d1319 60%,#0a0e12);
+  border:1px solid var(--bench-line);border-radius:8px;overflow:auto}
+.stage-in{padding:20px;min-height:430px;display:flex;flex-wrap:wrap;gap:22px;align-items:flex-start;justify-content:center}
+.note{background:var(--bench-2);border:1px solid var(--bench-line);border-radius:8px;padding:14px 16px;font-size:14px;color:var(--bench-mute)}
+.note b{color:var(--bench-fg);font-weight:500}
+.note ul{margin:8px 0 0;padding-left:18px;display:grid;gap:4px}
+.cols{display:grid;grid-template-columns:repeat(auto-fit,minmax(300px,1fr));gap:14px}
+.cap{font:500 12px var(--sans);letter-spacing:.08em;text-transform:uppercase;color:var(--bench-mute);margin:0 0 8px}
+
+/* ---- Game UI vocabulary ---- */
+.game{font:13px/1.35 var(--sans);color:var(--txt)}
+.coin{white-space:nowrap}.coin i{font-style:normal}
+.g{color:var(--coin-g)}.s{color:var(--coin-s)}.c{color:var(--coin-c)}
+.tip{background:var(--tip-bg);border:1px solid var(--tip-line);border-radius:4px;padding:8px 10px;width:292px;box-shadow:0 4px 18px #000a;text-align:left}
+.tip .nm{font:700 15px var(--sans)}
+.tip .ln{display:flex;justify-content:space-between;gap:14px}
+.tip .dim{color:var(--mute)}
+.tip hr{border:0;border-top:1px solid #3a3a4a;margin:7px 0}
+.tip .led{color:var(--ledger)}
+.gc-h{display:flex;align-items:center;gap:6px;color:var(--accent);font:700 11px var(--sans);letter-spacing:.1em;text-transform:uppercase;margin-bottom:3px}
+.gc-h svg{width:12px;height:12px}
+.act{font:700 14px var(--sans);display:flex;justify-content:space-between;gap:10px;margin-bottom:4px}
+.act.good{color:var(--good)}.act.keep{color:var(--gold)}.act.mute{color:var(--q-poor)}
+.est{color:var(--mute);font-size:11px;margin-top:5px}
+.frame{background:linear-gradient(180deg,#17130c,var(--frame-bg));border:1px solid var(--frame-line);border-radius:3px;box-shadow:0 0 0 1px #000,0 8px 28px #000b,inset 0 0 0 1px #2a2110;position:relative;padding:0}
+.frame .tbar{font:700 14px var(--serif);color:var(--gold);text-align:center;padding:7px 28px 6px;border-bottom:1px solid #3a2f14;position:relative;letter-spacing:.03em}
+.frame .x{position:absolute;right:5px;top:4px;width:20px;height:20px;border:1px solid #6a5526;background:linear-gradient(#5a1b15,#2b0c09);color:#ffd9a0;font:700 12px/18px var(--sans);text-align:center;border-radius:2px;cursor:default}
+.frame .body{padding:10px 12px 8px}
+.ftabs{display:flex;gap:2px;padding:0 10px 0;margin-bottom:-1px}
+.ftabs span{font:500 12px var(--sans);color:#c9b98a;padding:5px 14px;border:1px solid #3a2f14;border-top:0;background:#120f09;border-radius:0 0 4px 4px;cursor:pointer}
+.ftabs span.on{color:var(--gold);background:#1d170c;border-color:var(--frame-line)}
+.btn{font:500 12px var(--sans);color:var(--gold);background:linear-gradient(var(--btn-a),var(--btn-b));border:1px solid #1a0504;box-shadow:inset 0 0 0 1px #9b3a2c;border-radius:3px;padding:4px 12px;cursor:pointer}
+.btn:disabled{filter:grayscale(1) brightness(.6);cursor:default}
+.mini{display:flex;gap:10px;align-items:center;flex-wrap:wrap;margin-bottom:8px;color:#c9b98a;font-size:12px}
+.cb{display:inline-flex;gap:5px;align-items:center}
+.cb i{width:12px;height:12px;border:1px solid #8a7438;background:#0a0804;display:inline-block;position:relative}
+.cb.on i::after{content:"";position:absolute;inset:2px;background:var(--gold)}
+table.z{border-collapse:collapse;width:100%;font-size:12.5px}
+table.z th{font:500 11px var(--sans);text-align:left;color:#b8a56a;letter-spacing:.06em;text-transform:uppercase;padding:2px 6px 5px;border-bottom:1px solid #3a2f14}
+table.z td{padding:5px 6px;border-bottom:1px solid #1c170d;vertical-align:middle}
+table.z tr.sel td{background:#2a2110}
+table.z tr.far td{opacity:.45}
+table.z tr:hover td{background:#201a0e}
+.bar{display:inline-block;height:6px;background:linear-gradient(90deg,#2c7a52,#1eff00);border-radius:1px;vertical-align:middle;margin-right:6px}
+.num{text-align:right;font-variant-numeric:tabular-nums}
+.badge{font-size:11px;color:var(--mute)}
+.state{padding:22px 14px;text-align:center;display:grid;gap:10px;justify-items:center;color:#d8cba3}
+.state p{margin:0;max-width:34ch}
+.state .t{font:700 14px var(--sans);color:var(--gold)}
+.spin{width:22px;height:22px;border:3px solid #3a2f14;border-top-color:var(--gold);border-radius:50%;animation:sp 1s linear infinite}
+@keyframes sp{to{transform:rotate(360deg)}}
+@media (prefers-reduced-motion:reduce){.spin{animation:none}}
+.prog{width:200px;height:8px;border:1px solid #6a5526;background:#0a0804}
+.prog i{display:block;height:100%;width:62%;background:var(--gold)}
+.err .t{color:var(--bad)}
+.grp{margin-bottom:9px}
+.grp h4{margin:0 0 3px;font:700 12px var(--sans);display:flex;justify-content:space-between;color:var(--gold);letter-spacing:.04em;text-transform:uppercase}
+.grp .row{display:flex;justify-content:space-between;gap:10px;padding:2px 0;border-bottom:1px solid #1c170d}
+.tot{display:flex;justify-content:space-between;border-top:1px solid #6a5526;padding-top:6px;margin-top:4px;font-weight:700}
+
+/* bag */
+.bag{width:214px}
+.slots{display:grid;grid-template-columns:repeat(4,44px);gap:4px;justify-content:center;padding:4px 0 6px}
+.slot{width:44px;height:44px;background:#05050a;border:1px solid #3b3b4b;position:relative;cursor:pointer;display:grid;place-items:center;font:700 15px var(--serif);color:#ffffffb0;border-radius:2px;padding:0}
+.slot.on{box-shadow:0 0 0 2px var(--gold)}
+.slot .n{position:absolute;right:2px;bottom:0;font:700 11px var(--sans);color:#fff;text-shadow:0 0 2px #000,0 0 2px #000}
+.slot.empty{cursor:default;opacity:.55}
+.slot:focus-visible{outline:2px solid var(--accent)}
+.hint{font-size:11px;color:#c9b98a;text-align:center;margin:0 0 6px}
+
+/* hud */
+.hud{position:relative;width:1080px;height:560px;flex:none;border-radius:4px;overflow:hidden;background:
+  radial-gradient(520px 260px at 62% 30%,#27423a 0,transparent 70%),linear-gradient(180deg,#1b2c3a 0,#243324 55%,#1a2216 100%)}
+.hud>*{position:absolute}
+.pf{left:12px;top:10px;width:190px;background:#0d0d14cc;border:1px solid #5b5b6c;border-radius:3px;padding:6px 8px}
+.bar-h{height:9px;background:#1a1a22;border:1px solid #000;margin-top:4px}.bar-h i{display:block;height:100%;width:86%;background:#1eaa2a}.bar-h.m i{width:64%;background:#2a4fd0}
+.minimap{right:22px;top:26px;width:138px;height:138px;border-radius:50%;border:3px solid #6a5526;background:radial-gradient(circle at 40% 40%,#3a5a3a,#22361f);box-shadow:0 0 0 1px #000}
+.mmbtn{position:absolute;width:26px;height:26px;border-radius:50%;border:1px solid #6a5526;background:#15110a;display:grid;place-items:center;color:#c9b98a;font:700 11px var(--sans)}
+.mmbtn.gc{color:var(--accent);border-color:var(--accent);box-shadow:0 0 8px #3fe0c566}
+.zone{right:22px;top:6px;width:138px;text-align:center;color:var(--gold);font:700 12px var(--serif)}
+.chat{left:12px;bottom:70px;width:330px;height:130px;background:#000a;border:1px solid #2a2a33;padding:6px 8px;font-size:12px;color:#ddd;line-height:1.3}
+.bars{left:50%;transform:translateX(-50%);bottom:10px;display:flex;gap:3px}
+.bars i{width:38px;height:38px;background:#07070c;border:1px solid #4b4b5b;display:block}
+.callout{position:absolute;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#04201b;font:700 12px/20px var(--sans);text-align:center;box-shadow:0 0 0 2px #04201b;z-index:5}
+.legend{display:grid;gap:8px;counter-reset:l}
+.legend div{display:grid;grid-template-columns:24px 1fr;gap:10px;align-items:start}
+.legend b{display:inline-grid;place-items:center;width:20px;height:20px;border-radius:50%;background:var(--accent);color:#04201b;font:700 12px var(--sans)}
+.legend span{color:var(--bench-fg)}.legend small{display:block;color:var(--bench-mute);font-size:13px}
+</style>
+
+<div class="wrap">
+  <header>
+    <h1>Gold Compass</h1>
+    <p class="sub"><b>Maquette de l'interface dans le jeu.</b> Tous les chiffres sont des exemples (personnage : niveau 14, Alliance, Minage et Enchantement). La police et les icônes du jeu ne sont pas embarquées.</p>
+  </header>
+  <nav id="tabs" role="tablist" aria-label="Écrans de la maquette"></nav>
+  <div class="controls" id="opts"></div>
+  <div id="view"></div>
+</div>
+
+<script>
+const $=s=>document.querySelector(s);
+const coin=c=>{const g=Math.floor(c/10000),s=Math.floor(c%10000/100),k=c%100;let o='';
+  if(g)o+=`<span class="g">${g}g</span> `;if(s||g)o+=`<span class="s">${s}s</span> `;if(k||(!g&&!s))o+=`<span class="c">${k}c</span>`;return `<span class="coin">${o.trim()}</span>`};
+const compass='<svg viewBox="0 0 12 12" aria-hidden="true"><circle cx="6" cy="6" r="5" fill="none" stroke="currentColor" stroke-width="1.2"/><path d="M6 2l1.6 4L6 10 4.4 6z" fill="currentColor"/></svg>';
+
+/* ---- example data ---- */
+const ITEMS=[
+ {k:'dust',nm:'Poussière étrange',q:'common',ty:'Composant d\'artisanat',n:7,vend:8,ah:248,age:'9 h',
+  act:{t:'good',l:'Fabriquer : Huile de sorcier mineure',r:296,sub:'puis vendre au marchand'},
+  uses:'Enchantement · 18 recettes',how:'Huile de sorcier mineure : entraîneur d\'enchantement, niveau 5',res:'Huile de sorcier mineure : marchand 2s 96c',group:'craft'},
+ {k:'condor',nm:'Viande de condor coriace',q:'common',ty:'Viande',n:12,vend:78,ah:820,age:'2 h',
+  act:{t:'good',l:'Vendre à l\'HV',r:820,sub:'les joueurs la rachètent pour une quête'},
+  uses:'Quête « Goulache des Carmines » (non faite)',how:'Demandée aux Carmines, niveau 18 à 22',res:'Se vend 8s pièce à l\'HV (marchand : 78c)',group:'ah'},
+ {k:'leather',nm:'Cuir léger',q:'common',ty:'Artisanat',n:20,vend:15,ah:28,age:'1 j',
+  act:{t:'good',l:'Vendre à l\'HV',r:28,sub:'+13c par rapport au marchand'},
+  uses:'Travail du cuir · 6 recettes',how:'Kit d\'armure légère : entraîneur, niveau 1',res:'Kit d\'armure légère : HV 41c',group:'ah'},
+ {k:'ore',nm:'Minerai de cuivre',q:'common',ty:'Minerai',n:15,vend:22,ah:40,age:'9 h',
+  act:{t:'good',l:'Fondre en barre de cuivre',r:95,sub:'+55c par minerai'},
+  uses:'Fonderie, Forge · 11 recettes',how:'Fonte du cuivre : connue',res:'Barre de cuivre : HV 95c',group:'craft'},
+ {k:'bloom',nm:'Pacifique',q:'common',ty:'Herbe',n:9,vend:8,ah:35,age:'9 h',
+  act:{t:'good',l:'Vendre à l\'HV',r:35,sub:'aucune recette rentable à ton niveau'},
+  uses:'Alchimie · 4 recettes',how:'Potion de soins mineure : entraîneur, niveau 5',res:'Potion de soins mineure : HV 1s 20c',group:'ah'},
+ {k:'linen',nm:'Tissu de lin',q:'common',ty:'Tissu',n:40,vend:13,ah:87,age:'9 h',
+  act:{t:'keep',l:'Garder 20, vendre 20 à l\'HV',r:87,sub:'20 servent à une quête de livraison'},
+  uses:'Couture · 9 recettes, quête de caisses',how:'Sac de lin : entraîneur, niveau 1',res:'Sac de lin : HV 3s 10c',group:'keep'},
+ {k:'sword',nm:'Épée courte usée',q:'poor',ty:'Arme à une main',n:1,vend:122,ah:null,age:'',
+  act:{t:'mute',l:'Vendre au marchand',r:122,sub:'objet gris, aucune autre valeur'},
+  uses:'Aucune recette',how:'',res:'',group:'vendor'},
+ {k:'boots',nm:'Bottes de laine de l\'aigle',q:'unc',ty:'Pieds · Tissu',n:1,vend:62,ah:80,age:'1 j',
+  act:{t:'good',l:'Désenchanter',r:140,sub:'contre 80c à l\'HV et 62c au marchand'},
+  uses:'Enchantement : désenchantement',how:'Il te faut le métier Enchantement',res:'Poussière étrange ×2 ≈ 1s 40c',group:'craft',noprof:true}
+];
+const ZONES=[
+ {z:'Les Carmines',lv:'15-25',gh:9.4,nodes:'Minerai d\'étain, Mage royal',age:'3 h',d:1},
+ {z:'Bois de la Pénombre',lv:'18-30',gh:8.1,nodes:'Fleur de sang, Fleur-de-feu',age:'3 h',d:4},
+ {z:'Orneval',lv:'18-30',gh:7.6,nodes:'Mage royal, Racine-de-fer',age:'1 j',d:4},
+ {z:'Loch Modan',lv:'10-20',gh:6.9,nodes:'Argentine, Étain',age:'9 h',d:0},
+ {z:'Marche de l\'Ouest',lv:'10-20',gh:5.8,nodes:'Pacifique, Cuivre',age:'9 h',d:0},
+ {z:'Sombrivage',lv:'10-20',gh:5.1,nodes:'Mage royal, Bancs de poissons',age:'9 h',d:0},
+ {z:'Forêt d\'Elwynn',lv:'1-10',gh:3.9,nodes:'Pacifique, Cuivre',age:'9 h',d:-1},
+ {z:'Dun Morogh',lv:'1-10',gh:3.2,nodes:'Cuivre, Argentine',age:'2 j',d:-1}
+];
+const QC={common:'var(--q-common)',poor:'var(--q-poor)',unc:'var(--q-unc)'};
+const S={tab:'overview',item:'dust',ledger:true,state:'ok',gtab:'map',lvl:true,prof:'all',shift:false};
+const R={
+ dust:[
+  {n:'Huile de sorcier mineure',p:'Enchantement',st:'learn',u:'entraîneur, niv. 5',r:296},
+  {n:'Huile de mana mineure',p:'Enchantement',st:'learn',u:'entraîneur, niv. 10',r:340},
+  {n:'Baguette magique inférieure',p:'Enchantement',st:'known',u:'',r:210},
+  {n:'Bracelets : Esprit mineur',p:'Enchantement',st:'known',u:'',r:60},
+  {n:'Baguette magique supérieure',p:'Enchantement',st:'locked',u:'plan chez un maître, niv. 20',r:530},
+  {n:'Bâton runique de cuivre',p:'Enchantement',st:'locked',u:'entraîneur, niv. 20',r:900}],
+ condor:[{n:'Quête : Goulache des Carmines',p:'Les Carmines',st:'quest',u:'niv. 18 à 22, pas encore faite',r:0}],
+ leather:[{n:'Kit d\'armure légère',p:'Travail du cuir',st:'noprof',u:'métier requis : Travail du cuir',r:41}],
+ ore:[
+  {n:'Barre de cuivre',p:'Minage',st:'known',u:'',r:95},
+  {n:'Barre de bronze',p:'Minage',st:'learn',u:'entraîneur, niv. 10',r:190}],
+ bloom:[{n:'Potion de soins mineure',p:'Alchimie',st:'noprof',u:'métier requis : Alchimie',r:120}],
+ linen:[
+  {n:'Sac de lin',p:'Couture',st:'noprof',u:'métier requis : Couture',r:310},
+  {n:'Quête : Caisses à livrer',p:'Les Carmines',st:'quest',u:'20 tissus de lin à rendre',r:0}],
+ sword:[],
+ boots:[{n:'Désenchantement',p:'Enchantement',st:'known',u:'',r:140}]
+};
+const stTxt=r=>r.st==='known'?'<span style="color:var(--good)">✓ connue</span>':r.st==='learn'?'<span style="color:var(--gold)">à apprendre : '+r.u+'</span>':r.st==='quest'?'<span style="color:var(--gold)">à faire : '+r.u+'</span>':'<span style="color:var(--mute)">'+r.u+'</span>';
+function recipes(it){
+  const off=r=>r.st==='locked'||r.st==='noprof';
+  const L=(R[it.k]||[]).slice().sort((a,b)=>off(a)-off(b)||b.r-a.r);
+  if(!L.length)return '<div class="dim">Aucune recette ne l\'utilise</div>';
+  const shown=S.shift?L:L.slice(0,3);
+  const rows=shown.map(r=>`<div class="ln"><span>${r.n}</span>${r.r?coin(r.r):'<span class="dim">récompense de quête</span>'}</div><div class="dim" style="margin:-1px 0 4px">${r.p} · ${stTxt(r)}</div>`).join('');
+  const more=L.length>shown.length?`<div class="est">+ ${L.length-shown.length} autres · Maj pour tout voir</div>`:'';
+  return `<div class="ln" style="color:var(--gold);font-weight:700;margin-top:2px"><span>Sert à ${L.length} usage${L.length>1?'s':''}</span><span style="font-weight:400;font-size:11px" class="dim">prix du résultat</span></div>${rows}${more}`;
+}
+
+/* ---- components ---- */
+function tooltip(it,ledger){
+  const ledgerBlock=ledger?`
+    <div class="ln led"><span>Prix Ledger (scan complet)</span><span>${it.ah?coin(it.ah)+' <span class="dim">'+it.age+'</span>':'<span class="dim">aucun</span>'}</span></div>
+    <div class="ln dim"><span>Vendu par le marchand</span><span>${coin(it.vend)}</span></div>
+    <div class="ln"><span>Vaut pour toi</span><span>${coin(it.act.r)}</span></div>`:
+    `<div class="ln dim"><span>Prix de vente</span><span>${coin(it.vend)}</span></div>`;
+  return `<div class="tip game" role="tooltip">
+    <div class="nm" style="color:${QC[it.q]}">${it.nm}</div>
+    <div class="dim">${it.ty}</div>
+    ${ledgerBlock}
+    <hr>
+    <div class="gc-h">${compass}Gold Compass</div>
+    <div class="act ${it.act.t}"><span>${it.act.l}</span><span>${coin(it.act.r)}</span></div>
+    <div class="dim" style="margin-bottom:5px">${it.act.sub}</div>
+    ${recipes(it)}
+    <div class="est">~ estimation · prix HV vus il y a ${it.age||'sans objet'}</div>
+  </div>`;
+}
+function bag(sel){
+  const slots=ITEMS.map(it=>`<button class="slot ${it.k===sel?'on':''}" data-item="${it.k}" aria-label="${it.nm}" style="border-color:${QC[it.q]}88">${it.nm[0]}${it.n>1?`<span class="n">${it.n}</span>`:''}</button>`).join('')
+   +Array.from({length:16-ITEMS.length},()=>'<div class="slot empty"></div>').join('');
+  return `<div class="frame bag game"><div class="tbar">Sac à dos</div><div class="body"><div class="slots">${slots}</div><p class="hint">Survole ou clique un objet</p></div></div>`;
+}
+function stateBody(st){
+  if(st==='loading')return `<div class="state"><div class="spin" role="status" aria-label="Chargement"></div><div class="t">Lecture des prix en cours</div><div class="prog"><i></i></div><p>Scan de l'hôtel des ventes : 62 %. Le classement s'affichera à la fin.</p><button class="btn" disabled>Annuler</button></div>`;
+  if(st==='nogather')return `<div class="state"><div class="t">Aucune donnée de ressources</div><p>GatherMate2 ne connaît encore aucun point de récolte. Installe GatherMate2_Data, puis tape /gathermate et clique sur Importer.</p><button class="btn">Ouvrir GatherMate</button></div>`;
+  if(st==='noscan')return `<div class="state"><div class="t">Pas encore de prix</div><p>Ouvre l'hôtel des ventes et lance un scan Auctionator pour classer les zones.</p><button class="btn">Voir comment faire</button></div>`;
+  if(st==='error')return `<div class="state err"><div class="t">Lecture des prix impossible</div><p>Auctionator ne répond pas. Vérifie qu'il est activé pour WoW Forever, puis réessaie.</p><button class="btn">Réessayer</button></div>`;
+  return null;
+}
+function mapBody(stale){
+  const rows=ZONES.filter(z=>!S.lvl||z.d<=4).map((z,i)=>`<tr class="${i===0?'sel':''} ${z.d>3?'far':''}"><td class="num">${i+1}</td><td>${z.z}<div class="badge">${z.nodes}</div></td><td>${z.lv}</td><td class="num"><span class="bar" style="width:${z.gh*6}px"></span>~${z.gh.toFixed(1).replace('.',',')} g/h</td><td class="badge">${z.age}</td></tr>`).join('');
+  return `<div class="mini"><span class="cb ${S.lvl?'on':''}"><i></i>Mon niveau seulement</span><span>Métier : Tous ▾</span></div>
+   <table class="z"><thead><tr><th></th><th>Zone</th><th>Niv.</th><th class="num">Or / heure</th><th>Prix</th></tr></thead><tbody>${rows}</tbody></table>
+   <div class="est">~ estimation : 60 points de récolte par heure, 2 objets chacun, taxe HV de 5 %. ${stale?'<span style="color:var(--gold)">Prix de plus de 7 jours : remplacés par le prix marchand.</span>':''}</div>
+   <div style="display:flex;justify-content:space-between;margin-top:8px"><button class="btn">Voir sur la carte</button><span class="badge">Les points restent affichés par GatherMate</span></div>`;
+}
+function bagsBody(){
+  const by=g=>ITEMS.filter(i=>i.group===g);
+  const sum=l=>l.reduce((a,i)=>a+i.act.r*i.n,0);
+  const grp=(t,l,show)=>`<div class="grp"><h4><span>${t}</span><span>${show?coin(sum(l)):''}</span></h4>${l.map(i=>`<div class="row"><span style="color:${QC[i.q]}">${i.nm} ×${i.n}</span><span class="dim">${i.act.l}</span></div>`).join('')}</div>`;
+  const total=ITEMS.reduce((a,i)=>a+i.act.r*i.n,0);
+  return `${grp('Vendre à l\'HV',by('ah'),1)}${grp('Fabriquer',by('craft'),1)}${grp('Garder',by('keep'),0)}${grp('Vendre au marchand',by('vendor'),1)}
+   <div class="tot"><span>Ton sac vaut environ</span><span>${coin(total)}</span></div><div class="est">~ estimation, hors objets gardés</div>`;
+}
+function hereBody(){
+  return `<div style="display:flex;justify-content:space-between;align-items:baseline"><b style="font:700 15px var(--serif);color:var(--gold)">Les Carmines</b><span class="badge">niveau 14</span></div>
+  <div class="act good" style="margin-top:6px"><span>~9,4 g/h pour toi</span><span class="badge" style="font-weight:400">estimation</span></div>
+  <div class="dim" style="margin-bottom:8px">Environ 1,6 fois plus que la Marche de l'Ouest à ton niveau.</div>
+  <div class="grp"><h4><span>À récolter ici</span></h4>
+   <div class="row"><span>Minerai d'étain</span><span>${coin(169)}</span></div>
+   <div class="row"><span>Minerai de cuivre</span><span>${coin(40)}</span></div></div>
+  <div class="grp"><h4><span>À ramasser sur les monstres</span></h4>
+   <div class="row"><span>Viande de condor coriace</span><span>${coin(820)}</span></div>
+   <div class="row"><span>Groin de sanglier</span><span>${coin(100)}</span></div></div>
+  <div class="est">Avec l'Herboristerie, cette zone rapporterait environ 1,2 g/h de plus. Sans Dépeçage, la peau des bêtes ne rapporte rien.</div>`;
+}
+function gcWindow(opts={}){
+  const st=opts.state||S.state,tab=opts.gtab||S.gtab;
+  const title={map:'Carte de rentabilité',bags:'Mon sac',here:'Ici'}[tab];
+  let body=stateBody(st);
+  if(!body)body=tab==='map'?mapBody(st==='stale'):tab==='bags'?bagsBody():hereBody();
+  const tabs=['map','bags','here'].map(t=>`<span class="${t===tab?'on':''}" data-gtab="${t}">${{map:'Carte',bags:'Sac',here:'Ici'}[t]}</span>`).join('');
+  return `<div class="frame game" style="width:${opts.w||420}px"><div class="tbar">Gold Compass · ${title}<span class="x" aria-hidden="true">X</span></div><div class="body">${body}</div><div class="ftabs">${tabs}</div></div>`;
+}
+
+/* ---- views ---- */
+const TABS=[['overview','Vue d\'ensemble'],['tooltip','Infobulle'],['map','Carte'],['bags','Sac'],['here','Ici'],['states','États']];
+function render(){
+  $('#tabs').innerHTML=TABS.map(([k,l])=>`<button role="tab" aria-selected="${S.tab===k}" data-tab="${k}">${l}</button>`).join('');
+  const opts=[];
+  if(S.tab==='tooltip')opts.push(`<span>Forever Ledger :</span><button class="chip" aria-pressed="${S.ledger}" data-ledger="1">chargé</button><button class="chip" aria-pressed="${!S.ledger}" data-ledger="0">absent</button>`);
+  if(S.tab==='tooltip')opts.push(`<span>Maj enfoncée :</span><button class="chip" aria-pressed="${S.shift}" data-shift="${S.shift?0:1}">${S.shift?'oui, tout est listé':'non'}</button>`);
+  if(S.tab==='map')opts.push('<span>État :</span>'+[['ok','Normal'],['stale','Prix anciens'],['loading','Chargement'],['nogather','Sans GatherMate'],['noscan','Sans scan HV'],['error','Erreur']].map(([k,l])=>`<button class="chip" aria-pressed="${S.state===k}" data-state="${k}">${l}</button>`).join(''));
+  $('#opts').innerHTML=opts.join('');
+  let h='';
+  if(S.tab==='overview')h=overview();
+  if(S.tab==='tooltip')h=`<div class="stage"><div class="stage-in">${bag(S.item)}${tooltip(ITEMS.find(i=>i.k===S.item),S.ledger)}</div></div>
+    <div class="note"><b>${S.ledger?'Avec Forever Ledger :':'Sans Forever Ledger :'}</b> ${S.ledger?'Gold Compass ajoute seulement ce qui manque (la recette, son déblocage, son résultat) sous le bloc du Ledger, sans refaire le verdict.':'Gold Compass affiche son propre verdict, avec une seule ligne d\'action.'} Le titre de la section et la couleur de l'action permettent de la repérer sans lire : vert = profit, or = à garder, gris = objet sans valeur.</div>`;
+  if(S.tab==='map')h=`<div class="stage"><div class="stage-in">${gcWindow({gtab:'map',w:470})}</div></div>`;
+  if(S.tab==='bags')h=`<div class="stage"><div class="stage-in">${gcWindow({gtab:'bags',state:'ok',w:430})}</div></div>`;
+  if(S.tab==='here')h=`<div class="stage"><div class="stage-in">${gcWindow({gtab:'here',state:'ok',w:400})}</div></div>`;
+  if(S.tab==='states')h=`<div class="cols">${[['loading','Chargement'],['nogather','Vide : pas de GatherMate'],['noscan','Vide : pas de scan HV'],['error','Erreur'],['stale','Prix anciens']].map(([k,l])=>`<div><p class="cap">${l}</p><div class="stage"><div class="stage-in" style="min-height:0;padding:14px">${gcWindow({gtab:'map',state:k,w:300})}</div></div></div>`).join('')}</div>
+   <div class="note">Chaque écran qui attend ou échoue dit quoi faire ensuite, avec un bouton. Une attente longue peut être annulée.</div>`;
+  $('#view').innerHTML=h;
+}
+function overview(){
+  return `<div class="stage"><div class="stage-in" style="padding:14px;justify-content:flex-start">
+   <div class="hud game">
+    <div class="pf"><b style="color:var(--gold)">Brannor</b> <span class="badge">14</span><div class="bar-h"><i></i></div><div class="bar-h m"><i></i></div></div>
+    <div class="zone">Les Carmines</div>
+    <div class="minimap"><div class="mmbtn" style="left:-8px;top:62px">M</div><div class="mmbtn" style="left:6px;top:100px">B</div><div class="mmbtn gc" style="left:30px;top:122px" title="Gold Compass">${compass}</div></div>
+    <div class="chat">[Général] Vends tissu de lin, pas cher<br>[Guilde] Quelqu'un pour les Mines Mortes ?<br><span style="color:#ffd100">Gold Compass : prix mis à jour (il y a 9 h)</span></div>
+    <div style="left:352px;top:60px">${gcWindow({gtab:'map',state:'ok',w:410})}</div>
+    <div style="right:18px;top:176px">${bag('dust')}</div>
+    <div style="right:236px;top:250px;transform:scale(.92);transform-origin:top right">${tooltip(ITEMS[0],true)}</div>
+    <div class="bars">${'<i></i>'.repeat(12)}</div>
+    <span class="callout" style="left:1042px;top:136px">1</span>
+    <span class="callout" style="left:340px;top:64px">2</span>
+    <span class="callout" style="left:758px;top:360px">3</span>
+    <span class="callout" style="left:14px;top:432px">4</span>
+   </div></div></div>
+   <div class="note"><p class="cap" style="margin-bottom:10px">Règles d'intégration</p><div class="legend">
+    <div><b>1</b><span>Un bouton sur la minicarte<small>Il passe par LibDBIcon, donc il se range avec les autres boutons et suit ElvUI ou Titan. Clic gauche : la carte. Clic droit : réglages.</small></span></div>
+    <div><b>2</b><span>Une fenêtre dans le style du jeu<small>Cadre doré, onglets en bas, bouton rouge standard. Elle se déplace, se ferme avec Échap, mémorise sa place et ne couvre jamais les barres d'actions.</small></span></div>
+    <div><b>3</b><span>Une section ajoutée à l'infobulle<small>Sous le texte normal de l'objet, séparée par un filet, avec les couleurs de qualité du jeu. Elle ne remplace rien et s'efface si le Ledger dit déjà la même chose.</small></span></div>
+    <div><b>4</b><span>Les messages passent par le chat<small>Une ligne dorée discrète, sans fenêtre surgissante pendant un combat.</small></span></div>
+   </div></div>`;
+}
+
+document.addEventListener('click',e=>{
+  const t=e.target.closest('[data-tab],[data-item],[data-ledger],[data-state],[data-gtab],[data-shift]');if(!t)return;
+  const d=t.dataset;
+  if(d.tab)S.tab=d.tab;
+  if(d.item)S.item=d.item;
+  if(d.ledger!==undefined)S.ledger=d.ledger==='1';
+  if(d.state)S.state=d.state;
+  if(d.shift!==undefined)S.shift=d.shift==='1';
+  render();
+});
+document.addEventListener('mouseover',e=>{
+  const t=e.target.closest('.slot[data-item]');if(t&&S.tab==='tooltip'&&S.item!==t.dataset.item){S.item=t.dataset.item;render()}
+});
+['keydown','keyup'].forEach(ev=>document.addEventListener(ev,e=>{if(e.key==='Shift'&&S.tab==='tooltip'&&S.shift!==(ev==='keydown')){S.shift=ev==='keydown';render()}}));
+render();
+</script>
