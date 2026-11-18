@@ -49,6 +49,10 @@ local function libStub(opts)
     rowById[r[1]] = r
   end
   local DB = { overrides = opts.libOverrides or {} }
+  function DB:BelongsTo(line, id)
+    if byProf[LINE[line]] and byProf[LINE[line]][id] then return true end
+    for _, recipes in pairs(byProf) do if recipes[id] then return false end end
+  end
   function DB:IsReady() return true end
   function DB:GetVersion() return "v1.10.1", "1.60.1.70938" end
   function DB:HasProfession(id) return LINE[id] ~= nil end
@@ -1073,7 +1077,7 @@ describe("profession leveling tab", function()
     assert.matches("entraîneur", text)
     assert.is_nil(text:match("bientôt|r"))                          -- the placeholder is gone
     local footer = ns.Window.Footer().text
-    assert.matches("non confirmées sur Forever", footer)
+    assert.matches("wowforever.be %(observé en jeu%)", footer)
     assert.matches("hors apprentissage", footer)
   end)
 
@@ -1405,10 +1409,10 @@ describe("recipes to learn without prices, footer and line slots", function()
   end)
 
   it("keeps the footer within two lines of the footer slot (character budget), with and without the bag filter", function()
-    -- the slot shows about 79 characters per line at the real font (photo): two lines = at most 150 here
+    -- the slot shows about 83 characters per line at the real font (photo): two lines = at most 160 here
     local ns = start({})
-    assert.is_true(#ns.Window.JobFooter(false) <= 150)
-    assert.is_true(#ns.Window.JobFooter(true) <= 150)
+    assert.is_true(#ns.Window.JobFooter(false) <= 160)
+    assert.is_true(#ns.Window.JobFooter(true) <= 160)
   end)
 
   it("draws every line of the tab on its own single-line slot: no wrapping text, no shared slot", function()
@@ -2033,8 +2037,8 @@ describe("Métier tab: objective toggle", function()
   it("the footer explains the active objective and stays within two lines", function()
     local ns = start()
     for _, goal in ipairs({ "level", "gold" }) do
-      assert.is_true(#ns.Window.JobFooter(false, goal) <= 150)
-      assert.is_true(#ns.Window.JobFooter(true, goal) <= 150)
+      assert.is_true(#ns.Window.JobFooter(false, goal) <= 160)
+      assert.is_true(#ns.Window.JobFooter(true, goal) <= 160)
     end
   end)
 
@@ -2151,5 +2155,107 @@ describe("Où l'apprendre: the site's location text (real Forever data, Horde, C
     assert.is_not_nil(by[1283400].target.text:find("Wailing Caverns", 1, true) or by[1283400].target.text:find("Zone", 1, true))
     assert.is_not_nil(by[6417])
     assert.are.equal("quête : Dig Rat Stew", by[6417].target.text)
+  end)
+end)
+
+describe("Où l'apprendre: vendors of the site, by faction (Cooking 124)", function()
+  local function rows(faction)
+    setup({ scanned = true, faction = faction, profs = { { 185, 124, "Cuisine", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Cuisine = { skill = 124, max = 150, recipes = { [2538] = { id = 2538, name = "x", d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } } } } }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local by = {}
+    for _, bucket in ipairs({ res.profs[1].learn.now, res.profs[1].learn.soon, res.profs[1].learn.gray }) do
+      for _, row in ipairs(bucket) do by[row.rec.id] = row end
+    end
+    return ns, by
+  end
+
+  it("a Horde player gets the Horde vendors of the site, formatted '<NPC> (<Zone>) ; <NPC> (<Zone>) - position exacte inconnue'", function()
+    local ns, by = rows("Horde")
+    local row = by[7755]                                      -- Poisson-chat moustachu
+    assert.is_not_nil(row)
+    assert.are.equal("Derak Nightfall (Hillsbrad Foothills), Naal Mistrunner (Thunder Bluff)", row.rec.way.where)
+    local opened
+    _G.C_Map.OpenWorldMap = function(id) opened = id end
+    local before = #printed
+    ns.Window.GoTo(row.target, "Poisson-chat moustachu")
+    local zoneA, zoneB = ns.MapIDs["Hillsbrad Foothills"][1], ns.MapIDs["Thunder Bluff"][1]
+    assert.are.equal(("Où l'apprendre : Derak Nightfall (Zone%d) ; Naal Mistrunner (Zone%d) - position exacte inconnue."):format(zoneA, zoneB),
+      printed[before + 1]:match("Où l'apprendre.*$"))
+    assert.are.equal(zoneA, opened)                           -- the map opens on the first vendor's zone
+    assert.is_nil(printed[before + 1]:find("Lindea", 1, true))
+  end)
+
+  it("an Alliance player gets the Alliance list", function()
+    local ns, by = rows("Alliance")
+    assert.are.equal("Lindea Rabonne (Hillsbrad Foothills), Kilxx (The Barrens)", by[7755].rec.way.where)
+    assert.is_not_nil(ns)
+  end)
+
+  it("zones with no known map are written as they are, without opening a map, and no stray parenthesis", function()
+    local ns = rows("Horde")
+    local before = #printed
+    ns.Window.GoTo({ kind = "text", name = "Vayn Moongaze", zone = "Zephras Isle",
+      vendors = { { name = "Vayn Moongaze", zone = "Zephras Isle" } } }, "Chausses")
+    assert.matches("Où l'apprendre : Vayn Moongaze %(île de Zephras%) %- position exacte inconnue%.$", printed[before + 1])
+  end)
+
+  it("the vendor of another faction is filtered out when the Classic data knows its faction", function()
+    local W = loadfile("Where.lua")
+    local ns = {}
+    W("GoldCompass", ns)
+    local env = { trainers = {}, npcs = { ["Alli Vendor"] = { "Elwynn Forest", 0, 0, "A" }, ["Horde Vendor"] = { "Durotar", 0, 0, "H" } },
+      where = {}, maps = { ["Elwynn Forest"] = { 1429, "E" }, Durotar = { 1411, "K" } }, faction = "H" }
+    local t = ns.Where.Target({ id = 1, src = "v", way = { site = true, where = "Alli Vendor (Elwynn Forest), Horde Vendor (Durotar), Someone (Durotar)" } }, "Cooking", env)
+    assert.are.equal(2, #t.vendors)
+    assert.are.equal("Horde Vendor", t.vendors[1].name); assert.are.equal("Someone", t.vendors[2].name)
+    assert.are.equal("zone", t.kind)
+  end)
+end)
+
+describe("the craft button belongs to its own section (Travail du cuir vs Dépeçage, same leather)", function()
+  local lw = { skill = 61, max = 75, recipes = {
+    [2149] = { id = 2149, name = "Bottes en cuir cousu main", d = 2, out = 2302, oq = 1, mats = { { 2318, 2 } } } } }
+  -- the Skinning data holds its own recipe and, from an old capture, a Leatherworking one that uses the same leather
+  local skin = { skill = 110, max = 150, recipes = {
+    [1229517] = { id = 1229517, name = "Chaise du camp", d = 3, out = 2302, oq = 1, mats = { { 2318, 2 } } },
+    [2152] = { id = 2152, name = "Cape cousu main", d = 2, out = 2302, oq = 1, mats = { { 2318, 1 } } } } }
+  local function start()
+    setup({ scanned = true, counts = { [2318] = 10 }, profs = { { 165, 61, "Travail du cuir", 75 }, { 393, 110, "Dépeçage", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { ["Travail du cuir"] = lw, ["Dépeçage"] = skin }, onlyBag = true }
+    return ns
+  end
+
+  it("each section's craft entry carries its own profession and skill line; foreign recipes are not in the section", function()
+    local ns = start()
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local a, b = res.profs[1], res.profs[2]
+    assert.are.equal("Travail du cuir", a.craft.prof); assert.are.equal(165, a.craft.line); assert.are.equal(2149, a.craft.id)
+    assert.are.equal("Dépeçage", b.name)
+    assert.is_nil(b.plan.best and b.plan.best.rec.id == 2152 and true)      -- the Leatherworking recipe is not Skinning's
+    if b.craft then assert.are.equal("Dépeçage", b.craft.prof); assert.are.equal(393, b.craft.line) end
+    local label = ns.Window.CraftState(a.craft).label
+    assert.matches("Travail du cuir", label)                                  -- "Ouvrir Travail du cuir", never "Ouvrir Dépeçage"
+    assert.is_nil(label:find("Dépeçage", 1, true))
+  end)
+
+  it("a profession window records only the recipes of its own skill line, and ignores an unnamed window", function()
+    local ns = start()
+    local function window(name, id, ids)
+      return { GetBaseProfessionInfo = function() return { professionName = name, professionID = id, skillLevel = 5, maxSkillLevel = 75 } end,
+        GetAllRecipeIDs = function() return ids end, GetRecipeInfo = function(i) return { learned = true, name = "r" .. i, relativeDifficulty = 2 } end }
+    end
+    local learned, profs = {}, {}
+    ns.Learned.Capture(window("Dépeçage", 393, { 1229517, 2149 }), learned, profs)
+    assert.is_not_nil(profs["Dépeçage"].recipes[1229517])
+    assert.is_nil(profs["Dépeçage"].recipes[2149])                           -- a leather recipe is not Skinning's
+    ns.Learned.Capture(window("", 165, { 2149 }), learned, profs)
+    assert.is_nil(profs[""])                                                  -- no entry under an empty name
   end)
 end)

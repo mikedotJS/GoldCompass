@@ -209,3 +209,6 @@ The Forever recipe data of LibProfessionDB v1.10.1 (MIT, by Pimptasty) is inside
 | 110 | Recipes to learn, Horde | No recipe is labelled `vendeur` when all its vendors are Alliance; Gustwoven recipes say `vendeur · prix de la recette inconnu` (Vayn Moongaze); a recipe with a known gold price is preferred as `Meilleure à apprendre` | Screenshot |
 | 111 | Click the map icon of every kind of row | Trainer: the pin on the nearest Horde trainer. Vendor with no coordinates: chat `Où l'apprendre : Vayn Moongaze, île de Zephras (position exacte inconnue).`. Drop / container: the source in the chat. Each click prints something | The chat lines |
 | 112 | `/gc log` after clicking | One line `where click: <recette> -> pin | zone | text (<npc>)` per click | The log lines |
+| 113 | Craft button of each section (Travail du cuir, Dépeçage) | `Ouvrir <la profession de la section>` / `Fabriquer ×N`: Travail du cuir never says Dépeçage; the Dépeçage section shows no leather recipe of Travail du cuir | Screenshot |
+| 114 | Click the map icon of `Poisson-chat moustachu` (Horde) | Chat: `Où l'apprendre : <PNJ> (<Zone en français>) ; <PNJ> (<Zone>) - position exacte inconnue.` with the Horde vendors only; the world map opens on the first zone | The chat line |
+| 115 | Footer | `Sources : wowforever.be (observé en jeu), données Forever.` within two lines | Screenshot |

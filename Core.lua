@@ -407,6 +407,16 @@ function ns.ZoneLabel(target)
   return info and info.name or target.zone
 end
 
+-- The recipes remembered for a profession, without the ones the Forever data places in another skill line (older saved data may
+-- hold leather recipes under Skinning): a copy; the section keeps its own profession name and skill line.
+function ns.SectionData(data, line)
+  local recipes = {}
+  for id, rec in pairs(data.recipes or {}) do
+    if not (line and ns.ForeverDB:HasProfession(line)) or ns.ForeverDB:BelongsTo(line, id) ~= false then recipes[id] = rec end
+  end
+  return { skill = data.skill, max = data.max, updated = data.updated, recipes = recipes }
+end
+
 -- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).
 function ns.RunLeveling(done)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
@@ -438,6 +448,7 @@ function ns.RunLeveling(done)
       for _, p in ipairs(list) do
         local entry = { name = p.name, skill = p.skill, max = p.max }
         local data = ns.char.profs[p.name]
+        data = data and ns.SectionData(data, p.line)
         -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
         -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
         if not data then

@@ -66,6 +66,12 @@ end
 -- Are this recipe's vendors Forever's own (seen on live merchants), although the library lists its sources as borrowed?
 function DB:HasOwnVendors(id) return has(id, "o") end
 
+-- Is this craft a recipe of the skill line? true / false, or nil when the data does not know the recipe at all.
+function DB:BelongsTo(line, id)
+  if byLine[line] and byLine[line][id] then return true end
+  for _, rows in pairs(byLine) do if rows[id] then return false end end
+end
+
 local function find(id)
   for _, rows in pairs(byLine) do if rows[id] then return rows[id] end end
 end

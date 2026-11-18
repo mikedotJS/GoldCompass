@@ -131,17 +131,26 @@ W.OpenMap = openMap -- exposed for tests
 
 -- "Où l'apprendre": pins the NPC with a user waypoint and opens the map on it. Out of combat only (in combat the place
 -- is only written in the chat). Without a precise place, only the free text of the data is written in the chat.
+-- "<NPC> (<Zone>) ; <NPC> (<Zone>)": the vendors of a target, zones in the client's language when the game knows the map.
+function W.VendorText(t)
+  local parts = {}
+  for _, v in ipairs(t.vendors or {}) do
+    parts[#parts + 1] = ("%s (%s)"):format(v.name, v.mapID and ns.ZoneLabel(v) or S.zone_names[v.zone] or v.zone)
+  end
+  return table.concat(parts, " ; ")
+end
+
 function W.GoTo(t, recipe)
   local function log(decision) ns.Log("frame", ("where click: %s -> %s (%s)"):format(tostring(recipe), decision, tostring(t.name or t.text))) end
   if not t.mapID then
     log("text")
-    if t.name and t.zone then return ns.Print(S.where_zone_only:format(t.name, S.zone_names[t.zone] or t.zone)) end
+    if t.vendors then return ns.Print(S.where_zone_only:format(W.VendorText(t))) end
     return ns.Print(t.text and S.where_text:format(t.text) or S.where_none)
   end
   local label = ns.ZoneLabel(t)
-  if not t.x then   -- zone only: open its map, say the position is unknown
+  if not t.x then   -- zone only: say the position is unknown, open the map on the zone (out of combat)
     log("zone")
-    ns.Print(S.where_zone_only:format(t.name, label))
+    ns.Print(S.where_zone_only:format(t.vendors and W.VendorText(t) or ("%s (%s)"):format(t.name, label)))
     return openMap(t.mapID)
   end
   log("pin")
@@ -209,9 +218,12 @@ end
 -- Tooltip of the map button: NPC, zone (client language when known), coordinates, and the Classic caveat.
 function W.TargetTooltipLines(t)
   local tip = { S.where_title }
-  if t.mapID and not t.x then
+  if t.vendors then
+    tip[#tip + 1] = W.VendorText(t)
+    tip[#tip + 1] = S.where_zone_tip
+  elseif t.mapID and not t.x then
     tip[#tip + 1] = t.name
-    tip[#tip + 1] = S.where_zone_only:format(t.name, ns.ZoneLabel(t))
+    tip[#tip + 1] = S.where_zone_tip
   elseif t.mapID then
     tip[#tip + 1] = t.name
     tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t), t.x, t.y)

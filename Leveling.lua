@@ -224,7 +224,9 @@ function V.Way(DB, id, e, faction, forever)
   local function has(kind) local l = src and src[kind]; return l and (l.total or #l) > 0 end
   local item = DB.GetRecipeItem and DB:GetRecipeItem(id)
   -- where: "NPC (Zone)" of wowforever.be; zone: where it drops; questName: the quest that gives it
-  local way = { npcs = {}, itemID = item, site = site, where = ft and ft.vendor, zone = ft and ft.zone, questName = ft and ft.quest }
+  -- the site's vendor list for the player's faction (two lists: Alliance, Horde), or its one list of unknown faction
+  local vtext = ft and ((faction == "H" and ft.vh) or (faction ~= "H" and ft.va) or ft.vendor) or nil
+  local way = { npcs = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest }
   local wanted = faction == "H" and "Horde" or "Alliance"
   local function names(kind)
     for _, n in ipairs(src[kind]) do
@@ -247,7 +249,7 @@ function V.Way(DB, id, e, faction, forever)
   elseif has("vendor") and vendorUsable() then
     way.kind, way.confirmed = "vendor", own("sources") or (ft ~= nil and ft.k ~= nil and #src.vendor == 0)
     names("vendor")
-    if #way.npcs == 0 and ft and ft.vendor then way.npcs[1] = (ft.vendor:gsub("%s*%(.*%)%s*$", "")) end
+    if #way.npcs == 0 and vtext then way.npcs[1] = (vtext:gsub("%s*%(.*%)%s*$", "")) end
     for _, n in ipairs(src.vendor) do
       local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
       local parts = n.cost or (DB.GetVendorCost and DB:GetVendorCost(id, n.id))
@@ -265,9 +267,9 @@ function V.Way(DB, id, e, faction, forever)
         end
       end
     end
-  elseif ft and ft.vendor and not has("quest") then
+  elseif vtext and not has("quest") then
     way.kind, way.confirmed = "vendor", true
-    way.npcs[1] = ft.vendor:gsub("%s*%(.*%)%s*$", "")
+    way.npcs[1] = vtext:gsub("%s*%(.*%)%s*$", "")
   elseif has("quest") then
     way.kind, way.confirmed = "quest", own("sources")
     names("quest")

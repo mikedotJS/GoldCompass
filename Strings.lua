@@ -102,7 +102,7 @@ ns.S = {
 
   -- profession leveling tab
   tab_job = "Métier", title_job = "Gold Compass · Monter un métier",
-  job_footer = "~ estimation, hors apprentissage. Sources Classic, non confirmées sur Forever.",
+  job_footer = "~ estimation, hors apprentissage. Sources : wowforever.be (observé en jeu), données Forever.",
   job_goal_level = "Objectif : monter le métier.", job_goal_gold = "Objectif : gagner de l'or.",
   goal_label = "Objectif :", goal_level = "Monter le métier", goal_gold = "Gagner de l'or",
   job_empty_t = "Aucun métier", job_empty_p = "Tu n'as appris aucun métier : apprends-en un chez un entraîneur.",
@@ -146,7 +146,7 @@ ns.S = {
   where_pin = "Clique : repère sur la carte", where_text_tip = "Clique : affiche le lieu dans le chat",
   where_pinned = "Repère posé : %s, %s (%.1f, %.1f). Données Classic, à vérifier.",
   where_coords = "%s, %s (%.1f, %.1f) : repère indisponible, carte ouverte. Données Classic, à vérifier.",
-  where_zone_only = "Où l'apprendre : %s, %s (position exacte inconnue).",
+  where_zone_only = "Où l'apprendre : %s - position exacte inconnue.", where_zone_tip = "Position exacte inconnue.",
   zone_names = { ["Zephras Isle"] = "île de Zephras" },
   where_combat = "Indisponible en combat : %s",
   where_text = "Où l'apprendre : %s (lieu non précis, données Classic).", where_none = "Où l'apprendre : lieu non précis.",

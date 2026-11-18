@@ -15,10 +15,12 @@ end
 -- Name, skill and maximum of the open profession window.
 local function readProfession(T)
   local base = safe(T.GetBaseProfessionInfo)
-  if type(base) == "table" and base.professionName then return base.professionName, base.skillLevel, base.maxSkillLevel end
+  if type(base) == "table" and base.professionName and base.professionName ~= "" then
+    return base.professionName, base.skillLevel, base.maxSkillLevel, base.professionID
+  end
   if T.GetTradeSkillLine then
-    local _, name, skill, max = safe(T.GetTradeSkillLine)
-    if name then return name, skill, max end
+    local line, name, skill, max = safe(T.GetTradeSkillLine)
+    if name and name ~= "" then return name, skill, max, line end
   end
 end
 
@@ -48,8 +50,8 @@ function L.Capture(T, learned, profs)
   if safe(T.IsTradeSkillLinked) or safe(T.IsTradeSkillGuild) or safe(T.IsNPCCrafting) then return 0 end
   local ids, added = safe(T.GetAllRecipeIDs), 0
   if type(ids) ~= "table" then return 0 end
-  local profName, skill, max
-  if profs then profName, skill, max = readProfession(T) end
+  local profName, skill, max, line
+  if profs then profName, skill, max, line = readProfession(T) end
   local entry = profName and (profs[profName] or { recipes = {} })
   if entry then
     profs[profName] = entry
@@ -57,7 +59,9 @@ function L.Capture(T, learned, profs)
   end
   for _, id in ipairs(ids) do
     local info = safe(T.GetRecipeInfo, id)
-    if type(info) == "table" and info.learned then
+    -- a recipe the Forever data places in ANOTHER profession is not this window's (Skinning and Leatherworking share leather)
+    local foreign = line and ns.ForeverDB and ns.ForeverDB:BelongsTo(line, id) == false
+    if type(info) == "table" and info.learned and not foreign then
       if not learned[id] then
         learned[id] = true
         added = added + 1

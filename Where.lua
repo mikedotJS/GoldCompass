@@ -37,6 +37,15 @@ end
 
 -- Target for a recipe to learn: { name, zone, mapID, x, y } (a place to pin), or { text = "..." } when only a free-text
 -- description exists (or nothing: text = nil, "lieu non précis"). `prof` is the English profession name of the data.
+-- "Name (Zone), Name (Zone)" of wowforever.be -> { { name, zone }, ... }
+function Wh.ParseVendors(text)
+  local out = {}
+  for name, zone in (text or ""):gmatch("%s*([^,()]+)%s*%(([^)]*)%)") do
+    out[#out + 1] = { name = name:match("^%s*(.-)%s*$"), zone = zone }
+  end
+  return out
+end
+
 -- Every target has a `kind`: "pin" (an exact position), "zone" (a vendor whose zone has a map but no coordinates: open that map)
 -- or "text" (the free text, or nothing: the caller words it).
 function Wh.Target(rec, prof, env)
@@ -60,6 +69,8 @@ function Wh.Target(rec, prof, env)
   local names, found = {}, {}
   for _, n in ipairs(rec.npcNames or {}) do names[#names + 1] = n end
   for i = 2, #(info or {}) do names[#names + 1] = info[i] end
+  local siteVendors = Wh.ParseVendors(rec.way and rec.way.where)
+  for _, v in ipairs(siteVendors) do names[#names + 1] = v.name end
   for _, name in ipairs(names) do
     local n = env.npcs[name]
     if n and (n[4] == nil or n[4] == env.faction) then found[#found + 1] = { name = name, zone = n[1], x = n[2], y = n[3] } end
@@ -69,10 +80,21 @@ function Wh.Target(rec, prof, env)
   -- no coordinates anywhere: the "NPC (Zone)" of wowforever.be, as a zone to open when its map is known
   local where = rec.way and rec.way.where
   if where then
-    local name, zone = where:match("^(.-)%s*%((.-)%)%s*$")
-    local map = zone and env.maps[zone]
-    if map then return { name = name, zone = zone, mapID = map[1], kind = "zone" } end
-    return { name = name or where, zone = zone, text = where, kind = "text" }
+    -- only the vendors the player's faction can use: the Classic NPC table knows the faction of many of them (unknown: kept)
+    local list = {}
+    for _, v in ipairs(siteVendors) do
+      local n = env.npcs[v.name]
+      if not (n and n[4] ~= nil and n[4] ~= env.faction) then
+        v.mapID = env.maps[v.zone] and env.maps[v.zone][1]
+        list[#list + 1] = v
+      end
+    end
+    if #list > 0 then
+      for _, v in ipairs(list) do   -- the first vendor whose zone has a map: open it
+        if v.mapID then return { name = v.name, zone = v.zone, mapID = v.mapID, vendors = list, kind = "zone" } end
+      end
+      return { name = list[1].name, zone = list[1].zone, vendors = list, text = where, kind = "text" }
+    end
   end
   return { text = info and info[1] or nil, kind = "text" }
 end

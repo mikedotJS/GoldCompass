@@ -46,9 +46,10 @@ KIND_LETTER = {"trainer": "t", "vendor": "v", "quest": "q", "drop": "d", "pickpo
 
 
 def where_texts(kinds, spans):
-    """Location texts of a source cell: vendor NPC lists have a "(Zone)" in them (first one kept); the other spans are the quest
-    name and the drop zone(s): with both kinds the quest comes first (or alone when there is one span), else the one kind owns it."""
-    vendor = next((w for w in spans if "(" in w), None)
+    """Location texts of a source cell: vendor NPC lists have a "(Zone)" in them: two lists are the Alliance's then the Horde's
+    (the site lists a neutral vendor in both), one list has no known faction; the other spans are the quest name and the drop
+    zone(s): with both kinds the quest comes first (or alone when there is one span), else the one kind owns it."""
+    vendor = [w for w in spans if "(" in w][:2]
     plain = [w for w in spans if "(" not in w]
     quest = zone = None
     if "quest" in kinds and "drop" in kinds:
@@ -63,7 +64,7 @@ def where_texts(kinds, spans):
 
 def parse_rows(page):
     """Rows of a recipe table: dicts { item, spell, name, learn, thresholds (orange, yellow, green, gray), trainer (bool),
-    cost (copper or None), vendor (text or None), quest, zone (texts or None), letters (kinds, one letter each), kinds (set),
+    cost (copper or None), vendors (the vendor lists: [Alliance, Horde] or one of unknown faction), vendor (first), quest, zone (texts or None), letters (kinds, one letter each), kinds (set),
     start (bool) }."""
     out = []
     for row in re.findall(r'<tr[^>]*data-learn="[^>]*>.*?</tr>', page, re.S):
@@ -84,7 +85,8 @@ def parse_rows(page):
             "spell": int(item.group(2)) if item and item.group(1) == "spell" else None, "name": html.unescape(name.group(1)).strip() if name else "", "learn": learn,
             "thresholds": tuple(colors) if len(colors) == 4 else None, "kinds": kinds, "trainer": "trainer" in kinds,
             "cost": money(cost.group(1)) if cost else None, "start": "starter" in kinds,
-            "vendor": where_texts(kinds, wheres)[0] if "vendor" in kinds else None,
+            "vendors": where_texts(kinds, wheres)[0] if "vendor" in kinds else [],
+            "vendor": (where_texts(kinds, wheres)[0] or [None])[0] if "vendor" in kinds else None,
             "quest": where_texts(kinds, wheres)[1], "zone": where_texts(kinds, wheres)[2],
             "letters": "".join(KIND_LETTER[k] for k in ("trainer", "vendor", "quest", "drop", "pickpocket", "fished", "starter", "crafted") if k in kinds),
         })
@@ -166,8 +168,10 @@ def main():
             if r["trainer"] and r["cost"] is not None:
                 entry["cost"], entry["rank"] = r["cost"], rank_of(r["learn"])
                 taught += 1
-            if r["vendor"]:
-                entry["vendor"] = r["vendor"]
+            if len(r["vendors"]) == 2:
+                entry["va"], entry["vh"] = r["vendors"]
+            elif r["vendors"]:
+                entry["vendor"] = r["vendors"][0]
             if r["start"]:
                 entry["start"] = True
             table[spells[0]] = entry
@@ -180,7 +184,8 @@ def main():
         "-- ns.ForeverTrainers[craftSpellID] = one entry per recipe row of the site: learn = skill needed, th = { orange, yellow, green, gray }",
         "--   (used only to fix degenerate thresholds), k = where the site saw it come from (t trainer, v vendor, q quest, d drop,",
         "--   p pickpocket, f fishing, s known from the start, c crafted; \"\" = not known yet), cost = trainer fee in copper (the recipe IS",
-        "--   taught by a trainer), rank = profession rank a trainer needs (Apprentice | Journeyman | Expert | Artisan), vendor = \"NPC (Zone)\",",
+        "--   taught by a trainer), rank = profession rank a trainer needs (Apprentice | Journeyman | Expert | Artisan), va / vh = the Alliance /",
+        "--   Horde vendors \"NPC (Zone), ...\" (the site lists a neutral vendor in both), vendor = the one list of unknown faction,",
         "--   quest = quest name, zone = drop zone(s), start = true when known from the start. A recipe with no cost here is not taught by a trainer.",
         "local _, ns = ...",
         "ns.ForeverTrainers = {",
@@ -199,6 +204,8 @@ def main():
             parts += [f"cost = {e['cost']}", f"rank = {q(e['rank'])}"]
         if "vendor" in e:
             parts.append(f"vendor = {q(e['vendor'])}")
+        if "va" in e:
+            parts += [f"va = {q(e['va'])}", f"vh = {q(e['vh'])}"]
         if e.get("start"):
             parts.append("start = true")
         out.append(f"  [{sid}] = {{ {', '.join(parts)} }},")
