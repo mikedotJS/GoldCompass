@@ -15,7 +15,8 @@ ZR.DEFAULTS = {
 }
 
 -- Value in copper of one unit of an item, and how it was obtained.
--- Returns value, kind, age where kind is "fresh", "old", "vendor" (stale or missing AH price) or "none".
+-- Returns value, kind, age. kind: "fresh" and "old" (AH price used), "stale" (AH price too old, vendor price used),
+-- "unseen" (never scanned, vendor price used), "none" (nothing usable, worth 0).
 function ZR.UnitValue(itemID, price, vendor, c, ageKnown)
   local copper, age = price(itemID)
   if copper then
@@ -23,7 +24,7 @@ function ZR.UnitValue(itemID, price, vendor, c, ageKnown)
     if age and age <= c.oldDays then return copper * (1 - c.ahCut), "old", age end
   end
   local v = vendor(itemID)
-  if v then return v, "vendor", age end
+  if v then return v, copper and "stale" or "unseen", age end
   return 0, "none", age
 end
 
@@ -37,7 +38,8 @@ end
 --   constants = optional overrides of ZR.DEFAULTS,
 -- }
 -- Returns { status = "no_nodes" | "no_scan" | "ok", rows = {...}, unknownSpots = n, anyOld = bool }.
--- Each row: { zone, copperPerHour, spots, items = {itemID, ...}, old = bool, partial = bool, maxAge = days|nil }.
+-- Each row: { zone, copperPerHour, spots, items, detail, old, partial, maxAge } where partial = stale or unseen or unpriced:
+-- stale = AH price over 7 days old (vendor price used), unseen = never scanned (vendor price used), unpriced = no price at all (counted 0).
 function ZR.Rank(input)
   local c = setmetatable(input.constants or {}, { __index = ZR.DEFAULTS })
   local ageKnown = input.ageKnown ~= false
@@ -45,7 +47,7 @@ function ZR.Rank(input)
 
   for zoneID, spotsByNode in pairs(input.zones) do
     local spots, total = 0, 0
-    local old, partial, maxAge = false, false, nil
+    local old, stale, unseen, unpriced, maxAge = false, false, false, false, nil
     local contribution, unitOf = {}, {}
     for nodeID, count in pairs(spotsByNode) do
       local node = input.nodes[nodeID]
@@ -60,7 +62,7 @@ function ZR.Rank(input)
         unitOf[node.item] = unit
         if kind == "fresh" or kind == "old" then anyAhPrice = true end
         if kind == "old" then old = true end
-        if kind == "vendor" or kind == "none" then partial = true end
+        if kind == "stale" then stale = true elseif kind == "unseen" then unseen = true elseif kind == "none" then unpriced = true end
         if age and (not maxAge or age > maxAge) then maxAge = age end
       end
     end
@@ -78,7 +80,8 @@ function ZR.Rank(input)
       anyOld = anyOld or old
       rows[#rows + 1] = {
         zone = zoneID, copperPerHour = pace * total / spots, spots = spots,
-        items = items, detail = detail, old = old, partial = partial, maxAge = maxAge,
+        items = items, detail = detail, old = old, partial = stale or unseen or unpriced, maxAge = maxAge,
+        stale = stale, unseen = unseen, unpriced = unpriced,
       }
     end
   end

@@ -17,31 +17,39 @@ end
 local function addSection(tt, id)
   if InCombatLockdown() or not (ns.Prices.Installed() and ns.RecipeRows) then return end
   local ctx = ns.Context()
-  local count = math.max(1, (C_Item.GetItemCount and C_Item.GetItemCount(id)) or 1)
-  local d = ns.Advice.Decide({ id = id, count = count, gear = ns.IsGear(id) }, ctx)
+  -- the same bag scan as the Bags tab, so both agree on the count and on soulbound items
+  local bag
+  for _, it in ipairs(ns.BagItems() or {}) do
+    if it.id == id then bag = it end
+  end
+  local d = ns.Advice.Decide({ id = id, count = bag and bag.count or 1, gear = ns.IsGear(id), bound = bag and bag.bound }, ctx)
   local uses = ns.Advice.Uses(id, ctx)
-  local showVerdict = not ledgerLoaded() and (d.action ~= "none" or d.keep > 0)
+  local showVerdict = not ledgerLoaded()
   if not showVerdict and uses.total == 0 then return end
 
   tt:AddLine(" ")
   tt:AddLine(S.gc_header)
   if showVerdict then
     local c = d.keep > 0 and KEEP or ACTION_COLOR[d.action]
-    tt:AddDoubleLine(ns.Fmt.Action(d, false), ns.Money(d.unit), c[1], c[2], c[3], 1, 1, 1)
+    if d.action == "none" and d.keep == 0 then
+      tt:AddLine(ns.Fmt.Action(d, false), c[1], c[2], c[3])
+    else
+      tt:AddDoubleLine(ns.Fmt.Action(d, false), ns.Money(d.unit), c[1], c[2], c[3], 1, 1, 1)
+    end
     local reason = ns.Fmt.Reason(d, d.sale)
     if reason then tt:AddLine(reason, MUTE[1], MUTE[2], MUTE[3]) end
   end
   if uses.total > 0 then
     local more = IsShiftKeyDown()
     tt:AddDoubleLine(S.uses:format(uses.total, uses.total > 1 and "s" or ""), S.uses_price, 1, 0.82, 0, 0.62, 0.62, 0.62)
-    local classic = false
+    local unconfirmed = false
     for i = 1, more and uses.total or math.min(SHOWN, uses.total) do
       local e = uses.list[i]
-      classic = classic or e.recipe.src ~= nil
+      unconfirmed = unconfirmed or e.status ~= "known"
       tt:AddDoubleLine(e.recipe.name .. "  " .. ns.Fmt.Status(e), ns.Money(e.result), 1, 1, 1, 1, 1, 1)
     end
     if not more and uses.total > SHOWN then tt:AddLine(S.uses_more:format(uses.total - SHOWN), MUTE[1], MUTE[2], MUTE[3]) end
-    if classic then tt:AddLine(S.tip_unconfirmed, MUTE[1], MUTE[2], MUTE[3]) end
+    if unconfirmed then tt:AddLine(S.tip_unconfirmed, MUTE[1], MUTE[2], MUTE[3]) end
   end
   local _, age = ctx.price(id)
   tt:AddLine(age and S.tip_estimate:format(ns.AgeText(age)) or S.tip_estimate_nodate, MUTE[1], MUTE[2], MUTE[3])
@@ -69,5 +77,6 @@ end
 local shift = CreateFrame("Frame")
 shift:RegisterEvent("MODIFIER_STATE_CHANGED")
 shift:SetScript("OnEvent", function()
-  if GameTooltip:IsShown() and GameTooltip.RefreshData then GameTooltip:RefreshData() end
+  if InCombatLockdown() or not GameTooltip:IsShown() or not GameTooltip.RefreshData then return end
+  if GameTooltip.GetItem and GameTooltip:GetItem() then GameTooltip:RefreshData() end -- item tooltips only
 end)

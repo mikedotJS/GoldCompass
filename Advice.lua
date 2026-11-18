@@ -16,12 +16,22 @@ ns.Advice = A
 local ZR = ns.ZoneRank
 local DEF = ZR.DEFAULTS
 
+-- Profession names in Data/Recipes.lua that differ from the skill names used for gathering.
+local PROF_KEY = { Herbalism = "Herb Gathering" }
+
+-- A quest is worth keeping items for when it is not a repeatable city donation (zone "a capital city"), suits the
+-- character's faction, and its level is from 2 below to 5 above the character's.
+function A.QuestRelevant(q, ctx)
+  return q.zone ~= "a capital city" and (q.faction == "B" or q.faction == ctx.faction)
+    and q.level + 2 >= ctx.level and q.level <= ctx.level + 5
+end
+
 -- Turns the generated rows (Data/Recipes.lua) into recipes, and indexes them by ingredient.
 function A.NewIndex(rows)
   local byMat = {}
   for _, r in ipairs(rows) do
     local recipe = { id = r[1], prof = r[2], skill = r[3], out = r[4], low = r[5], high = r[6], sell = r[7],
-      name = r[8], src = r[10], learn = r[11], mats = {} }
+      name = r[8], src = r[10], learn = r[11], mats = {}, guessed = r[11] == nil }
     for mat, count in r[9]:gmatch("(%d+):(%d+)") do
       recipe.mats[#recipe.mats + 1] = { tonumber(mat), tonumber(count) }
       byMat[tonumber(mat)] = byMat[tonumber(mat)] or {}
@@ -39,7 +49,7 @@ end
 -- Evaluates one recipe for this character. status: known, noprof, locked, quest, learn.
 function A.Evaluate(recipe, ctx)
   local status
-  local skill = ctx.skills[recipe.prof]
+  local skill = ctx.skills[PROF_KEY[recipe.prof] or recipe.prof]
   if ctx.known(recipe.id) then status = "known"
   elseif not skill then status = "noprof"
   elseif skill < (recipe.learn or recipe.skill) then status = "locked"
@@ -49,9 +59,18 @@ function A.Evaluate(recipe, ctx)
   local unit, kind = val(recipe.out, ctx)
   if kind == "none" then unit = recipe.sell end
   local result = unit * (recipe.low + recipe.high) / 2
-  local cost = 0
-  for _, m in ipairs(recipe.mats) do cost = cost + m[2] * (val(m[1], ctx)) end
-  return { recipe = recipe, status = status, result = result, cost = cost, profit = result - cost,
+  -- Ingredients: the AH value when there is one; otherwise the vendor BUY price when known; otherwise only the
+  -- vendor sell price (or 0) is known, which understates the cost, so the profit is flagged "high estimate".
+  local cost, uncertain = 0, false
+  for _, m in ipairs(recipe.mats) do
+    local u, k = val(m[1], ctx)
+    if k ~= "fresh" and k ~= "old" then
+      local buy = ctx.buy and ctx.buy(m[1])
+      if buy then u = buy else uncertain = true end
+    end
+    cost = cost + m[2] * u
+  end
+  return { recipe = recipe, status = status, result = result, cost = cost, profit = result - cost, uncertain = uncertain,
     craftable = status == "known" and (skill or 0) >= recipe.skill }
 end
 
@@ -69,14 +88,12 @@ function A.Uses(itemID, ctx)
   return { total = #list, list = list }
 end
 
--- How many of the item the character should keep for quests it may still do (same faction, not out-levelled by more than 2).
+-- How many of the item to keep for quests the character may still do: the largest single need (a quest is done once,
+-- so needs are not added up), at most what the character owns.
 local function keepCount(item, ctx)
   local keep, name = 0, nil
   for _, q in ipairs(ctx.quests(item.id) or {}) do
-    if (q.faction == "B" or q.faction == ctx.faction) and q.level + 2 >= ctx.level then
-      keep = keep + q.count
-      name = name or q.quest
-    end
+    if A.QuestRelevant(q, ctx) and q.count > keep then keep, name = q.count, q.quest end
   end
   return math.min(keep, item.count), name
 end
@@ -93,6 +110,7 @@ function A.Decide(item, ctx)
   if hasAh then best = { action = "ah", unit = own } end -- item.bound: soulbound items cannot be auctioned
   if vendor > best.unit then best = { action = "vendor", unit = vendor } end
   local sale = best.unit
+  local maybe -- a craft that looks better but whose ingredient cost is not known well enough to recommend
 
   local de = item.gear and ctx.disenchant(item.id)
   if de and de * (1 - DEF.ahCut) > best.unit then best = { action = "disenchant", unit = de * (1 - DEF.ahCut) } end
@@ -104,7 +122,8 @@ function A.Decide(item, ctx)
       for _, m in ipairs(recipe.mats) do if m[1] == item.id then qty = qty + m[2] end end
       local perUnit = (e.result - (e.cost - qty * own)) / qty
       if perUnit > best.unit and item.count >= qty then
-        best = { action = "craft", unit = perUnit, recipe = e, qty = qty }
+        if e.uncertain then maybe = maybe or recipe.name
+        else best = { action = "craft", unit = perUnit, recipe = e, qty = qty } end
       end
     end
   end
@@ -119,7 +138,7 @@ function A.Decide(item, ctx)
     total = rest * best.unit
   end
   return { action = best.action, unit = best.unit, keep = keep, quest = quest, recipe = best.recipe, crafts = crafts,
-    total = total, hasAh = hasAh, sale = sale }
+    total = total, hasAh = hasAh, sale = sale, maybe = maybe }
 end
 
 local GROUP = { ah = "ah", vendor = "vendor", craft = "craft", disenchant = "craft", none = "none" }

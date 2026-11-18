@@ -26,6 +26,7 @@ function F.Reason(d, sale)
   if d.keep > 0 then return S.sub_keep:format(d.quest) end
   if d.action == "craft" then return S.sub_craft:format(ns.Money(math.max(0, d.unit - sale))) end
   if d.action == "vendor" then return S.sub_vendor end
+  if d.maybe then return S.sub_maybe:format(d.maybe) end
   if d.action == "none" then return S.sub_none end
 end
 
@@ -34,6 +35,7 @@ function F.Where(recipe)
   local kind = recipe.src
   if kind == "v" then return S.where_v elseif kind == "m" then return S.where_m
   elseif kind == "d" then return S.where_d elseif kind == "q" then return S.where_q end
+  if recipe.guessed then return S.where_unknown end
   return S.where_trainer:format(recipe.learn or recipe.skill)
 end
 

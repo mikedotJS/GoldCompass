@@ -46,7 +46,7 @@ function H.Pickups(zoneName, questItems, ctx)
   local list = {}
   for item, quests in pairs(questItems) do
     for _, q in ipairs(quests) do
-      if q.zone == zoneName and (q.faction == "B" or q.faction == ctx.faction) and q.level + 2 >= ctx.level then
+      if q.zone == zoneName and ns.Advice.QuestRelevant(q, ctx) then
         local unit = ns.ZoneRank.UnitValue(item, ctx.price, ctx.vendor, ns.ZoneRank.DEFAULTS, ctx.ageKnown)
         list[#list + 1] = { item = item, count = q.count, quest = q.quest, unit = unit }
         break

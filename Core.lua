@@ -76,7 +76,10 @@ function ns.Context()
   local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
   return {
     price = safePrice, vendor = ns.Prices.Vendor, ageKnown = ns.Prices.HasAge(), skills = skills,
-    known = function(id) return IsPlayerSpell ~= nil and IsPlayerSpell(id) or false end,
+    known = function(id)
+      return (ns.char and ns.char.learned[id]) or (IsPlayerSpell ~= nil and IsPlayerSpell(id)) or false
+    end,
+    buy = function(id) return ns.db and ns.db.buy and ns.db.buy[id] end,
     quests = function(id) return ns.QuestItems[id] end, level = UnitLevel("player"), faction = faction,
     disenchant = function(id) return skills["Enchanting"] and ns.Prices.Disenchant(id) or nil end,
     index = ns.index,
@@ -127,7 +130,10 @@ function ns.Run(done, opts)
   end)
 end
 
-local function money(copper) return ns.ZoneRank.FormatMoney(copper) end
+local function money(copper)
+  if not copper or copper <= 0 then return S.price_unknown end
+  return ns.ZoneRank.FormatMoney(copper)
+end
 ns.Money = money
 
 local function ageText(age)
@@ -153,14 +159,16 @@ function ns.IsGear(id)
   return (class == 2 or class == 4) and (getQuality(id) or 0) >= 2
 end
 
+local HEARTHSTONE = 6948 -- also flagged hasNoValue by the game; listed explicitly in case Forever omits the flag
+
 -- Items in the backpack and the four bags, merged by item ID. Returns the list and the IDs, or nil when the API is missing.
-local function scanBags()
+function ns.BagItems()
   if not (C_Container and C_Container.GetContainerNumSlots and C_Container.GetContainerItemInfo) then return end
   local byId, items = {}, {}
   for bag = 0, 4 do
     for slot = 1, C_Container.GetContainerNumSlots(bag) do
       local info = C_Container.GetContainerItemInfo(bag, slot)
-      if info and info.itemID then
+      if info and info.itemID and not info.hasNoValue and info.itemID ~= HEARTHSTONE then
         local item = byId[info.itemID]
         if not item then
           item = { id = info.itemID, count = 0 }
@@ -178,7 +186,7 @@ end
 -- Bags tab data: done({ state = "ok" | "empty" | ..., groups, totals, total, anyAh }) (PLAN.md step 5).
 function ns.RunBags(done)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
-  local items = scanBags()
+  local items = ns.BagItems()
   if not items then return done({ state = "error", message = S.bags_api }) end
   if #items == 0 then return done({ state = "empty" }) end
   local ids = {}
@@ -293,5 +301,10 @@ frame:SetScript("OnEvent", function(_, _, name)
   if name ~= addonName then return end
   GoldCompassDB = GoldCompassDB or {}
   ns.db = GoldCompassDB
+  ns.db.buy = ns.db.buy or {}            -- [itemID] = vendor buy price of one unit, learned at merchants
+  ns.db.chars = ns.db.chars or {}
+  local key = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
+  ns.db.chars[key] = ns.db.chars[key] or { learned = {} }  -- [recipeID] = true, learned from profession windows
+  ns.char = ns.db.chars[key]
   ns.Print("chargé. Tape /gc.")
 end)

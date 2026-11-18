@@ -38,7 +38,7 @@ ns.S = {
   price_age = "prix %s",
   age_days = "%d j",
   age_fresh = "du jour",
-  none = "—",
+  none = "—", price_unknown = "prix inconnu",
 
   -- tooltip and bags
   gc_header = "|cff3fe0c5GOLD COMPASS|r",
@@ -52,7 +52,8 @@ ns.S = {
   uses = "Sert à %d usage%s", uses_price = "prix du résultat", uses_more = "+ %d autres (Maj pour tout voir)",
   st_known = "|cff1eff00✓ connue|r", st_learn = "|cffffd100à apprendre : %s|r", st_quest = "|cffffd100à faire : quête|r",
   st_locked = "|cff9d9d9dniveau de métier %d requis|r", st_noprof = "|cff9d9d9dmétier requis : %s|r",
-  where_v = "marchand", where_m = "butin de monstre", where_d = "butin", where_q = "quête", where_trainer = "entraîneur, niv. %d",
+  where_v = "marchand", where_m = "butin de monstre", where_d = "butin", where_q = "quête", where_trainer = "entraîneur, niv. %d", where_unknown = "source inconnue",
+  sub_maybe = "« %s » pourrait rapporter plus (estimation haute : coût des ingrédients inconnu)",
   tip_estimate = "~ estimation · prix HV vus il y a %s",
   tip_estimate_nodate = "~ estimation · prix HV inconnus",
   tip_unconfirmed = "recettes : données Classic, non confirmées sur Forever",
@@ -76,7 +77,7 @@ ns.S = {
   here_nodes = "À récolter ici", here_pickups = "À ramasser pour les quêtes d'ici",
   here_hint = "Avec %s, cette zone rapporterait environ %s/h de plus.",
   prof_Mining = "Minage", prof_Herb = "Herboristerie",
-  prof_names = { ["Alchemy"] = "Alchimie", ["Blacksmithing"] = "Forge", ["Enchanting"] = "Enchantement", ["Engineering"] = "Ingénierie",
+  prof_names = { ["Herbalism"] = "Herboristerie", ["Skinning"] = "Dépeçage", ["Fishing"] = "Pêche", ["Alchemy"] = "Alchimie", ["Blacksmithing"] = "Forge", ["Enchanting"] = "Enchantement", ["Engineering"] = "Ingénierie",
     ["Leatherworking"] = "Travail du cuir", ["Tailoring"] = "Couture", ["Cooking"] = "Cuisine", ["First Aid"] = "Premiers soins",
     ["Mining"] = "Minage", ["Herb Gathering"] = "Herboristerie" },
 

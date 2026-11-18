@@ -97,6 +97,68 @@ describe("Advice.Decide", function()
     assert.are.equal(30, d.total)
   end)
 
+  it("keeps for quests only within 2 levels below and 5 above the character, and never for city donations", function()
+    local function keepFor(quests, level)
+      return A.Decide({ id = 100, count = 20 }, ctx({ quests = function() return quests end, level = level, known = function() return false end })).keep
+    end
+    local function q(level, count, zone) return { quest = "Q" .. level, zone = zone or "Z", level = level, faction = "B", count = count } end
+    assert.are.equal(5, keepFor({ q(14, 5) }, 14))   -- same level
+    assert.are.equal(5, keepFor({ q(19, 5) }, 14))   -- 5 above: kept
+    assert.are.equal(0, keepFor({ q(20, 5) }, 14))   -- 6 above: not yet
+    assert.are.equal(5, keepFor({ q(12, 5) }, 14))   -- 2 below: kept
+    assert.are.equal(0, keepFor({ q(11, 5) }, 14))   -- 3 below: out-levelled
+    -- a level-14 character with 20 Silk and the 60-silk city donation (level 26, zone "a capital city"): nothing kept
+    assert.are.equal(0, keepFor({ q(26, 60, "a capital city") }, 14))
+    assert.are.equal(0, keepFor({ q(14, 60, "a capital city") }, 14)) -- even at the right level, donations are skipped
+  end)
+
+  it("takes the largest quest need, not the sum", function()
+    local quests = { { quest = "A", zone = "Z", level = 14, faction = "B", count = 4 },
+      { quest = "B", zone = "Z", level = 15, faction = "B", count = 6 }, { quest = "C", zone = "Z", level = 16, faction = "B", count = 3 } }
+    local d = A.Decide({ id = 100, count = 20 }, ctx({ quests = function() return quests end, level = 14, known = function() return false end }))
+    assert.are.equal(6, d.keep) -- max(4, 6, 3), not 13
+    assert.are.equal("B", d.quest)
+    assert.are.equal(14 * 95, d.total) -- the other 14 are valued
+  end)
+
+  it("matches Herbalism, Skinning and Fishing recipe rows to the character's skills", function()
+    local idx = A.NewIndex({ { 70, "Herbalism", 1, 300, 1, 1, 5, "Herb row", "100:1" }, { 71, "Fishing", 1, 300, 1, 1, 5, "Fish row", "100:1" },
+      { 72, "Skinning", 1, 300, 1, 1, 5, "Skin row", "100:1" } })
+    local skills = { ["Herb Gathering"] = 40, Fishing = 10 }
+    local u = A.Uses(100, ctx({ index = idx, skills = skills, known = function() return false end }))
+    local st = {}
+    for _, e in ipairs(u.list) do st[e.recipe.name] = e.status end
+    assert.are.equal("learn", st["Herb row"])
+    assert.are.equal("learn", st["Fish row"])
+    assert.are.equal("noprof", st["Skin row"])
+  end)
+
+  it("marks recipes without any source as guessed", function()
+    local idx = A.NewIndex({ { 80, "Alchemy", 1, 300, 1, 1, 5, "No source", "100:1" }, { 81, "Alchemy", 1, 300, 1, 1, 5, "Vendor", "100:1", "v", 40 } })
+    local u = A.Uses(100, ctx({ index = idx, known = function() return false end }))
+    local g = {}
+    for _, e in ipairs(u.list) do g[e.recipe.name] = e.recipe.guessed end
+    assert.is_true(g["No source"])
+    assert.is_false(g["Vendor"])
+  end)
+
+  it("does not recommend a craft whose ingredient cost is only a vendor sell price, and flags it", function()
+    -- recipe 1 needs item 100 x2 and item 200 x1; make item 200 (a vial) have no AH price, vendor sell 1c.
+    local c = ctx({ price = function(id) local p = ({ [100] = { 100, 0 }, [300] = { 1000, 0 } })[id]; if p then return p[1], p[2] end end,
+      vendor = function(id) return ({ [100] = 10, [200] = 1 })[id] end })
+    local e = A.Evaluate(A.NewIndex(rows).byMat[200][1], c)
+    assert.is_true(e.uncertain)
+    local d = A.Decide({ id = 100, count = 5 }, c)
+    assert.are_not.equal("craft", d.action)
+    assert.are.equal("Potion", d.maybe)
+    -- once the vendor BUY price is known (40c), the cost is certain and the craft is recommended
+    c.buy = function(id) if id == 200 then return 40 end end
+    local e2 = A.Evaluate(A.NewIndex(rows).byMat[200][1], c)
+    assert.is_false(e2.uncertain)
+    assert.are.equal(2 * 95 + 40, e2.cost) -- 230
+    assert.are.equal("craft", A.Decide({ id = 100, count = 5 }, c).action)
+  end)
+
   it("recommends disenchanting gear when it beats selling", function()
     -- item 500: AH 50c -> 47.5 net, vendor 20. Disenchant 1000c -> 950 net. 950 > 47.5
     local d = A.Decide({ id = 500, count = 1, gear = true }, ctx({ disenchant = function() return 1000 end }))
