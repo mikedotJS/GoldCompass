@@ -1261,20 +1261,60 @@ describe("Leveling.Roadmap", function()
 
   it("the owner's case: the first step is the belt x2 from the bag, then the gloves", function()
     local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }))
-    assert.are.same({ "Belt x2 75>77 bag", "Gloves x2 77>79 bag" }, { names(r)[1], names(r)[2] })
+    assert.are.equal("Belt x2 75>77 bag", names(r)[1])
+    assert.are.equal("Gloves", r.steps[2].rec.name)
     assert.are.equal(0, r.steps[1].d)                       -- the belt is orange at the start
     assert.are.equal(1, r.steps[2].d)                       -- the gloves are yellow
+  end)
+
+  it("C: the bag part and the part with missing reagents of one recipe are one step, with the bag part counted", function()
+    local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }))
+    assert.are.equal(2, r.steps[2].bagTimes)                -- the 2 gloves the leather left allows
+    assert.is_true(r.steps[2].times > 2)                    -- then more with what is missing
+    assert.are.equal("missing", r.steps[2].state)
+    for i = 2, #r.steps do
+      assert.is_false(r.steps[i].kind == "craft" and r.steps[i - 1].kind == "craft" and r.steps[i].rec == r.steps[i - 1].rec)
+    end
+  end)
+
+  it("A: a step must move the skill range; a craft worth less than one point is dropped", function()
+    -- gold craft G: 3 leather, chance 0.25 at 130; the bag holds one craft (0.25 point, rounds to nothing); K is leaner but needs thread
+    local G = { id = 11, name = "G", d = 2, out = 111, oq = 1, mats = { { 10, 3 } } }
+    local K = { id = 12, name = "K", d = 2, out = 112, oq = 1, mats = { { 20, 1 } } }
+    local thr = { [11] = { 50, 100, 115, 140 }, [12] = { 50, 90, 140, 150 } }
+    local prof, c, o = setup({ [10] = 3 }, { skill = 130, max = 300, recipes = { [11] = G, [12] = K } })
+    o.thresholds = function(id) return thr[id] end
+    local r = V.Roadmap(prof, c, o)
+    assert.is_true(#r.steps >= 1)
+    assert.are.equal("K", r.steps[1].rec.name)
+    for _, st in ipairs(r.steps) do assert.is_true(st.kind ~= "craft" or st.to > st.from) end
+  end)
+
+  it("B: the skill allows the next rank and it is not learned: the first step is the rank, and the roadmap goes on past the old cap", function()
+    local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }, { skill = 61, max = 75 }))
+    assert.are.equal("rank", r.steps[1].kind)
+    assert.are.equal("Journeyman", r.steps[1].rank)
+    assert.is_true(r.rankNow)
+    assert.is_true(r.steps[#r.steps].to == nil or r.steps[#r.steps].to > 75 or #r.steps >= 2)
+  end)
+
+  it("B: below the rank's skill there is no rank step, the next rank is only announced", function()
+    local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }, { skill = 40, max = 75 }))
+    assert.is_nil(r.rankNow)
+    assert.are.equal("Journeyman", r.nextRank)
+    assert.are.equal(50, r.rankAt)
+    for _, st in ipairs(r.steps) do assert.are_not.equal("rank", st.kind) end
   end)
 
   it("the bag is consumed across steps: what the belt took is not there for the gloves", function()
     -- 12 leather: the belts take 6, so only 2 gloves (3 each) fit; without that sharing the gloves would be x4
     local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }))
-    assert.are.equal(2, r.steps[2].times)
+    assert.are.equal(2, r.steps[2].bagTimes)
   end)
 
   it("when the bag runs out the step is the best recipe overall with what is missing, and says where to get it", function()
     local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }))
-    local s = r.steps[3]
+    local s = r.steps[2]
     assert.are.equal("missing", s.state)
     assert.are.equal("Gloves", s.rec.name)
     assert.are.equal(10, s.missing[1].item)
@@ -1301,8 +1341,10 @@ describe("Leveling.Roadmap", function()
   end)
 
   it("stops at 5 steps", function()
-    local r = V.Roadmap(setup({ [10] = 500, [20] = 500 }, { learn = { { rec = POUCH, recommend = true } }, max = 300 }))
-    assert.is_true(#r.steps <= 5)
+    local prof, c, o = setup({ [10] = 500, [20] = 500 }, { learn = { { rec = POUCH, recommend = true } }, max = 300 })
+    o.steps = 2
+    local r = V.Roadmap(prof, c, o)
+    assert.are.equal(2, #r.steps)
     assert.are.equal("steps", r.stopped)
   end)
 
@@ -1321,7 +1363,7 @@ describe("Leveling.Roadmap", function()
   end)
 
   it("no useful recipe and nothing to learn: no step", function()
-    local r = V.Roadmap(setup({}, { skill = 140 }))        -- belt and gloves are gray
+    local r = V.Roadmap(setup({}, { skill = 140, max = 300 }))        -- belt and gloves are gray
     assert.are.equal(0, #r.steps)
     assert.are.equal("none", r.stopped)
   end)

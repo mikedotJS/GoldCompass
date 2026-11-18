@@ -604,8 +604,10 @@ function W.UpdateCraft()
       if st.enabled and c.primary ~= nil then
         if c.primary then l.craft.fill:SetColorTexture(0.6, 0.12, 0.06) else l.craft.fill:SetColorTexture(0.2, 0.07, 0.05) end
       end
-      -- the reason a click does nothing, else the dim line of the step (roadmap: "tout est dans ton sac")
-      l.left:SetText(st.reason ~= "" and ("|cff9d9d9d" .. st.reason .. "|r") or c.sub or "|cff9d9d9d|r")
+      -- roadmap: the dim line of the step stays ("tout est dans ton sac"), the reason a click does nothing goes to the button tooltip;
+      -- the gold view keeps the reason on the line
+      l.craft.reason = st.reason
+      l.left:SetText(c.sub or ("|cff9d9d9d" .. st.reason .. "|r"))
     end
   end
 end
@@ -686,6 +688,14 @@ local function setLines(entries, tail, area)
       l.craft = button(content, "", 150)
       place(l.craft, rect(W.LineWide.r - 150, l.top, W.LineWide.r, l.top + LINE_H), content)
       l.craft:SetScript("OnClick", function(self) if self.entry then W.Craft(self.entry) end end)
+      l.craft:SetScript("OnEnter", function(self)
+        if self.entry and self.entry.sub and self.reason and self.reason ~= "" then
+          GameTooltip:SetOwner(self, "ANCHOR_LEFT")
+          GameTooltip:SetText(self.reason, 1, 1, 1)
+          GameTooltip:Show()
+        end
+      end)
+      l.craft:SetScript("OnLeave", function() GameTooltip:Hide() end)
     end
     if l.craft then
       l.craft.entry = e and e.craft or nil
@@ -966,20 +976,22 @@ local DIFF_COLOUR = { [0] = "|cffff8040", [1] = "|cffffff00", [2] = "|cff40c040"
 local function addRoadmap(entries, p)
   local r = p.road
   local rank = r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
+  local function zoneOf(target) return target and (ns.ZoneLabel(target) or target.zone) end
   if r.capped then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. (rank and S.road_capped:format(rank) or S.road_max) .. "|r",
       target = rank and r.trainer or nil, recipe = rank }
     return
   end
-  if #r.steps == 0 then
-    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank }
-    return
-  end
-  entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_title .. "|r" }
+  if #r.steps > 0 then entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_title .. "|r" } end
   local primary = true
   for _, s in ipairs(r.steps) do
-    if s.kind == "learn" then
-      local zone = s.target and (ns.ZoneLabel(s.target) or s.target.zone)
+    if s.kind == "rank" then       -- the skill already allows the next rank: it comes first, it lifts the cap
+      local zone = zoneOf(r.trainer)
+      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_rank:format(rank) }
+      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r",
+        target = r.trainer, recipe = rank }
+    elseif s.kind == "learn" then
+      local zone = zoneOf(s.target)
       local source = ns.Fmt.Source(s.rec)
       entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_learn:format(s.name) }
       entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(source, zone) or source) .. "|r",
@@ -988,13 +1000,16 @@ local function addRoadmap(entries, p)
       local range = s.to > s.from and S.road_range:format(s.from, s.to) or tostring(s.from)
       entries[#entries + 1] = { lv = "|cffa89c80" .. range .. "|r", wide = true,
         left = DIFF_COLOUR[s.d] .. ("%s ×%d"):format(s.name, s.times) .. "|r" }
-      if s.state == "bag" and s.learned then      -- the recipe is learned in an earlier step: nothing to craft yet
-        entries[#entries + 1] = { lv = "", wide = true, left = "|cff1eff00" .. S.road_bag .. "|r" }
-      elseif s.state == "bag" then
-        entries[#entries + 1] = { lv = "", left = "", craft = { id = s.craft.id, times = s.times, prof = s.craft.prof, line = s.craft.line,
-          sub = "|cff1eff00" .. S.road_bag .. "|r", primary = primary } }
+      local full = s.state == "bag"
+      -- the part the bag feeds: the button covers it (not for a recipe learned earlier in the roadmap)
+      if s.bagTimes > 0 and not s.learned then
+        entries[#entries + 1] = { lv = "", left = "", craft = { id = s.craft.id, times = s.bagTimes, prof = s.craft.prof, line = s.craft.line,
+          sub = "|cff1eff00" .. (full and S.road_bag or S.road_with_bag:format(s.bagTimes)) .. "|r", primary = primary } }
         primary = false
-      else
+      elseif full then
+        entries[#entries + 1] = { lv = "", wide = true, left = "|cff1eff00" .. S.road_bag .. "|r" }
+      end
+      if not full then
         local line
         local sub, miss = s.subs[1], s.missing[1]
         if sub then line = S.road_first:format(sub.need, sub.name)
@@ -1006,17 +1021,27 @@ local function addRoadmap(entries, p)
       end
     end
   end
+  if #r.steps == 0 and not r.gathering then
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank }
+  end
+  -- the next rank, while the skill does not allow it yet
+  if rank and not r.rankNow then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_next:format(rank, r.rankAt) .. "|r" } end
 end
 
 -- The footer line of the roadmap: the rank that lifts the cap (with its pin once the cap is reached), from the first profession that has one.
 local function roadFooter(res)
-  for _, p in ipairs(res.profs) do
+  local multi = #res.profs > 1
+  for _, p in ipairs(res.profs) do     -- the first profession whose next rank is still ahead
     local r = p.road
     local rank = r and r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
-    if rank then
-      if r.capped then return S.road_capped:format(rank), r.trainer, rank end
-      return S.road_next:format(rank, r.rankAt)
+    if rank and not r.capped and not r.rankNow then
+      return multi and S.road_next_named:format(p.name, rank, r.rankAt) or S.road_next:format(rank, r.rankAt)
     end
+  end
+  for _, p in ipairs(res.profs) do     -- else the first profession at its cap
+    local r = p.road
+    local rank = r and r.capped and r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
+    if rank then return S.road_capped:format(rank), r.trainer, rank end
   end
   return ""
 end

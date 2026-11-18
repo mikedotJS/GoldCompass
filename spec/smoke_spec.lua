@@ -1091,7 +1091,8 @@ describe("profession leveling tab", function()
     local text = lineTexts(ns)
     assert.matches("Alchimie  50/75", text)
     assert.matches("Ton parcours", text)
-    assert.matches("Prochaine étape : rang Compagnon à 50", ns.Window.Footer().text)
+    assert.matches("Apprendre le rang Compagnon", text)              -- skill 50 allows it: the first step, not a footer line
+    assert.are.equal("", ns.Window.Footer().text)
     ns.char.goal = "gold"
     ns.Window.SetTab("job")
     text = lineTexts(ns)
@@ -1188,7 +1189,8 @@ describe("profession leveling tab", function()
     assert.are.equal("plan", res.profs[1].status)
     assert.are.equal(7620, res.profs[1].plan.best.rec.id)
     ns.Window.Toggle(); ns.Window.SetTab("job")
-    assert.matches("Ton parcours", lineTexts(ns))
+    assert.is_nil(lineTexts(ns):find("Plus de recette utile", 1, true))   -- Fishing: a gathering profession, no craft line
+    assert.matches("Pêche  150/300", lineTexts(ns))
     setup({ scanned = true })
     ns = loadAddon()
     ns.char = { learned = {}, profs = {} }
@@ -1290,10 +1292,12 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
     ns.char.goal = "level"
     ns.Window.Toggle(); ns.Window.SetTab("job")
     local text = lineTexts(ns)
-    assert.matches("Potion de soins ×2", text)                       -- 2 orange crafts
-    local sub
-    for _, l in ipairs(ns.Window.Lines()) do if l.craft and l.craft.entry then sub = l.craft.entry.sub end end
-    assert.matches("tout est dans ton sac", sub)                     -- the dim line of the step with the button
+    assert.matches("Potion de soins ×%d+", text)
+    local entry, left
+    for _, l in ipairs(ns.Window.Lines()) do if l.craft and l.craft.entry then entry, left = l.craft.entry, l.left.text end end
+    assert.are.equal(2, entry.times)                                 -- the button covers the 2 crafts the bag allows
+    assert.matches("2 avec ton sac", entry.sub)
+    assert.matches("2 avec ton sac", left)                           -- D: the dim line stays, the stub's "ouvre la fenêtre à la main" does not replace it
     assert.is_false(ns.Window.IsBagBoxShown())
     ns.char.goal = "gold"
     ns.Window.SetTab("job")
@@ -2084,8 +2088,7 @@ describe("Métier tab: objective toggle", function()
   it("defaults to Monter le métier and remembers the choice per character", function()
     local ns = start()
     assert.are.equal("level", ns.Goal())
-    assert.matches("Potion de soins ×2", lineTexts(ns))                                        -- 2 orange crafts beat 5 green ones (1.25)
-    assert.matches("Prochaine étape", ns.Window.Footer().text)
+    assert.matches("Potion de soins ×%d+", lineTexts(ns))                                      -- 2 orange crafts beat 5 green ones (1.25)
     ns.Window.SetGoal("gold")
     assert.are.equal("gold", ns.char.goal)                                                     -- saved with the character
     assert.are.equal("gold", ns.Goal())
@@ -2911,12 +2914,24 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
       assert.is_nil(text():find(word, 1, true), word)
     end
     assert.is_false(ns.Window.IsBagBoxShown())
-    assert.matches("Prochaine étape : rang", plain(ns.Window.Footer().text))
+    assert.matches("rochaine étape : rang", plain(ns.Window.Footer().text))
     assert.is_nil(text():find("Recettes connues", 1, true))                    -- collapsed by default
     ns.Window.recipesOpen = true
     ns.Window.SetTab("job")
     for _, fn in ipairs(timers) do pcall(fn) end
     assert.matches("Recettes connues", text())
+  end)
+
+  it("every profession has its own rank step or rank line", function()
+    local ns = render("level", true)
+    local all = {}
+    for _, l in ipairs(ns.Window.Lines()) do all[#all + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) end
+    local text = table.concat(all, "\n")
+    assert.matches("Cuisine  124/150\n[^\n]*\n[^\n]*", text)
+    assert.matches("Prochaine étape : rang Expert à 125", text)               -- Cooking 124: the rank is still ahead, in its own section
+    assert.matches("Apprendre le rang Compagnon", text)                       -- Leatherworking 61 >= 50: the rank is the first step
+    local first = text:find("Apprendre le rang Compagnon", 1, true)
+    assert.is_true(first < (text:find("Ton parcours", 1, true) or 0) + 60)
   end)
 
   it("gold mode keeps its gold wording", function()

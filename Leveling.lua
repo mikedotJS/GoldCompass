@@ -731,6 +731,7 @@ end
 --   { kind = "craft", rec, d, state = "bag" | "missing", from, to, times, subs = { {item, need} }, missing = { {item, n, how} } } or
 --   { kind = "learn", rec, row, at }.
 V.ROADMAP_STEPS = 5
+V.MIN_CHANCE = 0.2   -- below this a craft is not worth a step (the chance only falls towards gray, it never reaches 0 by crafting)
 
 function V.Roadmap(prof, ctx, opts)
   opts = opts or {}
@@ -755,13 +756,20 @@ function V.Roadmap(prof, ctx, opts)
     rankAt = prof.max and prof.max - 25 or nil }
   result.capped = prof.max ~= nil and start >= prof.max
   if result.capped then result.stopped, result.skillEnd = "cap", result.skill; return result end
+  -- the skill already allows the next rank (cap - 25) and it is not learned: it is the first step, and the cap the rest is simulated to is the
+  -- one that rank gives
+  local steps, step, current = result.steps, nil, nil
+  if result.nextRank and start >= result.rankAt then
+    result.rankNow, cap = true, prof.max + 75
+    steps[1] = { kind = "rank", rank = result.nextRank, at = rounded(start) }
+  end
 
   -- the recipes with a chance of a point at the simulated skill, evaluated against the simulated bag, best first
   local function rank(free)
     local rows = {}
     for _, rec in pairs(known) do
       local e = V.Evaluate(rec, sctx, "level", skill, thOf[rec.id])
-      if e.chance > 0 and e.unitsPerPoint then
+      if e.chance >= V.MIN_CHANCE and e.unitsPerPoint then
         e.craftNow = not free and V.Craftable(rec, owned) >= 1
         rows[#rows + 1] = e
       end
@@ -770,11 +778,11 @@ function V.Roadmap(prof, ctx, opts)
     return rows
   end
   -- the pick among rows: the leanest within 15 % (craftable first), the recipe already being crafted kept while it stays in that window
-  local function pick(rows, current)
+  local function pick(rows, keep)
     local best = V.EasiestWithin(rows)
-    if best and current then
+    if best and keep then
       for _, e in ipairs(rows) do
-        if e.rec.id == current and e.unitsPerPoint <= rows[1].unitsPerPoint * 1.15 then best = e end
+        if e.rec.id == keep and e.unitsPerPoint <= rows[1].unitsPerPoint * 1.15 then best = e end
       end
     end
     return best
@@ -793,7 +801,7 @@ function V.Roadmap(prof, ctx, opts)
       if not learned[rec.id] and not known[rec.id] and row.recommend ~= false and not row.unpriced and not row.rankGated and not row.gray
         and rec.th and rec.learn and rec.learn <= skill and (rec.learn <= cap) then
         local e = V.Evaluate(rec, sctx, "level", math.max(skill, rec.learn), rec.th)
-        if e.chance > 0 and e.unitsPerPoint and (not knownUnits or e.unitsPerPoint < knownUnits * 0.85) then
+        if e.chance >= V.MIN_CHANCE and e.unitsPerPoint and (not knownUnits or e.unitsPerPoint < knownUnits * 0.85) then
           e.craftNow, e.row = false, row
           list[#list + 1] = e
         end
@@ -803,19 +811,10 @@ function V.Roadmap(prof, ctx, opts)
     return list[1]
   end
 
-  local steps, step, current = result.steps, nil, nil
   local function close()
     if not step then return end
     step.to = math.min(rounded(skill), cap)
-    local missing, subs = {}, {}
-    for item, n in pairs(step.short or {}) do
-      if byOut[item] and byOut[item] ~= step.rec then subs[#subs + 1] = { item = item, need = n }
-      else missing[#missing + 1] = { item = item, n = n, how = ctx.how and ctx.how(item) or nil } end
-    end
-    local function order(a, b) if (a.n or a.need) ~= (b.n or b.need) then return (a.n or a.need) > (b.n or b.need) end return a.item < b.item end
-    table.sort(missing, order)
-    table.sort(subs, order)
-    step.missing, step.subs, step.short = missing, subs, nil
+    step.bagTimes = step.state == "bag" and step.times or 0
     steps[#steps + 1] = step
     step = nil
   end
@@ -837,7 +836,7 @@ function V.Roadmap(prof, ctx, opts)
       if e and step and step.rec ~= e.rec then close() end
     end
     if step and not e then close() end
-    if #steps >= maxSteps then break end
+    if #steps >= maxSteps * 3 then break end             -- raw steps: merged and trimmed below
     if not e then
       -- the bag feeds nothing useful: a recipe to learn when it beats the best known one, else the best known one with what is missing
       local free = rank(true)
@@ -872,6 +871,44 @@ function V.Roadmap(prof, ctx, opts)
     end
   end
   close()
+  -- merge neighbours that craft the same recipe (a bag part then a part with missing reagents), then drop the steps that gain no point
+  -- (their range does not move): repeated until nothing changes
+  local function isCraft(x) return x and x.kind == "craft" end
+  local changed = true
+  while changed do
+    changed = false
+    for i = 2, #steps do
+      local a, b = steps[i - 1], steps[i]
+      if isCraft(a) and isCraft(b) and a.rec == b.rec then
+        a.to, a.times, a.bagTimes = b.to, a.times + b.times, a.bagTimes + b.bagTimes
+        a.state = a.bagTimes == a.times and "bag" or "missing"
+        for item, n in pairs(b.short) do a.short[item] = (a.short[item] or 0) + n end
+        table.remove(steps, i)
+        changed = true
+        break
+      end
+    end
+    if not changed then
+      for i, x in ipairs(steps) do
+        if isCraft(x) and x.to <= x.from then table.remove(steps, i); changed = true; break end
+      end
+    end
+  end
+  if #steps > maxSteps then result.stopped = "steps" end
+  while #steps > maxSteps do steps[#steps] = nil end
+  for _, x in ipairs(steps) do
+    if isCraft(x) then
+      local missing, subs = {}, {}
+      for item, n in pairs(x.short) do
+        if byOut[item] and byOut[item] ~= x.rec then subs[#subs + 1] = { item = item, need = n }
+        else missing[#missing + 1] = { item = item, n = n, how = ctx.how and ctx.how(item) or nil } end
+      end
+      local function order(p, q) if (p.n or p.need) ~= (q.n or q.need) then return (p.n or p.need) > (q.n or q.need) end return p.item < q.item end
+      table.sort(missing, order)
+      table.sort(subs, order)
+      x.missing, x.subs, x.short = missing, subs, nil
+    end
+  end
   result.stopped = result.stopped or (skill >= cap and "cap") or (#steps >= maxSteps and "steps") or "none"
   result.skillEnd = math.min(rounded(skill), cap)
   return result

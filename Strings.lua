@@ -143,6 +143,8 @@ ns.S = {
   road_missing = "il te manque %d × %s%s", road_how = " (%s)",
   road_hows = { skin = "à dépecer", herb = "à cueillir", ore = "à miner", vendor = "chez un marchand", ah = "à l'HV" },
   road_learn = "Apprendre %s", road_learn_sub = "%s · %s",
+  road_rank = "Apprendre le rang %s", road_trainer = "entraîneur", road_with_bag = "%d avec ton sac",
+  road_next_named = "%s : prochaine étape : rang %s à %d",
   road_next = "Prochaine étape : rang %s à %d", road_capped = "Plafond atteint : apprends le rang %s",
   road_recipes = "Recettes >", road_recipes_open = "Recettes v", road_recipes_title = "Recettes connues",
   job_others = "Autres recettes connues", job_other_row = "%s |cff9d9d9d· %s|r",
