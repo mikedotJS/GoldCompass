@@ -60,3 +60,10 @@ Use a character with at least one profession (ideally one recipe known), a few i
 
 Spike S4 (zone and level) is the `S4` lines of line 2: the map ID should match the zone you stand in, and each profession line shows its `skillLine` (GoldCompass expects 182 for Herbalism and 186 for Mining; if yours differ, say so, the ranking will think you have no profession).
 Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in one zone and count; send the count.
+
+## Send me the logs (no screenshots needed)
+
+1. Reproduce the problem (for the Auctionator popup, optionally first type `/console taintLog 2` so the game also writes `Logs\taint.log`).
+2. Type `/reload` (the game only writes the log to disk on reload or logout).
+3. Tell Claude "logs". Claude runs `scripts/fetch-logs.sh`, which reads over ssh, without changing anything: the GoldCompass log (chat output, Lua errors, blocked-action events with addon and function, a login header) and the last 40 lines of `taint.log`.
+4. In game, `/gc log` shows the last 20 entries and `/gc log clear` empties the log.
