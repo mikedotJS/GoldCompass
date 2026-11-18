@@ -312,7 +312,7 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local data = ns.char and ns.char.profs[p.name]
   local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end },
     { __index = ctx })
-  return ns.Leveling.Learnable(craftsCache[english], p.skill or 0, own, count, { now = 4, soon = 3 }, knownBest)
+  return ns.Leveling.Learnable(craftsCache[english], p.skill or 0, own, count, nil, knownBest)
 end
 
 -- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).
@@ -353,7 +353,7 @@ function ns.RunLeveling(done)
           -- "Avec mon sac": count what is carried (bags only: no bank, no reagent bank)
           local count = ns.char.onlyBag and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
           entry.filtered = count ~= nil
-          entry.plan = ns.Leveling.Plan(data, ctx, 5, count)
+          entry.plan = ns.Leveling.Plan(data, ctx, nil, count)
           for _, row in ipairs(entry.plan.rows) do row.name = ns.Fmt.RecipeName(row.rec) end
           local almost = entry.plan.almost
           if almost then

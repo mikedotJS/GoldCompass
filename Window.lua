@@ -29,9 +29,9 @@ W.Layout = {
     toMap = rect(PAD, 468, 144, 490), note = rect(152, 466, 348, 492),
   },
   list = { lines = rect(PAD, 52, FRAME_W - PAD, 52 + LINES * LINE_H) },
-  -- Métier tab: the checkbox sits on the first line, which is left empty; the text starts at the second line
-  job = { bagBox = rect(PAD, 52, 230, 52 + LINE_H - 1), bagOff = rect(296, 50, 446, 72),
-    lines = rect(PAD, 52 + LINE_H, FRAME_W - PAD, 52 + LINES * LINE_H) },
+  -- Métier tab: the checkbox and "Voir sans filtre" sit above the scroll area
+  job = { bagBox = rect(PAD, 52, 230, 52 + LINE_H - 1), bagOff = rect(296, 50, 446, 68),
+    lines = rect(PAD, 73, FRAME_W - PAD, 52 + LINES * LINE_H) },
   panel = { panel = rect(PAD, 80, FRAME_W - PAD, 300) },
 }
 
@@ -40,9 +40,11 @@ W.RowParts = {
   rank = rect(0, 2, 18, 28), zone = rect(24, 2, 240, 15), sub = rect(24, 16, 240, 28),
   gph = rect(246, 2, 432, 15), bar = rect(246, 19, 316, 24), age = rect(320, 16, 432, 28),
 }
-W.LineParts = { left = rect(0, 0, 250, LINE_H), right = rect(256, 0, 432, LINE_H) }
+-- The lines of the bags, here and Métier tabs live in a scroll frame: the bar takes SCROLLBAR_W on the right of the slot.
+local SCROLLBAR_W = 20
+W.LineParts = { left = rect(0, 0, 232, LINE_H), right = rect(236, 0, 406, LINE_H) }
 -- Long sentences take the whole line (the right slot is then empty), so coin icons never push them into the figure.
-W.LineWide = rect(0, 0, 432, LINE_H)
+W.LineWide = rect(0, 0, 406, LINE_H)
 
 -- Scale that keeps the whole frame on screen whatever the UI scale makes of UIParent's size.
 function W.FitScale(parentWidth, parentHeight)
@@ -107,6 +109,7 @@ local TABS = {
 }
 
 local f, rows, lines, panel, selected, titleFS
+local scroll, content, scrollKind, contentHeight = nil, nil, nil, 0
 local current, token = "map", 0
 local lastMap, renderMap, jobRefreshPending
 local mapState = "loading" -- loading | off | ready: drives the "Voir sur la carte" button
@@ -124,6 +127,8 @@ end
 W.OpenMap = openMap -- exposed for tests
 function W.Rows() return rows end
 function W.Lines() return lines end
+function W.ContentHeight() return contentHeight end -- height of the scrolled content (rows shown x line height)
+function W.ScrollKind() return scrollKind end
 function W.Footer() return f.footer end
 
 -- Lines of the row tooltip: full name, level range, nodes with their value, price freshness, assumptions.
@@ -307,15 +312,23 @@ local function build()
     W.Refresh()
   end)
 
-  -- bags and here tabs: plain lines, left text and right text
-  lines = {}
-  for i = 1, LINES do
-    local top = L.list.lines.t + (i - 1) * LINE_H
-    local l = { left = text(f, "GameFontHighlightSmall"), right = text(f, "GameFontHighlightSmall", nil, "RIGHT") }
-    place(l.left, rect(L.list.lines.l + W.LineParts.left.l, top, L.list.lines.l + W.LineParts.left.r, top + LINE_H), f)
-    place(l.right, rect(L.list.lines.l + W.LineParts.right.l, top, L.list.lines.l + W.LineParts.right.r, top + LINE_H), f)
-    lines[i] = l
+  -- bags, here and Métier tabs: plain lines (left text, right text) in a scroll frame. The frame is the classic
+  -- UIPanelScrollFrameTemplate (its bar sits right of the slot); without the template a plain scroll frame still scrolls
+  -- with the mouse wheel. Lines are created as needed and recycled by setLines.
+  for _, template in ipairs({ "UIPanelScrollFrameTemplate", false }) do
+    local ok, frame = pcall(CreateFrame, "ScrollFrame", nil, f, template or nil)
+    if ok and frame then scroll, scrollKind = frame, template or "plain ScrollFrame"; break end
   end
+  ns.LogOnce("scroll", "frame", "scroll frame: " .. tostring(scrollKind))
+  content = CreateFrame("Frame", nil, scroll)
+  scroll:SetScrollChild(content)
+  scroll:EnableMouseWheel(true)
+  scroll:SetScript("OnMouseWheel", function(self, delta)
+    local top = math.max(0, self:GetVerticalScrollRange() or 0)
+    self:SetVerticalScroll(math.min(top, math.max(0, (self:GetVerticalScroll() or 0) - delta * LINE_H * 3)))
+  end)
+  scroll:Hide()
+  lines = {}
 
   -- loading / empty / error panel
   panel = CreateFrame("Frame", nil, f)
@@ -379,7 +392,7 @@ end
 
 local function showPanel(title, body, canRetry, loading)
   for _, r in ipairs(rows) do r:Hide() end
-  for _, l in ipairs(lines) do l.left:SetText(""); l.right:SetText("") end
+  scroll:Hide()
   f.subtitle:SetText("")
   f.banner:SetText("")
   panel:Show()
@@ -389,24 +402,40 @@ local function showPanel(title, body, canRetry, loading)
   if loading then panel.pulse:Play() else panel.pulse:Stop() panel.title:SetAlpha(1) end
 end
 
--- Fills the plain lines. entries = { { left, right, head = bool }, ... }; extra entries beyond the pool are summarised.
-local function setLines(entries, tail)
+-- Fills the scrolled lines: every entry then every tail entry, none cut. entries = { { left, right, head, wide }, ... }.
+-- `area` is the slot of the scroll frame (the Métier tab starts lower than the other tabs, under its checkbox).
+-- A recycled line is fully reset (width, font, both texts), so nothing from the previous row leaks.
+local function setLines(entries, tail, area)
   for _, r in ipairs(rows) do r:Hide() end
   panel:Hide()
   panel.pulse:Stop()
-  local room = LINES - #tail
-  local shown = #entries
-  if shown > room then shown = room - 1 end
-  for i = 1, LINES do
-    local l, e = lines[i], nil
-    if i <= shown then e = entries[i]
-    elseif i == shown + 1 and shown < #entries then e = { left = S.bags_more:format(#entries - shown) }
-    elseif i > LINES - #tail then e = tail[i - (LINES - #tail)] end
+  area = area or W.Layout.list.lines
+  local all = {}
+  for _, e in ipairs(entries) do all[#all + 1] = e end
+  for _, e in ipairs(tail) do all[#all + 1] = e end
+  place(scroll, rect(area.l, area.t, area.r - SCROLLBAR_W, area.b), f)
+  contentHeight = #all * LINE_H
+  content:SetSize(area.r - area.l - SCROLLBAR_W, math.max(contentHeight, 1))
+  for i = 1, math.max(#lines, #all) do
+    local l = lines[i]
+    if not l then
+      local top = (i - 1) * LINE_H
+      l = { left = text(content, "GameFontHighlightSmall"), right = text(content, "GameFontHighlightSmall", nil, "RIGHT") }
+      place(l.left, rect(W.LineParts.left.l, top, W.LineParts.left.r, top + LINE_H), content)
+      place(l.right, rect(W.LineParts.right.l, top, W.LineParts.right.r, top + LINE_H), content)
+      lines[i] = l
+    end
+    local e = all[i]
     l.left:SetWidth((e and e.wide) and W.LineWide.r or W.LineParts.left.r)
     l.left:SetFontObject(e and e.head and GameFontNormalSmall or GameFontHighlightSmall)
     l.left:SetText(e and e.left or "")
     l.right:SetText(e and e.right or "")
   end
+  scroll:Show()
+  scroll:SetVerticalScroll(math.min(scroll:GetVerticalScroll() or 0, math.max(0, contentHeight - (area.b - area.t))))
+  -- the bar only when there is something to scroll
+  local bar = scroll.ScrollBar
+  if type(bar) == "table" then bar:SetShown(contentHeight > area.b - area.t) end
 end
 
 local function render(res, kind)
@@ -422,7 +451,7 @@ function renderMap(res)
     local title, body = ns.StateText(res)
     return showPanel(title, body, true)
   end
-  for _, l in ipairs(lines) do l.left:SetText(""); l.right:SetText("") end
+  scroll:Hide()
   panel:Hide()
   panel.pulse:Stop()
   f.subtitle:SetText(ns.SupposedText(res) or S.mine)
@@ -587,7 +616,7 @@ local function renderJob(res)
   f.banner:SetText("")
   local filtered = ns.char.onlyBag
   f.footer:SetText(W.JobFooter(filtered))
-  local entries, nothing = { { left = "" } }, false -- the first line holds the checkbox
+  local entries, nothing = {}, false -- the checkbox sits above the scroll area
   for _, p in ipairs(res.profs) do
     entries[#entries + 1] = { head = true, left = S.job_head:format(p.name, tostring(p.skill or "?"), tostring(p.max or "?")) }
     if p.status == "unseen" then
@@ -603,6 +632,15 @@ local function renderJob(res)
           e.name or ns.Fmt.RecipeName(e.rec), suffix, ns.Money(math.abs(e.perPoint))) .. "|r" }
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
           (e.rec.d == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+        if #plan.rows > 1 then
+          entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_others .. "|r" }
+          for i = 2, #plan.rows do
+            local o = plan.rows[i]
+            local gain = o.perPoint < 0
+            entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.rec.d] or "?"),
+              right = (gain and S.learn_pp_gain or S.learn_pp):format(ns.Money(math.abs(o.perPoint))) }
+          end
+        end
       elseif p.filtered and plan.known > 0 and (plan.craftable or 0) == 0 then
         nothing = true
         entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_nothing_t .. "|r" }
@@ -621,7 +659,7 @@ local function renderJob(res)
     end
   end
   f.bagOff:SetShown(filtered and nothing)
-  setLines(entries, {})
+  setLines(entries, {}, W.Layout.job.lines)
 end
 
 -- Called by Learned.lua when a profession window was read: refresh the leveling tab if it is the one shown.
@@ -675,6 +713,7 @@ function W.SetTab(key)
   f.profBtn:SetShown(key == "map")
   f.bagBox:SetShown(key == "job")
   f.bagOff:Hide()
+  scroll:SetVerticalScroll(0) -- each tab starts at its top
   W.UpdateControls()
   W.Refresh()
 end

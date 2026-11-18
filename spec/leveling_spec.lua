@@ -219,6 +219,17 @@ describe("Leveling recipes to learn", function()
     assert.are.same({ 101 }, ids(r.now)); assert.are.same({}, r.soon)
   end)
 
+  it("lists every learnable recipe: no cap unless a limit is given", function()
+    local many = {}
+    for i = 1, 12 do many[i] = { id = i, learn = 10 + i, out = 30, oq = 1, mats = { { 10, 1 } } } end
+    local r = V.Learnable(many, 50, learnCtx())
+    assert.are.equal(12, #r.now)
+    local soonMany = {}
+    for i = 1, 12 do soonMany[i] = { id = i, learn = 60 + i, out = 30, oq = 1, mats = { { 10, 1 } } } end
+    assert.are.equal(12, #V.Learnable(soonMany, 50, learnCtx()).soon)  -- learn 61..72, all within 25 points
+    assert.are.equal(3, #V.Learnable(many, 50, learnCtx(), nil, { now = 3 }).now)
+  end)
+
   it("uses the vendor sale value of the data when the output has no price", function()
     local c = { { id = 201, learn = 50, out = 40, oq = 1, sell = 500, mats = { { 10, 1 } } } }
     local r = V.Learnable(c, 50, learnCtx())

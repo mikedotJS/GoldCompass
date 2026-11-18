@@ -86,7 +86,6 @@ ns.S = {
   bags_api = "L'API des sacs n'est pas disponible.", bags_loading = "Lecture de ton sac...",
   g_ah = "Vendre à l'HV", g_craft = "Fabriquer / désenchanter", g_keep = "Garder", g_vendor = "Vendre au marchand", g_none = "Sans valeur connue",
   bags_total = "Ton sac vaut environ", bags_total_note = "~ estimation, hors objets gardés",
-  bags_more = "... et %d autres",
 
   -- here tab
   tab_here = "Ici", title_here = "Gold Compass · Ici",
@@ -120,6 +119,7 @@ ns.S = {
   job_almost = "Presque : %s, il manque %s",
   job_detail = "couleur %s · chance d'un point ~%d %% (estimation)%s",
   job_green = " · vert depuis ~%d",
+  job_others = "Autres recettes connues", job_other_row = "%s |cff9d9d9d· %s|r",
   learn_now = "À apprendre maintenant", learn_soon = "Bientôt (dans les %d prochains points)",
   learn_best = "Meilleure à apprendre : %s : coût ~%s par point",
   learn_best_gain = "Meilleure à apprendre : %s : gain ~%s par point",

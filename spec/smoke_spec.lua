@@ -21,6 +21,10 @@ local function proxy()
       if k == "Hide" then self.shown = false end
       if k == "SetShown" then self.shown = a and true or false end
       if k == "IsShown" then return self.shown == true end
+      if k == "SetVerticalScroll" then self.vscroll = a end
+      if k == "GetVerticalScroll" then return self.vscroll or 0 end
+      if k == "GetVerticalScrollRange" then return self.vrange or 0 end
+      if k == "SetSize" then self.size = { a, b } end
       if k:match("^Create") then return proxy() end
       return self
     end
@@ -761,7 +765,17 @@ describe("window layout and drawing", function()
     local controls = { levelBox = L.map.levelBox, profBtn = L.map.profBtn, toMap = L.map.toMap, note = L.map.note }
     assertNoOverlap({ L.common, L.map }, L)
     assertNoOverlap({ L.common, L.list }, L)
+    assertNoOverlap({ L.common, L.job }, L)             -- Métier tab: checkbox, "Voir sans filtre" and the scroll area
     assertNoOverlap({ L.common, L.panel, controls }, L)
+  end)
+
+  it("keeps the lines and the scroll bar inside the scroll slot", function()
+    setup({})
+    local W = loadAddon().Window
+    for _, slot in ipairs({ W.Layout.list.lines, W.Layout.job.lines }) do
+      assert.is_true(W.LineWide.r + 20 <= slot.r - slot.l)       -- 20 px left for the scroll bar
+      assert.is_true(W.LineParts.right.r <= W.LineWide.r)
+    end
   end)
 
   it("keeps the parts of a row and of a list line apart and inside their slot", function()
@@ -1401,5 +1415,96 @@ describe("empty states of the recipes to learn say the real reason", function()
     local text = show(lr({ nowTotal = 4, candidates = 2 }), true)
     assert.matches("cache les recettes à apprendre", text)
     assert.is_nil(text:match("Aucune recette à apprendre"))
+  end)
+end)
+
+describe("scrollable lists (bags, here, Métier)", function()
+  local function lineTexts(ns)
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
+    return table.concat(out, "\n")
+  end
+  local function filled(ns)
+    local n = 0
+    for _, l in ipairs(ns.Window.Lines()) do if (l.left.text or "") ~= "" or (l.right.text or "") ~= "" then n = n + 1 end end
+    return n
+  end
+  -- 30 known recipes, so the tab has far more rows than the 19 lines that used to fit
+  local function big()
+    local recipes = {}
+    for i = 1, 30 do recipes[i] = { id = i, name = "Recette " .. i, d = 0, out = 118, oq = 1, mats = { { 2447, i } } } end
+    return { skill = 50, max = 75, recipes = recipes }
+  end
+  local function start(data)
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = data } }
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    return ns
+  end
+
+  it("produces every row (no cap, no 'et N autres') and the scroll content grows with them", function()
+    local few = start({ skill = 50, max = 75, recipes = { [1] = { id = 1, name = "Potion", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } } } })
+    local fewHeight, fewRows = few.Window.ContentHeight(), filled(few)
+    local ns = start(big())
+    assert.is_true(filled(ns) > 19)                                   -- more than the old fixed pool
+    assert.is_true(ns.Window.ContentHeight() > fewHeight)
+    assert.are.equal(filled(ns) * 17, ns.Window.ContentHeight())      -- one 17 px line per row
+    assert.are.equal(fewRows * 17, fewHeight)
+    assert.is_nil(lineTexts(ns):find("autres", 1, true))
+    for i = 1, 30 do assert.matches("Recette " .. i .. " ", lineTexts(ns) .. " ") end -- every known recipe is listed
+    assert.matches("Autres recettes connues", lineTexts(ns))
+  end)
+
+  it("recycles lines: shrinking the list empties the leftover lines completely", function()
+    local ns = start(big())
+    local many = #ns.Window.Lines()
+    ns.char.profs.Alchimie = { skill = 50, max = 75, recipes = { [1] = { id = 1, name = "Potion", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } } } }
+    ns.Window.Refresh()
+    local lines = ns.Window.Lines()
+    assert.are.equal(many, #lines)                                    -- lines are kept, not destroyed
+    local used = filled(ns)
+    assert.is_true(used < many)
+    for i = used + 1, #lines do
+      assert.are.equal("", lines[i].left.text); assert.are.equal("", lines[i].right.text)
+    end
+  end)
+
+  it("scrolls with the mouse wheel, three lines a notch, clamped to the content", function()
+    local ns = start(big())
+    local frame
+    for _, fr in ipairs(frames) do if fr.scripts.OnMouseWheel then frame = fr end end
+    assert.is_not_nil(frame)
+    frame.vrange = 100
+    frame.scripts.OnMouseWheel(frame, -1)
+    assert.are.equal(51, frame.vscroll)                               -- 3 x 17
+    frame.scripts.OnMouseWheel(frame, -1); frame.scripts.OnMouseWheel(frame, -1)
+    assert.are.equal(100, frame.vscroll)                              -- clamped to the range
+    frame.scripts.OnMouseWheel(frame, 1)
+    assert.are.equal(49, frame.vscroll)
+    frame.vscroll = 0
+    frame.scripts.OnMouseWheel(frame, 1)
+    assert.are.equal(0, frame.vscroll)                                -- never above the top
+  end)
+
+  it("uses the classic scroll template, and a plain scroll frame when the template is missing", function()
+    local ns = start(big())
+    assert.are.equal("UIPanelScrollFrameTemplate", ns.Window.ScrollKind())
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local base = _G.CreateFrame
+    _G.CreateFrame = function(kind, name, parent, template)
+      if template == "UIPanelScrollFrameTemplate" then error("no such template") end
+      return base(kind, name, parent, template)
+    end
+    ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = big() } }
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.are.equal("plain ScrollFrame", ns.Window.ScrollKind())
+    assert.is_true(filled(ns) > 19)
+    local logged = {}
+    for _, e in ipairs(ns.LogRecent(50)) do logged[#logged + 1] = e.text end
+    assert.matches("scroll frame: plain ScrollFrame", table.concat(logged, "\n"))
   end)
 end)

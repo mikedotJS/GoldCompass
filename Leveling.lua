@@ -64,7 +64,7 @@ function V.Craftable(rec, count)
   return times, short
 end
 
--- prof = { skill, max, recipes = { [id] = rec } }. Returns { rows = ranked (cheapest per point first, at most `limit`),
+-- prof = { skill, max, recipes = { [id] = rec } }. Returns { rows = ranked (cheapest per point first, at most `limit` when given),
 -- best, unpriced = { evaluations with a reagent without price and a chance above 0 }, known = number of recipes }.
 function V.Plan(prof, ctx, limit, count)
   local rows, unpriced, known, all = {}, {}, 0, {}
@@ -103,7 +103,7 @@ function V.Plan(prof, ctx, limit, count)
     return a.rec.id < b.rec.id
   end)
   table.sort(unpriced, function(a, b) return a.rec.id < b.rec.id end)
-  while #rows > (limit or 5) do rows[#rows] = nil end
+  while limit and #rows > limit do rows[#rows] = nil end
   return { rows = rows, best = rows[1], unpriced = unpriced, known = known, craftable = craftable, almost = almost }
 end
 
@@ -166,7 +166,7 @@ end
 -- its vendor sell value (ctx.vendor, a floor: `floor` on the row), then is unknown; a recipe with an unknown reagent
 -- is still listed (`unpriced`, no cost per point) after the priced ones. A craft whose output has no market and no
 -- vendor price uses the sale value of the data. The learning fee is unknown and not included.
---   now  = learnable at the current skill; soon = learnable within V.SOON more points (limits: { now = n, soon = n }).
+--   now  = learnable at the current skill; soon = learnable within V.SOON more points (optional limits: { now = n, soon = n }; none by default).
 --   count = optional bag count function: only recipes whose reagents are carried are kept ("Avec mon sac").
 --   knownBest = cost per point of the best KNOWN recipe: when the best learnable one is cheaper, `gain` is the
 --   difference per point (not given when that best recipe relies on a floor price).
@@ -205,8 +205,8 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   end
   table.sort(now, byLearnRank)
   table.sort(soon, byLearnRank)
-  while #now > (limits.now or 4) do now[#now] = nil end
-  while #soon > (limits.soon or 3) do soon[#soon] = nil end
+  while limits.now and #now > limits.now do now[#now] = nil end
+  while limits.soon and #soon > limits.soon do soon[#soon] = nil end
   local best = now[1] and not now[1].unpriced and now[1] or nil
   local gain = (best and not best.floor and knownBest and best.perPoint < knownBest) and (knownBest - best.perPoint) or nil
   return { now = now, soon = soon, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
