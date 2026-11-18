@@ -91,3 +91,15 @@ Spike S6 (is 60 nodes per hour realistic) is separate: gather for 15 minutes in 
 | 44 | Compare the proposed recipe with the colours in the profession window | The colour named on the dim line matches the recipe's colour in the window | Yes / no, and the recipe name |
 | 45 | A profession where a reagent has no auction price and no vendor price | A yellow line `Prix manquant : <objets>` instead of a made-up number | Screenshot |
 | 46 | `/gc log` after opening a profession window | No new error entries | The lines |
+
+## "Avec mon sac" filter (Métier tab)
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 47 | `/gc`, `Métier` tab, tick `Avec mon sac` (same green check box as `Mon niveau seulement`) | Only recipes you can craft right now remain; the best one reads `Monte avec <recette> (avec ton sac, ×N) : ...` where N is the number of crafts your bags allow | Screenshot |
+| 48 | Compare N with your bags | N = the scarcest reagent (owned / needed, rounded down). Bank and reagent bank are NOT counted | Yes / no |
+| 49 | Put a reagent in the bank, or sell it, with the tab open | The list updates within about a second (no flicker, no storm); nothing redraws during combat | What you saw |
+| 50 | Empty your bags of reagents | `Rien à fabriquer avec ton sac pour ce métier.` and a `Voir sans filtre` button that unticks the filter; a dim line `Presque : <recette>, il manque N × <objet>` | Screenshot |
+| 51 | `/reload`, then reopen `/gc` | The checkbox is still ticked for this character; another character has its own setting | Yes / no |
+| 52 | Footer with the filter on | Mentions `Composants du sac valorisés au prix du marché` (owned reagents are still priced at market value) | Yes / no |
+| 53 | Tick the filter on a profession not read yet | Still `Ouvre la fenêtre de <métier> une fois` | Screenshot |

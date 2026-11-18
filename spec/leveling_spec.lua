@@ -79,3 +79,54 @@ describe("Leveling.Plan", function()
     assert.are.equal(0, plan.known)
   end)
 end)
+
+describe("Leveling bag counts", function()
+  -- recipe A needs 2 x 10 and 1 x 20; recipe B needs 1 x 10; recipe C needs 3 x 20 (reagent 20: vendor 30c, 10: AH 100c)
+  local function prof()
+    return { skill = 50, max = 75, recipes = {
+      [1] = { id = 1, d = 0, out = 30, oq = 1, mats = { { 10, 2 }, { 20, 1 } } },
+      [2] = { id = 2, d = 0, out = 30, oq = 1, mats = { { 10, 1 } } },
+      [3] = { id = 3, d = 0, out = 30, oq = 1, mats = { { 20, 3 } } },
+    } }
+  end
+  local function counts(t) return function(id) return t[id] or 0 end end
+
+  it("crafts min over reagents of floor(owned / needed) times and lists what is short", function()
+    local rec = prof().recipes[1]
+    local n, short = V.Craftable(rec, counts({ [10] = 5, [20] = 2 })) -- floor(5/2) = 2 ; floor(2/1) = 2
+    assert.are.equal(2, n); assert.are.same({}, short)
+    n, short = V.Craftable(rec, counts({ [10] = 5, [20] = 1 }))        -- min(2, 1) = 1
+    assert.are.equal(1, n)
+    n, short = V.Craftable(rec, counts({ [10] = 1, [20] = 0 }))        -- 0 ; short 1 x 10 and 1 x 20
+    assert.are.equal(0, n); assert.are.same({ { 10, 1 }, { 20, 1 } }, short)
+  end)
+
+  it("treats a recipe with no known reagent as not craftable", function()
+    assert.are.equal(0, (V.Craftable({ id = 9, mats = {} }, counts({}))))
+  end)
+
+  it("filters to craftable recipes, keeps the sort by cost per point, values owned reagents at market price", function()
+    local plan = V.Plan(prof(), ctx(), 5, counts({ [10] = 5, [20] = 1 })) -- A x1, B x5, C not craftable (3 x 20 > 1)
+    assert.are.equal(2, plan.craftable)
+    assert.are.equal(2, #plan.rows)
+    -- B: 100 - 950 = -850 per point ; A: 230 - 950 = -720 per point -> B first (ascending)
+    assert.are.equal(2, plan.best.rec.id); assert.are.equal(5, plan.best.times)
+    assert.are.equal(-850, plan.best.perPoint)      -- cost is still the market price of the reagent even if owned
+    assert.are.equal(1, plan.rows[2].rec.id); assert.are.equal(1, plan.rows[2].times)
+  end)
+
+  it("without a count function nothing is filtered", function()
+    local plan = V.Plan(prof(), ctx(), 5)
+    assert.are.equal(3, #plan.rows)
+    assert.is_nil(plan.craftable); assert.is_nil(plan.almost)
+  end)
+
+  it("suggests the closest alternative: fewest reagents short, then fewest units", function()
+    -- nothing craftable: A short 1 x 10 and 1 x 20 (2 reagents), B short 1 x 10 (1 reagent), C short 3 x 20 (1 reagent, 3 units)
+    local plan = V.Plan(prof(), ctx(), 5, counts({}))
+    assert.are.equal(0, plan.craftable)
+    assert.is_nil(plan.best)
+    assert.are.equal(2, plan.almost.rec.id)
+    assert.are.same({ { 10, 1 } }, plan.almost.short)
+  end)
+end)

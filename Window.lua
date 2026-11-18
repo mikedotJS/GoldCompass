@@ -29,6 +29,9 @@ W.Layout = {
     toMap = rect(PAD, 468, 144, 490), note = rect(152, 466, 348, 492),
   },
   list = { lines = rect(PAD, 52, FRAME_W - PAD, 52 + LINES * LINE_H) },
+  -- Métier tab: the checkbox sits on the first line, which is left empty; the text starts at the second line
+  job = { bagBox = rect(PAD, 52, 230, 52 + LINE_H - 1), bagOff = rect(296, 50, 446, 72),
+    lines = rect(PAD, 52 + LINE_H, FRAME_W - PAD, 52 + LINES * LINE_H) },
   panel = { panel = rect(PAD, 80, FRAME_W - PAD, 300) },
 }
 
@@ -105,7 +108,7 @@ local TABS = {
 
 local f, rows, lines, panel, selected, titleFS
 local current, token = "map", 0
-local lastMap, renderMap
+local lastMap, renderMap, jobRefreshPending
 local mapState = "loading" -- loading | off | ready: drives the "Voir sur la carte" button
 
 -- Opening the map is a protected UI-panel operation when done through Blizzard's FrameXML (ShowUIPanel is protected in
@@ -121,6 +124,7 @@ end
 W.OpenMap = openMap -- exposed for tests
 function W.Rows() return rows end
 function W.Lines() return lines end
+function W.Footer() return f.footer end
 
 -- Lines of the row tooltip: full name, level range, nodes with their value, price freshness, assumptions.
 function W.RowTooltipLines(row)
@@ -248,27 +252,51 @@ local function build()
     rows[i] = r
   end
 
-  -- map controls: "my level only" checkbox (box + check mark) and a profession selector that cycles
-  f.levelBox = CreateFrame("Button", nil, f)
-  place(f.levelBox, L.map.levelBox, f)
-  local boxEdge = solid(f.levelBox, "BACKGROUND", 0.54, 0.455, 0.22)
-  boxEdge:SetSize(16, 16)
-  boxEdge:SetPoint("LEFT")
-  f.levelBox.boxFill = solid(f.levelBox, "BORDER", 0.04, 0.03, 0.016)
-  f.levelBox.boxFill:SetPoint("TOPLEFT", boxEdge, 1, -1)
-  f.levelBox.boxFill:SetPoint("BOTTOMRIGHT", boxEdge, -1, 1)
-  f.levelBox.check = f.levelBox:CreateTexture(nil, "OVERLAY")
-  f.levelBox.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
-  f.levelBox.check:SetSize(26, 26)
-  f.levelBox.check:SetPoint("CENTER", boxEdge, "CENTER", 0, 0)
-  f.levelBox.label = text(f.levelBox, "GameFontHighlightSmall", { 0.79, 0.73, 0.54 })
-  f.levelBox.label:SetPoint("LEFT", 22, 0)
-  f.levelBox.label:SetSize(190, 16)
-  f.levelBox.label:SetText(S.only_level)
+  -- checkboxes: a box with a real check mark (green when on) and a label
+  local function makeCheck(r, label)
+    local box = CreateFrame("Button", nil, f)
+    place(box, r, f)
+    local frame = solid(box, "BACKGROUND", 0.54, 0.455, 0.22)
+    frame:SetSize(16, 16)
+    frame:SetPoint("LEFT")
+    box.boxFill = solid(box, "BORDER", 0.04, 0.03, 0.016)
+    box.boxFill:SetPoint("TOPLEFT", frame, 1, -1)
+    box.boxFill:SetPoint("BOTTOMRIGHT", frame, -1, 1)
+    box.check = box:CreateTexture(nil, "OVERLAY")
+    box.check:SetTexture("Interface\\Buttons\\UI-CheckBox-Check")
+    box.check:SetSize(26, 26)
+    box.check:SetPoint("CENTER", frame, "CENTER", 0, 0)
+    box.label = text(box, "GameFontHighlightSmall", { 0.79, 0.73, 0.54 })
+    box.label:SetPoint("LEFT", 22, 0)
+    box.label:SetSize(190, 16)
+    box.label:SetText(label)
+    function box:SetOn(on)
+      self.check:SetShown(on)
+      if on then self.boxFill:SetColorTexture(0.1, 0.35, 0.1) else self.boxFill:SetColorTexture(0.04, 0.03, 0.016) end
+      self.label:SetTextColor(on and 1 or 0.79, on and 1 or 0.73, on and 1 or 0.54)
+    end
+    return box
+  end
+  -- map controls: "my level only" checkbox and a profession selector that cycles
+  f.levelBox = makeCheck(L.map.levelBox, S.only_level)
   f.levelBox:SetScript("OnClick", function()
     ns.db.onlyLevel = not ns.db.onlyLevel
     W.UpdateControls()
     if lastMap then renderMap(lastMap) end
+  end)
+  -- Métier tab: "Avec mon sac" (remembered per character) and a way out of the empty state
+  f.bagBox = makeCheck(L.job.bagBox, S.job_bag_box)
+  f.bagBox:SetScript("OnClick", function()
+    ns.char.onlyBag = not ns.char.onlyBag
+    W.UpdateControls()
+    W.Refresh()
+  end)
+  f.bagOff = button(f, S.job_bag_off, L.job.bagOff.r - L.job.bagOff.l)
+  place(f.bagOff, L.job.bagOff, f)
+  f.bagOff:SetScript("OnClick", function()
+    ns.char.onlyBag = false
+    W.UpdateControls()
+    W.Refresh()
   end)
   f.profBtn = button(f, "", L.map.profBtn.r - L.map.profBtn.l)
   place(f.profBtn, L.map.profBtn, f)
@@ -497,12 +525,15 @@ end
 local function renderJob(res)
   render(res, "job")
   if res.state ~= "ok" then
+    f.bagOff:Hide()
     local title, body = ns.StateText(res)
     return showPanel(title, body, true)
   end
   f.subtitle:SetText("")
   f.banner:SetText("")
-  local entries = {}
+  local filtered = ns.char.onlyBag
+  f.footer:SetText(S.job_footer .. (filtered and (" " .. S.job_footer_bag) or ""))
+  local entries, nothing = { { left = "" } }, false -- the first line holds the checkbox
   for _, p in ipairs(res.profs) do
     entries[#entries + 1] = { head = true, left = S.job_head:format(p.name, tostring(p.skill or "?"), tostring(p.max or "?")) }
     if p.status == "unseen" then
@@ -513,18 +544,28 @@ local function renderJob(res)
       local plan = p.plan
       if plan.best then
         local e = plan.best
-        local amount = ns.Money(math.abs(e.perPoint))
-        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (e.perPoint < 0 and S.job_best_gain or S.job_best):format(e.name or ns.Fmt.RecipeName(e.rec), amount) .. "|r" }
+        local suffix = p.filtered and S.job_bag_suffix:format(e.times or 0) or ""
+        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (e.perPoint < 0 and S.job_best_gain or S.job_best):format(
+          e.name or ns.Fmt.RecipeName(e.rec), suffix, ns.Money(math.abs(e.perPoint))) .. "|r" }
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
           (e.rec.d == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+      elseif p.filtered and plan.known > 0 and (plan.craftable or 0) == 0 then
+        nothing = true
+        entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_nothing_t .. "|r" }
       else
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (plan.known == 0 and S.job_none_known or S.job_no_best) .. "|r" }
+      end
+      if p.almost then
+        local parts = {}
+        for i, m in ipairs(p.almost.missing) do parts[i] = ("%d × %s"):format(m[2], m[1]) end
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_almost:format(p.almost.name, table.concat(parts, ", ")) .. "|r" }
       end
       if #(p.missingNames or {}) > 0 then
         entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_missing:format(table.concat(p.missingNames, ", ")) .. "|r" }
       end
     end
   end
+  f.bagOff:SetShown(filtered and nothing)
   setLines(entries, { { wide = true, left = "|cff9d9d9d" .. S.job_later .. "|r" } })
 end
 
@@ -534,10 +575,8 @@ function W.OnData()
 end
 
 function W.UpdateControls()
-  local on = ns.db.onlyLevel and true or false
-  f.levelBox.check:SetShown(on)
-  if on then f.levelBox.boxFill:SetColorTexture(0.1, 0.35, 0.1) else f.levelBox.boxFill:SetColorTexture(0.04, 0.03, 0.016) end
-  f.levelBox.label:SetTextColor(on and 1 or 0.79, on and 1 or 0.73, on and 1 or 0.54)
+  f.levelBox:SetOn(ns.db.onlyLevel and true or false)
+  f.bagBox:SetOn(ns.char and ns.char.onlyBag and true or false)
   f.profBtn.label:SetText(S.prof_label:format(ns.db.profession and S.prof_names[ns.db.profession] or S.prof_all))
 end
 
@@ -579,6 +618,8 @@ function W.SetTab(key)
   f.note:SetShown(key == "map")
   f.levelBox:SetShown(key == "map")
   f.profBtn:SetShown(key == "map")
+  f.bagBox:SetShown(key == "job")
+  f.bagOff:Hide()
   W.UpdateControls()
   W.Refresh()
 end
@@ -598,5 +639,15 @@ end
 watcher:SetScript("OnEvent", function(_, event)
   if not (f and f:IsShown()) then return end
   if event:sub(1, 13) == "PLAYER_REGEN_" then return updateMapButton() end
+  if event == "BAG_UPDATE_DELAYED" and current == "job" and ns.char and ns.char.onlyBag then
+    -- one redraw per second at most, never in combat
+    if InCombatLockdown() or jobRefreshPending then return end
+    jobRefreshPending = true
+    C_Timer.After(1, function()
+      jobRefreshPending = false
+      if f and f:IsShown() and current == "job" and not InCombatLockdown() then W.Refresh() end
+    end)
+    return
+  end
   if (event == "BAG_UPDATE_DELAYED" and current == "bags") or (event == "ZONE_CHANGED_NEW_AREA" and current == "here") then W.Refresh() end
 end)

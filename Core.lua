@@ -330,8 +330,16 @@ function ns.RunLeveling(done)
           entry.status = "unseen"
         else
           entry.status = "plan"
-          entry.plan = ns.Leveling.Plan(data, ctx, 5)
+          -- "Avec mon sac": count what is carried (bags only: no bank, no reagent bank)
+          local count = ns.char.onlyBag and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
+          entry.filtered = count ~= nil
+          entry.plan = ns.Leveling.Plan(data, ctx, 5, count)
           for _, row in ipairs(entry.plan.rows) do row.name = ns.Fmt.RecipeName(row.rec) end
+          local almost = entry.plan.almost
+          if almost then
+            entry.almost = { name = ns.Fmt.RecipeName(almost.rec), missing = {} }
+            for i, s in ipairs(almost.short) do entry.almost.missing[i] = { ns.ItemName(s[1]), s[2] } end
+          end
           local seen, names = {}, {}
           for i = 1, math.min(3, #entry.plan.unpriced) do
             for _, id in ipairs(entry.plan.unpriced[i].missing) do

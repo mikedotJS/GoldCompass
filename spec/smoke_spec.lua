@@ -82,7 +82,7 @@ local function setup(opts)
   _G.IsShiftKeyDown = function() return false end
   _G.IsAddOnLoaded = function(name) return opts.ledger and name == "ForeverLedger" or false end
   _G.Enum = { TooltipDataType = { Item = 0 } }
-  _G.C_Item = { GetItemCount = function() return 4 end, GetItemInfoInstant = function() return 0, "", "", "", 0, 7 end,
+  _G.C_Item = { GetItemCount = function(id) if opts.counts then return opts.counts[id] or 0 end return 4 end, GetItemInfoInstant = function() return 0, "", "", "", 0, 7 end,
     GetItemQualityByID = function() return 1 end }
   _G.C_Container = {
     GetContainerNumSlots = function(bag) return bag == 0 and 4 or 0 end,
@@ -1100,5 +1100,134 @@ describe("profession leveling tab", function()
     assert.are.equal(42, profs.Alchimie.recipes[2].greenAt) -- seen green earlier: lowered
     assert.is_nil(profs.Alchimie.recipes[1].greenAt)        -- orange: unknown
     assert.are.equal(2, reads)                -- schematics read once per recipe
+  end)
+end)
+
+describe("Avec mon sac (bag filter on the leveling tab)", function()
+  local function lineTexts(ns)
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
+    return table.concat(out, "\n")
+  end
+  -- recipe 1 needs 2 x 2447 (orange), recipe 2 needs 1 x 2447 and 3 x 2448 (green)
+  local alchemy = { skill = 50, max = 75, recipes = {
+    [1] = { id = 1, name = "Potion de soins", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } },
+    [2] = { id = 2, name = "Elixir vert", d = 2, greenAt = 41, out = 118, oq = 1, mats = { { 2447, 1 }, { 2448, 3 } } },
+  } }
+  local function start(opts)
+    opts.scanned, opts.profs = true, { { 171, 50, "Alchimie", 75 } }
+    setup(opts)
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy }, onlyBag = opts.on }
+    return ns
+  end
+  local function bagEvent()
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.BAG_UPDATE_DELAYED and fr.scripts.OnEvent and fr.events.ZONE_CHANGED_NEW_AREA then
+        fr.scripts.OnEvent(fr, "BAG_UPDATE_DELAYED")
+      end
+    end
+  end
+
+  it("shows only what the bags can craft, with the quantity and 'avec ton sac'", function()
+    local ns = start({ on = true, counts = { [2447] = 5 } }) -- recipe 1: floor(5/2) = 2 ; recipe 2 lacks 2448
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = lineTexts(ns)
+    assert.matches("Monte avec Potion de soins %(avec ton sac, ×2%)", text)
+    assert.matches("Composants du sac valorisés au prix du marché", ns.Window.Footer().text)
+  end)
+
+  it("keeps the full list with the filter off, and remembers the checkbox per character", function()
+    local ns = start({ counts = {} })
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.is_nil(lineTexts(ns):match("avec ton sac"))
+    ns.char.onlyBag = true
+    ns.Window.Refresh()
+    assert.matches("Rien à fabriquer avec ton sac", lineTexts(ns))
+    assert.is_true(ns.char.onlyBag)
+  end)
+
+  it("says plainly that nothing can be crafted and suggests the closest recipe with what is missing", function()
+    local ns = start({ on = true, counts = { [2447] = 1, [2448] = 1 } }) -- recipe 1 lacks 1 x 2447 ; recipe 2 lacks 2 x 2448
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local p = res.profs[1]
+    assert.is_nil(p.plan.best)
+    assert.are.equal(0, p.plan.craftable)
+    assert.are.same({ { "Item2447", 1 } }, p.almost.missing) -- fewest reagents short (1), then fewest units
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = lineTexts(ns)
+    assert.matches("Rien à fabriquer avec ton sac pour ce métier", text)
+    assert.matches("Presque : Potion de soins, il manque 1 × Item2447", text)
+  end)
+
+  it("counts bags only: no bank, no reagent bank", function()
+    local calls = {}
+    local ns = start({ on = true })
+    _G.C_Item.GetItemCount = function(id, ...) calls[#calls + 1] = { id, ... }; return 9 end
+    ns.RunLeveling(function() end)
+    assert.is_true(#calls > 0)
+    for _, c in ipairs(calls) do assert.are.same({ false, false, false }, { c[2], c[3], c[4] }) end
+  end)
+
+  it("keeps 'Ouvre la fenêtre' when the profession was not read, filter on", function()
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {}, onlyBag = true }
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.matches("Ouvre la fenêtre de Alchimie une fois", lineTexts(ns))
+  end)
+
+  it("refreshes once on repeated BAG_UPDATE_DELAYED, never in combat, never on another tab", function()
+    local ns = start({ on = true, counts = { [2447] = 5 } })
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local runs, real = 0, ns.RunLeveling
+    ns.RunLeveling = function(...) runs = runs + 1; return real(...) end
+    local function flush() local t = timers; timers = {}; for _, fn in ipairs(t) do fn() end end
+    timers = {}
+    for _ = 1, 20 do bagEvent() end
+    assert.are.equal(1, #timers)                    -- one redraw scheduled, not twenty
+    flush()
+    assert.are.equal(1, runs)
+    _G.InCombatLockdown = function() return true end
+    for _ = 1, 3 do bagEvent() end
+    flush()
+    assert.are.equal(1, runs)                       -- nothing in combat
+    _G.InCombatLockdown = function() return false end
+    ns.Window.SetTab("map")
+    runs = 0
+    bagEvent(); flush()
+    assert.are.equal(0, runs)                       -- not on the Carte tab
+  end)
+
+  it("draws nothing when the timer fires in combat", function()
+    local ns = start({ on = true, counts = { [2447] = 5 } })
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local runs, real = 0, ns.RunLeveling
+    ns.RunLeveling = function(...) runs = runs + 1; return real(...) end
+    timers = {}
+    bagEvent()                                       -- scheduled out of combat...
+    _G.InCombatLockdown = function() return true end
+    for _, fn in ipairs(timers) do fn() end          -- ...but fires in combat
+    assert.are.equal(0, runs)
+  end)
+
+  it("the checkbox turns the filter on and remembers it; the empty-state button turns it off", function()
+    local ns = start({ counts = {} })
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local function click(label)
+      for _, fr in ipairs(frames) do
+        if fr.label and fr.label.text == label and fr.scripts.OnClick then fr.scripts.OnClick(fr); return fr end
+      end
+      error("no control " .. label)
+    end
+    click("Avec mon sac")
+    assert.is_true(ns.char.onlyBag)
+    assert.matches("Rien à fabriquer avec ton sac", lineTexts(ns))
+    click("Voir sans filtre")
+    assert.is_false(ns.char.onlyBag)
+    assert.is_nil(lineTexts(ns):match("Rien à fabriquer"))
   end)
 end)
