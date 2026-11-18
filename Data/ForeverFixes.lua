@@ -4,7 +4,8 @@
 -- (section 7(b)), see NOTICE and THIRD-PARTY. tools/audit-forever.lua measures the agreement.
 -- gone: listed by the library but not a recipe of the Forever client (never listed); learn: skill needed to learn; th: { yellow, green,
 -- gray } thresholds; oq: crafted quantity (the average when it is random); fee: trainer fee before any reputation discount; feeDoubt:
--- the two sources give trainer fees too far apart to be one price with a discount (the fee shown is not verified).
+-- the two sources give trainer fees too far apart to be one price with a discount (the fee shown is not verified); gatherDoubt:
+-- items of Data/GatherNodes.lua that ForeverDB's gathering data gives to no node (what the node gives is not verified on Forever).
 local _, ns = ...
 ns.ForeverFixes = {
   gone = { [4073] = true, [19804] = true, [1252979] = true, [1252980] = true, [1252981] = true, [1252982] = true, [1252983] = true, [1252984] = true, [1252985] = true, [1252986] = true, [1252987] = true, [1252988] = true, [1252989] = true, [1252990] = true, [1252991] = true, [1252992] = true, [1252993] = true, [1252995] = true, [1252996] = true, [1252997] = true, [1252998] = true, [1252999] = true, [1253000] = true, [1253001] = true, [1253002] = true, [1253003] = true, [1253004] = true, [1253005] = true, [1253006] = true },
@@ -13,4 +14,5 @@ ns.ForeverFixes = {
   oq = { [3931] = 2, [3937] = 3, [3941] = 2, [3946] = 3, [3950] = 3, [3962] = 3, [8339] = 2, [435964] = 3, [435966] = 3, [435971] = 5, [1213573] = 5, [1213578] = 3 },
   fee = { [3861] = 1000, [3871] = 500, [6661] = 2000, [8483] = 500, [8764] = 900, [8770] = 1000, [8774] = 1000, [8791] = 2500, [8804] = 5000, [10003] = 15000, [10007] = 15000, [10548] = 4600, [10552] = 4300, [10556] = 4600, [10558] = 4600, [12048] = 4000, [12050] = 4000, [12061] = 2500, [12067] = 5000, [12069] = 5000, [12070] = 5000, [14810] = 3000, [24654] = 50000, [24655] = 30000 },
   feeDoubt = { [10011] = true, [10015] = true, [10619] = true, [10621] = true, [10630] = true, [10632] = true, [10647] = true, [10650] = true, [12074] = true },
+  gatherDoubt = { [3340] = true, [4278] = true, [5833] = true, [6358] = true, [6359] = true, [13422] = true, [21153] = true },
 }

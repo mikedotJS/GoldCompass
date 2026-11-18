@@ -287,7 +287,9 @@ function W.RowTooltipLines(row)
     or S.unknown_level_tag)
   out[#out + 1] = S.tt_nodes
   for _, d in ipairs(row.detail or {}) do
-    out[#out + 1] = S.tt_per_node:format(ns.ItemName(d.item), ns.Money(d.unit * 2))
+    -- what the node gives is the Classic pairing when ForeverDB's gathering data does not have it: said as such
+    local doubt = ns.ForeverFixes and ns.ForeverFixes.gatherDoubt and ns.ForeverFixes.gatherDoubt[d.item]
+    out[#out + 1] = S.tt_per_node:format(ns.ItemName(d.item), ns.Money(d.unit * 2)) .. (doubt and S.node_unverified or "")
   end
   out[#out + 1] = ns.PriceAgeText(row.maxAge)
   local partial = ns.PartialText({ row })

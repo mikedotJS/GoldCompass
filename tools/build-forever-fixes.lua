@@ -6,9 +6,9 @@
 -- environment (data only). Licence of the data: GPL-3.0 with the attribution term, credit "Data from ForeverDB.net" (see NOTICE).
 local dir = arg[1]
 local F = {}
-for _, f in ipairs({ "Recipes", "Meta" }) do assert(loadfile(dir .. "/" .. f .. ".lua", "t", {}))("ForeverDB", F) end
+for _, f in ipairs({ "Recipes", "Meta", "Gather" }) do assert(loadfile(dir .. "/" .. f .. ".lua", "t", {}))("ForeverDB", F) end
 local ns = {}
-for _, f in ipairs({ "Strings", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs",
+for _, f in ipairs({ "Strings", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/GatherNodes",
   "Data/ForeverNpcs", "ZoneRank", "ForeverDB", "Leveling", "Where" }) do
   assert(loadfile(f .. ".lua"))("GoldCompass", ns)
 end
@@ -45,6 +45,12 @@ for line, english in pairs(LINES) do
   end
 end
 
+-- what a node gives: the items of Data/GatherNodes.lua (hand-maintained, Classic) that ForeverDB's gathering data does not have for
+-- any node (the fishing pools, three quest ores): the pairing node -> item is not verified on Forever
+local gathered, gatherDoubt = {}, {}
+for _, k in pairs(F.gatherData.kinds) do if k.item then gathered[k.item] = true end end
+for _, g in pairs(ns.GatherNodes) do if g.item and not gathered[g.item] then gatherDoubt[g.item] = true end end
+
 local function keys(t) local k = {}; for id in pairs(t) do k[#k + 1] = id end; table.sort(k); return k end
 local function flat(name, t, fmt)
   local parts = {}
@@ -59,7 +65,8 @@ local out = {
   "-- (section 7(b)), see NOTICE and THIRD-PARTY. tools/audit-forever.lua measures the agreement.",
   "-- gone: listed by the library but not a recipe of the Forever client (never listed); learn: skill needed to learn; th: { yellow, green,",
   "-- gray } thresholds; oq: crafted quantity (the average when it is random); fee: trainer fee before any reputation discount; feeDoubt:",
-  "-- the two sources give trainer fees too far apart to be one price with a discount (the fee shown is not verified).",
+  "-- the two sources give trainer fees too far apart to be one price with a discount (the fee shown is not verified); gatherDoubt:",
+  "-- items of Data/GatherNodes.lua that ForeverDB's gathering data gives to no node (what the node gives is not verified on Forever).",
   "local _, ns = ...",
   "ns.ForeverFixes = {",
   flat("gone", gone, function() return "true" end),
@@ -68,10 +75,11 @@ local out = {
   flat("oq", oq, num),
   flat("fee", fee, num),
   flat("feeDoubt", feeDoubt, function() return "true" end),
+  flat("gatherDoubt", gatherDoubt, function() return "true" end),
   "}",
 }
 local h = assert(io.open("Data/ForeverFixes.lua", "w"))
 h:write(table.concat(out, "\n"), "\n")
 h:close()
-print(("fixes written: %d not in the Forever client, %d learn skills, %d threshold sets, %d quantities, %d trainer fees, %d fees in doubt"):format(
-  #keys(gone), #keys(learn), #keys(th), #keys(oq), #keys(fee), #keys(feeDoubt)))
+print(("fixes written: %d not in the Forever client, %d learn skills, %d threshold sets, %d quantities, %d trainer fees, %d fees in doubt, %d node items in doubt"):format(
+  #keys(gone), #keys(learn), #keys(th), #keys(oq), #keys(fee), #keys(feeDoubt), #keys(gatherDoubt)))

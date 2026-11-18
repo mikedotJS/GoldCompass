@@ -534,6 +534,12 @@ describe("review fixes, group B", function()
     assert.matches("niveau 10%-25 %(Classic, non vérifié%)", classic)
     local forever = table.concat(ns.Window.RowTooltipLines({ name = "Zephras", zone = 2521, spots = 3, detail = {} }), "\n")
     assert.matches("niveau 1%-12", forever); assert.is_nil(forever:find("Classic", 1, true))
+    -- what a node gives: a fishing pool's fish is not in ForeverDB's gathering data and is said to be unverified, copper ore is not
+    assert.is_true(ns.ForeverFixes.gatherDoubt[6358]); assert.is_nil(ns.ForeverFixes.gatherDoubt[2770])
+    local nodes = ns.Window.RowTooltipLines({ name = "Les Tarides", zone = 1413, spots = 3, detail = { { item = 6358, unit = 10 }, { item = 2770, unit = 10 } } })
+    local marked = 0
+    for _, line in ipairs(nodes) do if line:find("(non vérifié sur Forever)", 1, true) then marked = marked + 1 end end
+    assert.are.equal(1, marked)
     assert.are.same({ 2521, "Z" }, ns.MapIDs["Zephras Isle"])
   end)
 end)

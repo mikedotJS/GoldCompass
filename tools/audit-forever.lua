@@ -107,6 +107,15 @@ for id, c in pairs(shown) do
     if ours and info.tc then fee(ours >= info.tc, ("%d %s: %d vs %d"):format(id, c.name, ours, info.tc)) end
   end
 end
+-- the rank a trainer recipe asks (the site's table, observed in game) against the bands Classic used: Journeyman from skill 50,
+-- Expert from 125, Artisan from 200 (the caps are 75 / 150 / 225 / 300, which ForeverDB states for every profession)
+local band = tally("2 trainers: rank a trainer recipe asks follows the bands 1-45 / 50-120 / 125-195 / 200-300")
+for id, ft in pairs(ns.ForeverTrainers) do
+  if ft.cost and ft.learn then
+    local expected = ft.learn >= 200 and "Artisan" or ft.learn >= 125 and "Expert" or ft.learn >= 50 and "Journeyman" or "Apprentice"
+    band((ft.rank or "Apprentice") == expected, ("%d: skill %d, rank %s"):format(id, ft.learn, tostring(ft.rank)))
+  end
+end
 local listed, tListed = tally("2 trainers: NPC of the addon's trainer list is a trainer of that profession for ForeverDB")
 local placed = tally("2 trainers: listed trainer has a place seen in Forever")
 for english, list in pairs(ns.NpcTrainers) do
@@ -243,8 +252,10 @@ if sv then
   local aOut, aMats = tally("game: crafted item (addon data vs the owner's profession windows)"), tally("game: reagents (addon data vs the owner's profession windows)")
   local aQty = tally("game: crafted quantity (addon data vs the owner's profession windows)")
   local gQty = tally("game: crafted quantity (ForeverDB vs the owner's profession windows)")
+  local cap = tally("game: a profession's maximum is a rank cap, 75 / 150 / 225 / 300 (the owner's profession windows)")
   for _, char in pairs(db.chars or {}) do
-    for _, p in pairs(char.profs or {}) do
+    for name, p in pairs(char.profs or {}) do
+      if (p.max or 0) > 0 then cap(p.max == 75 or p.max == 150 or p.max == 225 or p.max == 300, ("%s: %s"):format(tostring(name), tostring(p.max))) end
       for id, rec in pairs(p.recipes or {}) do
         local f, c = fdb[id], shown[id]
         local label = ("%d %s"):format(id, tostring(rec.name))

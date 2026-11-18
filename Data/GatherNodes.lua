@@ -10,7 +10,9 @@
 -- fishing data for Forever: pools only exist here once GatherMate2 has recorded them for this player.
 -- Sources: node IDs read in GatherMate2/Constants.lua (master, 2026-11-18); item IDs checked
 -- against the item names in Forever Ledger's ClassicItems.lua (MIT); skill levels are the
--- original Classic requirements and are NOT verified on Forever. The three Forever-only nodes
+-- original Classic requirements. tools/audit-forever.lua compares them with ForeverDB.net's gathering data: 44 of 44 node skills
+-- agree, 46 of 53 node items are gathering items there; the 7 others (fishing pools, three quest ores) are listed in
+-- ns.ForeverFixes.gatherDoubt and shown as "non vérifié sur Forever". The three Forever-only nodes
 -- have no known item ID yet (PLAN.md section 3).
 local _, ns = ...
 

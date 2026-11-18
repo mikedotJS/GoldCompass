@@ -189,5 +189,5 @@ ns.S = {
   -- map controls
   nolevel_t = "Aucune zone à ton niveau", nolevel_p = "Décoche « Mon niveau seulement » pour voir toutes les zones.",
   only_level = "Mon niveau seulement", prof_label = "Métier : %s",
-  prof_all = "Tous", far_tag = "niveau %d-%d", level_classic = " (Classic, non vérifié)",
+  prof_all = "Tous", far_tag = "niveau %d-%d", level_classic = " (Classic, non vérifié)", node_unverified = " (non vérifié sur Forever)",
 }
