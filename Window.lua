@@ -50,6 +50,7 @@ local TABS = {
 
 local f, rows, lines, panel, selected, titleFS
 local current, token = "map", 0
+local lastMap, renderMap
 
 local function openMap(zone)
   local ok = OpenWorldMap and pcall(OpenWorldMap, zone)
@@ -63,7 +64,7 @@ end
 
 local function build()
   f = CreateFrame("Frame", "GoldCompassFrame", UIParent)
-  f:SetSize(480, 470)
+  f:SetSize(480, 520)
   f:SetFrameStrata("HIGH")
   f:SetClampedToScreen(true)
   f:SetMovable(true)
@@ -104,7 +105,7 @@ local function build()
   for i = 1, ROWS do
     local r = CreateFrame("Button", nil, f)
     r:SetSize(452, ROW_H)
-    r:SetPoint("TOPLEFT", 14, -58 - (i - 1) * ROW_H)
+    r:SetPoint("TOPLEFT", 14, -82 - (i - 1) * ROW_H)
     r.sel = solid(r, "BACKGROUND", 0.165, 0.129, 0.063)
     r.sel:SetAllPoints()
     r.sel:Hide()
@@ -134,6 +135,36 @@ local function build()
     r:Hide()
     rows[i] = r
   end
+
+  -- map controls: "my level only" checkbox and a profession selector that cycles All / Herbalism / Mining
+  f.levelBox = CreateFrame("Button", nil, f)
+  f.levelBox:SetSize(220, 16)
+  f.levelBox:SetPoint("TOPLEFT", 14, -58)
+  local boxEdge = solid(f.levelBox, "BACKGROUND", 0.54, 0.455, 0.22)
+  boxEdge:SetSize(12, 12)
+  boxEdge:SetPoint("LEFT")
+  local boxFill = solid(f.levelBox, "BORDER", 0.04, 0.03, 0.016)
+  boxFill:SetPoint("TOPLEFT", boxEdge, 1, -1)
+  boxFill:SetPoint("BOTTOMRIGHT", boxEdge, -1, 1)
+  f.levelBox.mark = solid(f.levelBox, "ARTWORK", 1, 0.82, 0)
+  f.levelBox.mark:SetPoint("TOPLEFT", boxEdge, 3, -3)
+  f.levelBox.mark:SetPoint("BOTTOMRIGHT", boxEdge, -3, 3)
+  local boxLabel = text(f.levelBox, "GameFontHighlightSmall", { 0.79, 0.73, 0.54 })
+  boxLabel:SetPoint("LEFT", 18, 0)
+  boxLabel:SetText(S.only_level)
+  f.levelBox:SetScript("OnClick", function()
+    ns.db.onlyLevel = not ns.db.onlyLevel
+    W.UpdateControls()
+    if lastMap then renderMap(lastMap) end
+  end)
+  f.profBtn = button(f, "", 170)
+  f.profBtn:SetPoint("TOPRIGHT", -14, -55)
+  f.profBtn:SetScript("OnClick", function()
+    local order = { [false] = "Herb Gathering", ["Herb Gathering"] = "Mining", ["Mining"] = false }
+    ns.db.profession = order[ns.db.profession or false] or nil
+    W.UpdateControls()
+    W.Refresh()
+  end)
 
   -- bags and here tabs: plain lines, left text and right text
   lines = {}
@@ -243,7 +274,8 @@ local function render(res, kind)
   f.toMap:SetBusy(kind ~= "map" or res.state ~= "ok")
 end
 
-local function renderMap(res)
+function renderMap(res)
+  lastMap = res
   render(res, "map")
   if res.state ~= "ok" then
     local title, body = ns.StateText(res)
@@ -253,18 +285,23 @@ local function renderMap(res)
   panel:Hide()
   panel.pulse:Stop()
   f.subtitle:SetText(res.supposed and S.hypothetical:format(res.supposed) or S.mine)
+  local shown = ns.VisibleZones(res.all, ns.db.onlyLevel)
   local banner = {}
   if res.anyPartial then banner[#banner + 1] = S.stale_banner end
   if res.ageUnknown then banner[#banner + 1] = S.age_unknown end
   f.banner:SetText(table.concat(banner, " "))
-  local best = res.rows[1].copperPerHour
+  if #shown == 0 then return showPanel(S.nolevel_t, S.nolevel_p, true) end
+  local best = shown[1].copperPerHour
   for i, r in ipairs(rows) do
-    local row = res.rows[i]
+    local row = shown[i]
     if row then
       r.zoneID = row.zone
       r.rank:SetText(i)
       r.zone:SetText(row.name)
+      local info = ns.Zones[row.zone]
       local tags = (row.old and (" · " .. S.tag_old) or "") .. (row.partial and (" · " .. S.tag_partial) or "")
+        .. (info and info[2] > UnitLevel("player") and (" · " .. S.far_tag:format(info[2], info[3])) or "")
+      r:SetAlpha(info and info[2] - UnitLevel("player") > 3 and 0.45 or 1)
       r.sub:SetText(table.concat(row.itemNames, ", ") .. tags)
       r.gph:SetText(S.per_hour:format(ns.Money(row.copperPerHour)))
       r.age:SetText(S.price_age:format(ns.AgeText(row.maxAge)))
@@ -331,6 +368,11 @@ local function renderHere(res)
   setLines(entries, res.hint and { { left = "|cff9d9d9d" .. S.here_hint:format(S.prof_names[res.hint.prof], ns.Money(res.hint.gain)) .. "|r" } } or {})
 end
 
+function W.UpdateControls()
+  f.levelBox.mark:SetShown(ns.db.onlyLevel and true or false)
+  f.profBtn.label:SetText(S.prof_label:format(ns.db.profession and S.prof_names[ns.db.profession] or S.prof_all))
+end
+
 function W.Refresh()
   if not f then return end
   token = token + 1
@@ -340,7 +382,7 @@ function W.Refresh()
   local function guard(fn) return function(res) if mine == token then fn(res) end end end
   if current == "map" then
     showPanel(S.loading_t, S.loading_p, false, true)
-    ns.Run(guard(renderMap))
+    ns.Run(guard(renderMap), { profession = ns.db.profession })
   elseif current == "bags" then
     showPanel(S.loading_t, S.bags_loading, false, true)
     ns.RunBags(guard(renderBags))
@@ -362,6 +404,9 @@ function W.SetTab(key)
   end
   f.toMap:SetShown(key == "map")
   f.note:SetShown(key == "map")
+  f.levelBox:SetShown(key == "map")
+  f.profBtn:SetShown(key == "map")
+  W.UpdateControls()
   W.Refresh()
 end
 

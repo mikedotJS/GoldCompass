@@ -55,16 +55,14 @@ end
 -- neither gathering profession. `only` restricts to one node type ("Mining" or "Herb Gathering").
 local function gatherSkills(only)
   local real = ns.Skills()
-  local skills = { ["Mining"] = real["Mining"], ["Herb Gathering"] = real["Herb Gathering"] }
-  local supposed
-  if not next(skills) then
-    supposed = math.min(300, 5 * UnitLevel("player"))
-    skills = { ["Mining"] = supposed, ["Herb Gathering"] = supposed }
-  end
+  local supposed = math.min(300, 5 * UnitLevel("player"))
   if only then
-    for k in pairs(skills) do if k ~= only then skills[k] = nil end end
+    if real[only] then return { [only] = real[only] } end
+    return { [only] = supposed }, supposed
   end
-  return skills, supposed
+  local skills = { ["Mining"] = real["Mining"], ["Herb Gathering"] = real["Herb Gathering"] }
+  if next(skills) then return skills end
+  return { ["Mining"] = supposed, ["Herb Gathering"] = supposed }, supposed
 end
 
 -- Context for the pure Advice module, read from the game.
@@ -237,6 +235,17 @@ function ns.RunHere(done)
       done(here)
     end)
   end)
+end
+
+-- Zones to show on the map tab: with "my level only", zones whose lowest level is more than 4 above the character are left out.
+function ns.VisibleZones(all, onlyLevel)
+  local level, list = UnitLevel("player"), {}
+  for _, row in ipairs(all) do
+    local info = ns.Zones[row.zone]
+    if not (onlyLevel and info and info[2] - level > 4) then list[#list + 1] = row end
+    if #list == ns.TOP then break end
+  end
+  return list
 end
 
 local function printMap()

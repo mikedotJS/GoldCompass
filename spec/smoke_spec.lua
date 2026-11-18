@@ -167,6 +167,24 @@ describe("addon glue (stubbed WoW API)", function()
     assert.are.equal("here_nodata", res.state)
   end)
 
+  it("applies the profession filter and the level filter", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = {}
+    local res
+    ns.Run(function(r) res = r end, { profession = "Mining" })
+    assert.are.equal("ok", res.state)
+    assert.are.equal(1, #res.all) -- only Zone1411 has Mining spots in the stub data
+    assert.are.equal(100, res.supposed) -- no profession: supposed skill 5 x level 20
+    ns.Run(function(r) res = r end, { profession = "Herb Gathering" })
+    assert.are.equal(1429, res.all[1].zone)
+    -- level filter: Durotar (1-10) stays at level 20; Un'Goro (48-55) is 28 above and goes
+    local rows = { { zone = 1411 }, { zone = 1449 }, { zone = 1 } }
+    assert.are.equal(2, #ns.VisibleZones(rows, true))
+    assert.are.equal(3, #ns.VisibleZones(rows, false))
+    assert.has_no.errors(function() ns.Window.Toggle() end)
+  end)
+
   it("opens the window and renders without error", function()
     setup({ scanned = true })
     local ns = loadAddon()

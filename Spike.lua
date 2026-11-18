@@ -64,5 +64,12 @@ function ns.Spike()
   else
     out("S4 GetProfessions / GetProfessionInfo missing")
   end
+  -- S5: APIs the tooltip, bags and here tabs rely on
+  out("S5 TooltipDataProcessor:", tostring(TooltipDataProcessor ~= nil), " C_Container:", tostring(C_Container ~= nil),
+    " IsPlayerSpell:", tostring(IsPlayerSpell ~= nil), " OpenWorldMap:", tostring(OpenWorldMap ~= nil), " ForeverLedger loaded:",
+    tostring((C_AddOns and C_AddOns.IsAddOnLoaded and C_AddOns.IsAddOnLoaded("ForeverLedger")) or false))
+  if IsPlayerSpell then
+    try("S5 IsPlayerSpell(2329 Elixir of Minor Strength; true only if you know it):", IsPlayerSpell, 2329)
+  end
   out("done. Send back every [spike] line.")
 end

@@ -81,6 +81,7 @@ ns.S = {
     ["Mining"] = "Minage", ["Herb Gathering"] = "Herboristerie" },
 
   -- map controls
+  nolevel_t = "Aucune zone à ton niveau", nolevel_p = "Décoche « Mon niveau seulement » pour voir toutes les zones.",
   only_level = "Mon niveau seulement", prof_label = "Métier : %s",
   prof_all = "Tous", far_tag = "niveau %d-%d",
 }
