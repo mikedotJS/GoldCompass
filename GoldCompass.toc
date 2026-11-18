@@ -4,7 +4,7 @@
 ## Author: GoldCompass
 ## Version: 0.1.0-alpha
 ## SavedVariables: GoldCompassDB
-## OptionalDeps: GatherMate2, Auctionator, ProfessionDB
+## OptionalDeps: GatherMate2, Auctionator
 ## X-TocFile: plain
 ## X-License: MIT
 
@@ -15,10 +15,12 @@ Data\Zones.lua
 Data\Recipes.lua
 Data\Locations.lua
 Data\ForeverTrainers.lua
+Data\ForeverRecipes.lua
 Data\QuestItems.lua
 ZoneRank.lua
 Advice.lua
 Here.lua
+ForeverDB.lua
 Leveling.lua
 Where.lua
 Format.lua

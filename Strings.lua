@@ -133,8 +133,6 @@ ns.S = {
   where_coords = "%s, %s (%.1f, %.1f) : repère indisponible, carte ouverte. Données Classic, à vérifier.",
   where_combat = "Indisponible en combat : %s",
   where_text = "Où l'apprendre : %s (lieu non précis, données Classic).", where_none = "Où l'apprendre : lieu non précis.",
-  learn_nolib = "Installe LibProfessionDB (CurseForge) pour les recettes à apprendre.",
-  learn_notready = "LibProfessionDB n'a pas de données pour ce client : recharge l'interface.",
   learn_gray_title = "Déjà grises à ton niveau (ne font plus monter)", learn_fee = " · apprentissage %s",
   learn_now = "À apprendre maintenant", learn_soon = "Bientôt (dans les %d prochains points)",
   learn_best = "Meilleure à apprendre : %s : coût ~%s par point",

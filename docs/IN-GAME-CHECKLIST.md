@@ -170,17 +170,17 @@ Nothing is required: the Métier tab works from the data without any visit. A vi
 | 91 | Visit the same trainer again after learning a recipe | The recipe disappears from the list (the new visit replaces the old record) | Yes / no |
 | 92 | `Meilleure à apprendre` and `Apprendre X ferait baisser ton coût par point de ~Y` for a recipe with a fee | The figure includes the fee spread over the points the recipe can still give (until it turns gray, about 60 skill points after the skill needed) | Yes / no |
 
-## Recipes to learn from LibProfessionDB (runtime dependency)
+## Recipes to learn (LibProfessionDB data vendored in the addon)
 
-Gold Compass reads the ProfessionDB addon (LibProfessionDB, MIT, by Pimptasty). It must be installed; no trainer visit is needed.
+The Forever recipe data of LibProfessionDB v1.10.1 (MIT, by Pimptasty) is inside Gold Compass (`Data/ForeverRecipes.lua`): the ProfessionDB addon is not needed any more, and no trainer visit is needed.
 
 | # | Type | Expected | Send back |
 |---|---|---|---|
-| 93 | `/gc spike`, read the `S10` lines | `LibProfessionDB: loaded MINOR 14 ready true game Forever recipes <N>`, then one line per profession with its recipe count. `MISSING` if the addon is not installed | The S10 lines |
-| 94 | Disable the ProfessionDB addon, `/reload`, open the `Métier` tab | The known-recipe ranking still works; the learn section says `Installe LibProfessionDB (CurseForge) pour les recettes à apprendre.` | Screenshot |
+| 93 | `/gc spike`, read the `S10` lines | `S10 Forever recipe data (LibProfessionDB v1.10.1), build 1.60.1.70938 recipes 2517 trainer table <N>`, then one line per profession with its recipe count | The S10 lines |
+| 94 | Remove the ProfessionDB folder, `/reload`, open the `Métier` tab | No error, no `Dépendance manquante` for Gold Compass; the learn section works exactly as before | Screenshot |
 | 95 | Travail du cuir 61: `Métier` tab | `Meilleure à apprendre` is a recipe with a known way to get it (trainer, vendor, quest, or a teaching item with an auction price), never a drop. `Bottes élégantes en cuir` (Fine Leather Boots) appears as `butin`, never as `entraîneur` | Screenshot |
 | 96 | Compare with the trainer window (Kamari) | `Petite giberne en cuir` (25) is listed; the three Forever boots (35) are listed too, under `Déjà grises à ton niveau` when they are gray at your skill, with `objet d'apprentissage` as their source. Tell me what the trainer really offers | Screenshot of the trainer and of the tab |
-| 97 | Source labels | `entraîneur` alone when the library's requirement is Forever's own; `entraîneur (non confirmé sur Forever)` otherwise; `objet d'apprentissage : <objet>` with its auction price as the learning cost; `vendeur`, `quête`, `butin`, `conteneur` | Screenshot |
+| 97 | Source labels | `entraîneur · <prix>` (with the rank above Apprenti); `entraîneur (non confirmé sur Forever)` only for a trainer source the Forever table does not cover; `objet d'apprentissage : <objet>` with its auction price as the learning cost; `vendeur`, `quête`, `butin`, `conteneur` | Screenshot |
 | 98 | Colour on a recipe to learn | The colour follows the library's real thresholds (compare with the trainer window colours), not the old +30/+45/+60 estimate | Yes / no |
 | 99 | Recipes granted with the profession or never implemented | Never listed | Yes / no |
 

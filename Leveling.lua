@@ -140,11 +140,11 @@ function V.Crafts(rows, prof)
   return out
 end
 
--- How a recipe can be obtained, from LibProfessionDB (world databases: NOT Forever-verified, except what the library
+-- How a recipe can be obtained, from the vendored LibProfessionDB data (world databases: NOT Forever-verified, except what it
 -- flags as its own). `DB` is the library, `e` the recipe entry, `faction` "A" or "H". Returns
 --   { kind, confirmed, npcs = { English NPC names }, vendorCost = copper | nil, itemID = teaching item | nil }
 -- kind: trainer, vendor, quest, item (a teaching item and no source), container, drop, unknown.
--- Priority: trainer, vendor, quest, item, container, drop. A recipe with no source and no teaching item but a
+-- Priority: trainer, vendor, quest, container, drop, item (a teaching item and no source). A recipe with no source and no teaching item but a
 -- requiredSkill of the client's own (captured at a Forever trainer) is a trainer recipe. `confirmed`: the data is the
 -- client's own, not borrowed from Vanilla (trainer: the required skill; vendor and quest: the sources).
 -- `forever` (ns.ForeverTrainers, in-game observed data of wowforever.be) is the truth about trainers when given: a recipe
@@ -189,12 +189,12 @@ function V.Way(DB, id, e, faction, forever)
   elseif has("quest") then
     way.kind, way.confirmed = "quest", own("sources")
     names("quest")
-  elseif item then
-    way.kind = "item"
   elseif has("container") then
     way.kind = "container"
   elseif has("drop") then
-    way.kind = "drop"
+    way.kind = "drop"                    -- the pattern itself drops (Fine Leather Boots); priced, Learnable turns it into "item"
+  elseif item then
+    way.kind = "item"
   elseif ownSkill and not forever then
     way.kind, way.confirmed = "trainer", true
   else
@@ -203,7 +203,7 @@ function V.Way(DB, id, e, faction, forever)
   return way
 end
 
--- Crafts of a profession (library profession id, e.g. 165 Leatherworking) from LibProfessionDB, in the shape of
+-- Crafts of a profession (skill line, e.g. 165 Leatherworking) from the vendored Forever data (ForeverDB.lua), in the shape of
 -- V.Crafts plus `how` (V.Way). Never-implemented and auto-granted recipes are left out. The colour thresholds
 -- (yellow, green, gray) are the library's, unless its tiers are unanchored (requiredSkill absent or borrowed and
 -- difficulty[1] == 1: a placeholder), then they are left nil and the estimate applies. `fallback(id)` gives a craft of

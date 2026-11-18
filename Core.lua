@@ -346,14 +346,11 @@ local function whereEnv(ctx)
   return env
 end
 
--- Crafts of a profession from LibProfessionDB (a runtime dependency, never vendored): nil + "nolib" when the library is not
--- installed, "notready" when it has no data for this client, nil alone when it has none for this profession.
+-- Crafts of a profession from the vendored Forever data (ForeverDB.lua): nil when it has none for this profession.
 local libCache = {}
 local function libCrafts(p, faction)
-  local DB = LibStub and LibStub("LibProfessionDB-1.0", true)
-  if not DB then return nil, "nolib" end
-  if not (DB.IsReady and DB:IsReady()) then return nil, "notready" end
-  if not (DB.HasProfession and DB:HasProfession(p.line)) then return end
+  local DB = ns.ForeverDB
+  if not DB:HasProfession(p.line) then return end
   local key = p.line .. faction
   if not libCache[key] then
     local english, byId = SKILL_LINES[p.line], {}
@@ -363,12 +360,10 @@ local function libCrafts(p, faction)
   return libCache[key]
 end
 
--- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable): { error = "nolib" | "notready" } when the
--- library is missing, nil when the profession has no recipe data.
+-- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable); nil when it has no recipe data.
 function ns.LearnFor(p, ctx, count, knownBest)
   local english = SKILL_LINES[p.line]
-  local crafts, err = libCrafts(p, ctx.faction)
-  if err then return { error = err } end
+  local crafts = libCrafts(p, ctx.faction)
   if not crafts then return end
   local data = ns.char and ns.char.profs[p.name]
   local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}   -- trainer windows recorded in game

@@ -688,11 +688,6 @@ function W.JobFooter(filtered) return S.job_footer .. (filtered and (" " .. S.jo
 local function addLearn(entries, p)
   local lr, L = p.learn, ns.Leveling
   local function grey(msg) entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. msg .. "|r" } end
-  -- the library is missing or has no data: say how to fix it, the known recipes above still work
-  if lr.error then
-    entries[#entries + 1] = { wide = true, left = "|cffffd100" .. (lr.error == "nolib" and S.learn_nolib or S.learn_notready) .. "|r" }
-    return
-  end
   local function perPoint(e)
     if e.gray then return S.learn_pp_gray end
     if e.unpriced then return S.learn_pp_unknown end

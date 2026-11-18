@@ -32,12 +32,11 @@ local function proxy()
 end
 
 
--- A stand-in for LibProfessionDB-1.0 built from Data/Recipes.lua: the learn skill becomes requiredSkill, the Classic source
--- becomes the library's source kinds. opts.noLib: not installed; opts.libNotReady: no data for this client.
+-- A stand-in for ns.ForeverDB (the vendored data accessor) built from Data/Recipes.lua, used by the "recipes to learn" tests
+-- with opts.stubLib: the learn skill becomes requiredSkill, the Classic source becomes the source kinds.
 local LINE = { [171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting", [202] = "Engineering", [165] = "Leatherworking",
   [197] = "Tailoring", [185] = "Cooking", [129] = "First Aid", [186] = "Mining", [356] = "Fishing", [182] = "Herbalism", [393] = "Skinning" }
 local function libStub(opts)
-  if opts.noLib then return function() end end
   local data = {}
   assert(loadfile("Data/Recipes.lua"))("GoldCompass", data)
   local byProf, rowById = {}, {}
@@ -50,7 +49,8 @@ local function libStub(opts)
     rowById[r[1]] = r
   end
   local DB = { overrides = opts.libOverrides or {} }
-  function DB:IsReady() return not opts.libNotReady end
+  function DB:IsReady() return true end
+  function DB:GetVersion() return "v1.10.1", "1.60.1.70938" end
   function DB:HasProfession(id) return LINE[id] ~= nil end
   function DB:GetRecipes(id) return byProf[LINE[id]] or {} end
   function DB:IsHiddenRecipe(id) return self.overrides.hidden and self.overrides.hidden[id] or false end
@@ -68,7 +68,7 @@ local function libStub(opts)
   function DB:Count() return 2516 end
   function DB:GetGameVersion() return "Forever" end
   function DB:ProfessionCount(id) local n = 0; for _ in pairs(byProf[LINE[id]] or {}) do n = n + 1 end; return n end
-  return function() return DB, 14 end
+  return DB
 end
 
 local function setup(opts)
@@ -84,7 +84,7 @@ local function setup(opts)
   UIParent.GetHeight = function() return opts.screenH or 768 end
   _G.CreateFrame = function() local p = proxy(); frames[#frames + 1] = p; return p end
   _G.C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
-  _G.LibStub = libStub(opts)
+  _G.stubDB = opts.stubLib and libStub(opts) or nil
   _G.date = os.date
   _G.debugstack = function() return "stack line 1\nstack line 2" end
   _G.GetBuildInfo = function() return "1.60.1", "70938", "Nov 14 2026", 16001 end
@@ -172,10 +172,11 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/QuestItems", "ZoneRank", "Advice", "Here", "Leveling", "Where", "Format",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format",
     "Prices", "Nodes", "Core", "Learned", "Trainers", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
+  if _G.stubDB then ns.ForeverDB = _G.stubDB end
   return ns
 end
 
@@ -1863,7 +1864,7 @@ describe("trainer windows recorded in game (owner's case: Kamari, Travail du cui
     ns.RunLeveling(function(r) res = r end)
     local lr = res.profs[1].learn
     local found = {}
-    for _, bucket in ipairs({ lr.now, lr.soon }) do
+    for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do
       for _, e in ipairs(bucket) do found[e.rec.id] = e end
     end
     for id, skill in pairs({ [9062] = 25, [1255143] = 35, [1255144] = 35, [1255146] = 35 }) do
@@ -1900,7 +1901,7 @@ describe("trainer windows recorded in game (owner's case: Kamari, Travail du cui
   end)
 end)
 
-describe("recipes to learn from LibProfessionDB (stubbed library)", function()
+describe("recipes to learn (stubbed recipe data)", function()
   local function lineTexts(ns)
     local out = {}
     for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
@@ -1911,31 +1912,13 @@ describe("recipes to learn from LibProfessionDB (stubbed library)", function()
   local function start(opts)
     opts = opts or {}
     opts.scanned, opts.profs = true, { { 165, 61, "Travail du cuir", 75 } }
+    if opts.stubLib == nil then opts.stubLib = true end
     setup(opts)
     local ns = loadAddon()
     ns.db = { buy = {} }
     ns.char = { learned = {}, profs = { ["Travail du cuir"] = cuir } }
     return ns
   end
-
-  it("missing library: an error line in the learn section with the way out, the known recipes still ranked", function()
-    local ns = start({ noLib = true })
-    local res
-    ns.RunLeveling(function(r) res = r end)
-    assert.are.equal("nolib", res.profs[1].learn.error)
-    assert.is_not_nil(res.profs[1].plan.best)                      -- the known-recipe ranking works
-    ns.Window.Toggle(); ns.Window.SetTab("job")
-    local text = lineTexts(ns)
-    assert.matches("Installe LibProfessionDB %(CurseForge%) pour les recettes à apprendre", text)
-    assert.matches("Monte avec", text)
-    assert.is_nil(text:match("Aucune recette à apprendre"))
-  end)
-
-  it("library without data for this client: its own message", function()
-    local ns = start({ libNotReady = true })
-    ns.Window.Toggle(); ns.Window.SetTab("job")
-    assert.matches("n'a pas de données pour ce client", lineTexts(ns))
-  end)
 
   it("Fine Leather Boots (drop) is listed as a drop, never as a trainer recipe, never recommended", function()
     local ns = start({ libOverrides = { skill = { [2158] = 60 }, sources = { [2158] = { drop = { { id = 2, name = "Mob" }, total = 951 } } } } })
@@ -1984,18 +1967,13 @@ describe("recipes to learn from LibProfessionDB (stubbed library)", function()
     assert.are.equal("objet d'apprentissage : Cuir", ns.Fmt.Source({ src = "i", itemName = "Cuir" }, true))
   end)
 
-  it("/gc spike reports the library: loaded, MINOR, readiness and the Forever recipes of each profession", function()
-    local ns = start()
+  it("/gc spike reports the vendored data: version, build, counts and the recipes of each profession", function()
+    local ns = start({ stubLib = false })     -- the real vendored data
+    ns.db = { buy = {} }
     SlashCmdList.GOLDCOMPASS("spike")
     local chat = table.concat(printed, "\n")
-    assert.matches("S10 LibProfessionDB: loaded MINOR 14", chat)
+    assert.matches("S10 Forever recipe data %(LibProfessionDB v1%.10%.1%), build 1%.60%.1%.70938 recipes 2517 trainer table %d+", chat)
     assert.matches("S10 Travail du cuir %d+ recipes", chat)
-    assert.is_not_nil(ns)
-    local ns2 = start({ noLib = true })
-    printed = {}
-    SlashCmdList.GOLDCOMPASS("spike")
-    assert.matches("S10 LibProfessionDB: MISSING", table.concat(printed, "\n"))
-    assert.is_not_nil(ns2)
   end)
 end)
 

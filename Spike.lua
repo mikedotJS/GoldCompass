@@ -98,17 +98,13 @@ function ns.Spike()
     " C_SuperTrack.SetSuperTrackedUserWaypoint", tostring(C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint ~= nil),
     " C_TradeSkillUI.CraftRecipe", tostring(T and T.CraftRecipe ~= nil), " OpenTradeSkill", tostring(T and T.OpenTradeSkill ~= nil),
     " IsTradeSkillReady", tostring(T and T.IsTradeSkillReady ~= nil))
-  -- S10: LibProfessionDB (runtime dependency): loaded, MINOR, readiness, and its Forever recipes per profession of the player
-  local DB, minor
-  if LibStub then DB, minor = LibStub("LibProfessionDB-1.0", true) end
-  if not DB then
-    out("S10 LibProfessionDB: MISSING (install it from CurseForge: the recipes to learn need it)")
-  else
-    out("S10 LibProfessionDB: loaded MINOR", minor, "ready", tostring(DB.IsReady and DB:IsReady()), "game",
-      tostring(DB.GetGameVersion and DB:GetGameVersion()), "recipes", tostring(DB.Count and DB:Count()))
-    for _, p in ipairs(ns.ProfessionList()) do
-      out("S10", p.name, (DB.ProfessionCount and DB:ProfessionCount(p.line)) or "?", "recipes", "(profession", p.line, ")")
-    end
+  -- S10: the vendored Forever recipe data (LibProfessionDB data): version, build, counts, and per profession of the player
+  local DB = ns.ForeverDB
+  local version, build = DB:GetVersion()
+  out("S10 Forever recipe data (LibProfessionDB", version .. "), build", build, "recipes", DB:Count(),
+    "trainer table", (function() local n = 0; for _ in pairs(ns.ForeverTrainers or {}) do n = n + 1 end; return n end)())
+  for _, p in ipairs(ns.ProfessionList()) do
+    out("S10", p.name, DB:ProfessionCount(p.line), "recipes", "(profession", p.line, ")")
   end
   -- S9: trainer window APIs, and what was recorded
   local recorded = 0
