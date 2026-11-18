@@ -34,11 +34,13 @@ for line, english in pairs(LINES) do
         if r[13] ~= 1 and r[3] > 0 and c.learn ~= r[3] then learn[id] = r[3] end
         if r[4] > 0 and r[5] > 0 and r[6] > 0 and (c.y ~= r[4] or c.g ~= r[5] or c.gr ~= r[6]) then th[id] = { r[4], r[5], r[6] } end
         if r[8] > 0 and c.oq ~= r[8] then oq[id] = r[8] end
-        -- trainer fee: two observers up to 20 % apart saw one price with and without a reputation discount (5 to 20 %): the full price
-        -- is the higher one. Further apart, the two sources really disagree: the site's fee stays, marked as not verified.
+        -- trainer fee: the two sources (the site's table, ForeverDB) are observations. 10 % apart with a round higher price: one
+        -- observer had the Honored discount, the full price is the higher one. Any other gap (5 %, or far apart) has no such
+        -- explanation: the higher fee is shown, so the player is never short, and it is said to be unverified.
         if ft and ft.cost and info.tc and info.tc ~= ft.cost then
           local ratio = math.min(ft.cost, info.tc) / math.max(ft.cost, info.tc)
-          if ratio < 0.8 then feeDoubt[id] = true elseif info.tc > ft.cost then fee[id] = info.tc end
+          if info.tc > ft.cost then fee[id] = info.tc end
+          if math.abs(ratio - 0.9) > 0.002 then feeDoubt[id] = true end
         end
       end
     end
@@ -64,8 +66,9 @@ local out = {
   "-- they differ from what Gold Compass would show from its other sources. Licence of this file's data: GPL-3.0 with an attribution term",
   "-- (section 7(b)), see NOTICE and THIRD-PARTY. tools/audit-forever.lua measures the agreement.",
   "-- gone: listed by the library but not a recipe of the Forever client (never listed); learn: skill needed to learn; th: { yellow, green,",
-  "-- gray } thresholds; oq: crafted quantity (the average when it is random); fee: trainer fee before any reputation discount; feeDoubt:",
-  "-- the two sources give trainer fees too far apart to be one price with a discount (the fee shown is not verified); gatherDoubt:",
+  "-- gray } thresholds; oq: crafted quantity (the average when it is random); fee: ForeverDB's trainer fee where it is the higher of the",
+  "-- two observations; feeDoubt: the two sources give fees that are not one price with the 10 % Honored discount (the higher one is",
+  "-- shown and said to be unverified); gatherDoubt:",
   "-- items of Data/GatherNodes.lua that ForeverDB's gathering data gives to no node (what the node gives is not verified on Forever).",
   "local _, ns = ...",
   "ns.ForeverFixes = {",

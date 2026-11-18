@@ -2673,21 +2673,27 @@ describe("recipes follow the Forever client data where the other sources differ 
           n = n + 1
           assert.are.equal("trainer", c.how.kind); assert.are.equal(fee, c.how.cost)
           local seen = ns.ForeverTrainers[id].cost
-          assert.is_true(fee > seen and seen / fee >= 0.8, id .. ": " .. seen .. " vs " .. fee)
+          assert.is_true(fee > seen, id .. ": " .. seen .. " vs " .. fee)
+          -- 10 % apart is the Honored discount: stated as the price; any other gap is said to be unverified
+          assert.are.equal(math.abs(seen / fee - 0.9) > 0.002, c.how.costDoubt == true, id .. ": " .. seen .. " vs " .. fee)
         end
       end
     end
     assert.is_true(n > 10)
-    -- further apart than any discount, the fee is the site's and is said to be unverified
+    -- a gap no discount explains: the higher of the two fees is shown and said to be unverified
     local by, ns = crafts(197, true)
-    local doubt = next(ns.ForeverFixes.feeDoubt)
-    assert.is_not_nil(doubt)
+    local doubts = 0
     for id in pairs(ns.ForeverFixes.feeDoubt) do
       if by[id] then
-        assert.is_true(by[id].how.costDoubt); assert.are.equal(ns.ForeverTrainers[id].cost, by[id].how.cost)
+        doubts = doubts + 1
+        assert.is_true(by[id].how.costDoubt)
+        assert.are.equal(math.max(ns.ForeverTrainers[id].cost, ns.ForeverFixes.fee[id] or 0), by[id].how.cost)
         assert.matches("%(prix non vérifié%)", ns.Fmt.Source({ id = id, way = by[id].how }, true))
       end
     end
+    assert.is_true(doubts > 0)
+    -- White Swashbuckler's Shirt: the site saw 4s 50c with the discount, the full price is 5s, stated plainly
+    assert.are.equal(450, ns.ForeverTrainers[8483].cost); assert.are.equal(500, by[8483].how.cost); assert.is_nil(by[8483].how.costDoubt)
   end)
 end)
 

@@ -268,7 +268,7 @@ function V.Way(DB, id, e, faction, forever, who, fixes)
     end
   end
   if ft and ft.cost then
-    -- the fee before any reputation discount: the Forever client data's when it is higher than the one the site observed
+    -- the fee before any reputation discount: ForeverDB's observation when it is higher than the one the site observed
     way.kind, way.confirmed, way.cost, way.rank = "trainer", true, math.max(ft.cost, fixes and fixes.fee and fixes.fee[id] or 0), ft.rank
     way.costDoubt = fixes and fixes.feeDoubt and fixes.feeDoubt[id] or nil   -- the sources disagree on the fee: shown as not verified
   elseif not forever and has("trainer") then
