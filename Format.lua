@@ -54,6 +54,22 @@ function F.Where(recipe)
   return S.where_trainer:format(recipe.learn or recipe.skill)
 end
 
+-- Name of a currency: the game's own (C_CurrencyInfo), else the French name known for it, else "monnaie <id>".
+function F.Currency(id)
+  local info = C_CurrencyInfo and C_CurrencyInfo.GetCurrencyInfo and C_CurrencyInfo.GetCurrencyInfo(id)
+  if info and info.name and info.name ~= "" then return info.name end
+  return S.currency_names[id] or ("monnaie " .. tostring(id))
+end
+
+-- What learning a vendor recipe costs, as a short phrase: gold, a currency ("240 Faveur du marchand"), or "prix de la recette inconnu".
+function F.VendorPrice(way)
+  if way.vendorCost then return ns.Money(way.vendorCost) end
+  local c = way.currency
+  if c and c.id then return ("%d %s"):format(c.amount or 0, F.Currency(c.id)) end
+  if c and c.item then return ("%d × %s"):format(c.amount or 0, ns.ItemName and ns.ItemName(c.item) or ("objet " .. c.item)) end
+  return S.price_recipe_unknown
+end
+
 -- Where a recipe to learn comes from, in French ("entraîneur", "vendeur", ...). Classic data, not confirmed on Forever.
 -- `long`: the full wording (trainer not confirmed on Forever, teaching item with its name).
 function F.Source(recipe, long)
@@ -69,6 +85,7 @@ function F.Source(recipe, long)
   if key == "trainer" and way and not way.confirmed and not recipe.trainer then
     return long and S.src_trainer_unc or S.src_trainer_unc_short
   end
+  if key == "v" and way then return S.src_v_price:format(F.VendorPrice(way)) end
   if key == "i" and long and recipe.itemName then return S.src_i_named:format(recipe.itemName) end
   return S["src_" .. key]
 end

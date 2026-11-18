@@ -36,7 +36,11 @@ end
 
 -- Evaluates one recipe. Returns { rec, chance, color, cost, result, net, perPoint, missing = { itemIDs }, noSale, floor }
 -- (floor = a reagent was valued at its vendor sell value, so the cost is a lower bound).
--- net = reagents - best sale value of the output (negative when crafting earns money); perPoint = net / chance.
+-- net = reagents - best sale value of the output (negative when crafting earns money); perPoint = net / chance;
+-- resale = the profit exists only if the crafted item is sold at the auction house; ahSale = the sale value is an AH price
+-- (saleAge: its age in days when known; noAge: the price addon cannot date it, so it may not win a money ranking);
+-- oldAh = an AH price exists but is older than the configured old days (the vendor value is used instead: "prix HV ancien");
+-- profit = -net, the money one craft makes (negative = it costs).
 function V.Evaluate(rec, ctx)
   local chance = V.CHANCE[rec.d] or 0
   local cost, missing, floor = 0, {}, false
@@ -44,14 +48,18 @@ function V.Evaluate(rec, ctx)
     local unit, isFloor = buyCost(m[1], ctx)
     if unit then cost = cost + unit * m[2]; floor = floor or isFloor else missing[#missing + 1] = m[1] end
   end
-  local result, noSale = 0, true
+  local result, noSale, ahSale, saleAge, oldAh = 0, true, false, nil, false
   if rec.out then
-    local unit, kind = ZR.UnitValue(rec.out, ctx.price, ctx.vendor, ZR.DEFAULTS, ctx.ageKnown ~= false)
-    result, noSale = unit * (rec.oq or 1), kind == "none"
+    local unit, kind, age = ZR.UnitValue(rec.out, ctx.price, ctx.vendor, ZR.DEFAULTS, ctx.ageKnown ~= false)
+    result, noSale, ahSale = unit * (rec.oq or 1), kind == "none", kind == "fresh" or kind == "old"
+    if ahSale and ctx.ageKnown ~= false then saleAge = age end
+    oldAh = kind == "stale" and ctx.price(rec.out) ~= nil
   end
   local net = cost - result
   return { rec = rec, chance = chance, color = V.COLOR[rec.d] or "?", cost = cost, result = result, net = net,
-    perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale, floor = floor }
+    perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale, floor = floor,
+    resale = net < 0 and ahSale, ahSale = ahSale, saleAge = saleAge, profit = -net,
+    oldAh = oldAh, noAge = ahSale and ctx.ageKnown == false }
 end
 
 -- How many times the recipe can be crafted from what is carried: min over reagents of floor(owned / needed), and the
@@ -67,15 +75,26 @@ function V.Craftable(rec, count)
   return times, short
 end
 
--- prof = { skill, max, recipes = { [id] = rec } }. Returns { rows = ranked (cheapest per point first, at most `limit` when given),
--- best, unpriced = { evaluations with a reagent without price and a chance above 0 }, known = number of recipes }.
-function V.Plan(prof, ctx, limit, count)
+-- prof = { skill, max, recipes = { [id] = rec } }. Returns { rows = ranked, best, unpriced = { evaluations with a reagent without
+-- price and a chance above 0 }, known = number of recipes }. The goal is to LEVEL the profession: skill points first, money second.
+--   With `count` ("Avec mon sac"): rows are ranked by the skill points expected now (`points` = times craftable x chance),
+--   then by cost per point. `second` = { e, times, points } is the next recipe the leftover bag can craft, given when the
+--   best one gives fewer points than the gap to its next colour change (`thresholds(id)` -> { orange, yellow, green, gray }).
+--   Without it: by colour (orange, yellow, green; gray never), then by cost per point inside a colour.
+--   goal "gold" ("Gagner de l'or"): skill points are ignored, gray recipes are included (they still sell), rows are ranked by
+--   profit per craft, or by total profit (`total` = times craftable x profit) with `count`; `best` needs a profit above 0.
+function V.Plan(prof, ctx, limit, count, thresholds, goal)
+  local gold = goal == "gold"
   local rows, unpriced, known, all = {}, {}, 0, {}
   for _, rec in pairs(prof.recipes or {}) do
     known = known + 1
     local e = V.Evaluate(rec, ctx)
-    if e.chance > 0 then
-      if count then e.times, e.short = V.Craftable(rec, count) end
+    if e.chance > 0 or gold then
+      if count then
+        e.times, e.short = V.Craftable(rec, count)
+        e.points = e.times * e.chance
+        e.total = e.times * e.profit
+      end
       all[#all + 1] = e
       if #e.missing > 0 or not rec.mats or #rec.mats == 0 then unpriced[#unpriced + 1] = e else rows[#rows + 1] = e end
     end
@@ -102,12 +121,47 @@ function V.Plan(prof, ctx, limit, count)
     end
   end
   table.sort(rows, function(a, b)
+    if gold then
+      local ka, kb = count and a.total or a.profit, count and b.total or b.profit
+      if ka ~= kb then return ka > kb end
+      if a.profit ~= b.profit then return a.profit > b.profit end
+      return a.rec.id < b.rec.id
+    end
+    if count then
+      if math.abs(a.points - b.points) > 1e-9 then return a.points > b.points end
+    elseif a.rec.d ~= b.rec.d then
+      return a.rec.d < b.rec.d
+    end
     if a.perPoint ~= b.perPoint then return a.perPoint < b.perPoint end
     return a.rec.id < b.rec.id
   end)
   table.sort(unpriced, function(a, b) return a.rec.id < b.rec.id end)
   while limit and #rows > limit do rows[#rows] = nil end
-  return { rows = rows, best = rows[1], unpriced = unpriced, known = known, craftable = craftable, almost = almost }
+  local best, second = rows[1], nil
+  if gold then                                                    -- money: nothing earning, or priced from an undated AH price, wins
+    best = nil
+    for _, e in ipairs(rows) do if e.profit > 0 and not e.noAge then best = e; break end end
+  end
+  if count and best and not gold then
+    local gap, th = nil, thresholds and thresholds(best.rec.id)
+    for i = 2, 4 do                                  -- skill points until the recipe changes colour
+      local t = th and th[i]
+      if t and t > (prof.skill or 0) and (not gap or t - prof.skill < gap) then gap = t - prof.skill end
+    end
+    if not th or gap then
+      if not gap or best.points < gap then
+        local used = {}
+        for _, m in ipairs(best.rec.mats or {}) do used[m[1]] = m[2] * best.times end
+        local left = function(id) return (count(id) or 0) - (used[id] or 0) end
+        for i = 2, #rows do
+          local times = V.Craftable(rows[i].rec, left)
+          if times >= 1 then second = { e = rows[i], times = times, points = times * rows[i].chance }; break end
+        end
+      end
+    end
+  end
+  return { rows = rows, best = best, second = second, unpriced = unpriced, known = known, craftable = craftable, almost = almost,
+    goal = gold and "gold" or "level" }
 end
 
 -- ---------------------------------------------------------------------------------------------------------------------
@@ -142,7 +196,8 @@ end
 
 -- How a recipe can be obtained, from the vendored LibProfessionDB data (world databases: NOT Forever-verified, except what it
 -- flags as its own). `DB` is the library, `e` the recipe entry, `faction` "A" or "H". Returns
---   { kind, confirmed, npcs = { English NPC names }, vendorCost = copper | nil, itemID = teaching item | nil }
+--   { kind, confirmed, npcs = { English NPC names }, vendorCost = copper | nil, currency = { id | item, amount } | nil (the vendor
+--     asks a currency or an item instead of gold), itemID = teaching item | nil }
 -- kind: trainer, vendor, quest, item (a teaching item and no source), container, drop, unknown.
 -- Priority: trainer, vendor, quest, container, drop, item (a teaching item and no source). A recipe with no source and no teaching item but a
 -- requiredSkill of the client's own (captured at a Forever trainer) is a trainer recipe. `confirmed`: the data is the
@@ -157,7 +212,7 @@ function V.Way(DB, id, e, faction, forever)
   local src = DB.GetRecipeSources and DB:GetRecipeSources(id)
   local function has(kind) local l = src and src[kind]; return l and (l.total or #l) > 0 end
   local item = DB.GetRecipeItem and DB:GetRecipeItem(id)
-  local way = { npcs = {}, itemID = item }
+  local way = { npcs = {}, itemID = item, where = ft and ft.vendor }   -- where: "NPC (Zone)" of wowforever.be
   local wanted = faction == "H" and "Horde" or "Alliance"
   local function names(kind)
     for _, n in ipairs(src[kind]) do
@@ -165,22 +220,35 @@ function V.Way(DB, id, e, faction, forever)
       if n.name and (f == nil or f == wanted) then way.npcs[#way.npcs + 1] = n.name end
     end
   end
+  -- a vendor counts only if one of its vendors can be used by the player's faction (or has none)
+  local function vendorUsable()
+    for _, n in ipairs(src.vendor) do
+      local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
+      if f == nil or f == wanted then return true end
+    end
+  end
   if ft and ft.cost then
     way.kind, way.confirmed, way.cost, way.rank = "trainer", true, ft.cost, ft.rank
   elseif not forever and has("trainer") then
     way.kind, way.confirmed = "trainer", ownSkill
-  elseif has("vendor") then
+  elseif has("vendor") and vendorUsable() then
     way.kind, way.confirmed = "vendor", own("sources")
     names("vendor")
     for _, n in ipairs(src.vendor) do
       local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
       local parts = n.cost or (DB.GetVendorCost and DB:GetVendorCost(id, n.id))
       if (f == nil or f == wanted) and parts then
-        local copper = 0
+        -- parts: { copper = n } (gold) | { currencyID = n, amount = n } | { itemID = n, amount = n }
+        local copper, other = nil, nil
         for _, part in ipairs(parts) do
-          if #part == 1 then copper = copper + part[1] else copper = nil; break end -- a currency or an item: no gold price
+          local gold = part.copper or (#part == 1 and part[1] or nil)
+          if gold then copper = (copper or 0) + gold elseif part.currencyID or part.itemID then other = other or part end
         end
-        if copper and (not way.vendorCost or copper < way.vendorCost) then way.vendorCost = copper end
+        if other then   -- a currency or an item: no gold price (way.currency says what it is)
+          way.currency = way.currency or { id = other.currencyID, item = other.itemID, amount = other.amount }
+        elseif copper and (not way.vendorCost or copper < way.vendorCost) then
+          way.vendorCost = copper
+        end
       end
     end
   elseif ft and ft.vendor and not has("quest") then
@@ -280,6 +348,10 @@ end
 --   count = optional bag count function: only recipes whose reagents are carried are kept ("Avec mon sac").
 --   knownBest = cost per point of the best KNOWN recipe: when the best learnable one is cheaper, `gain` is the
 --   difference per point (not given when that best recipe relies on a floor price).
+-- Goal "gold" (ctx.goal == "gold", "Gagner de l'or"): the rank is money, not skill points. A recipe to learn is worth its profit per
+-- craft minus its learning fee spread over V.GOLD_CRAFTS (10) crafts: `score` (`profit` is the plain profit per craft, negative
+-- when crafting costs). Gray recipes count (they still sell); the best has the highest score. `knownBest` is then minus the best
+-- known profit per craft, so `gain` is the extra money per craft. e.perPoint = -score there, so the lists sort best first.
 -- Library crafts (c.how, see V.Way): the rows say how they are obtained (rec.src, rec.way), what learning costs (rec.fee: the
 -- recorded trainer's fee, the vendor's gold price or the teaching item's auction price) and only a trainer, vendor, quest
 -- or priced teaching item may be recommended; drops and containers are listed, never recommended. Recipes with no known
@@ -289,8 +361,11 @@ end
 -- nowTotal + soonTotal = 0; everything gray: candidates + unpriced = 0; hidden by the bag filter: both lists empty.
 local SRC_OF_KIND = { vendor = "v", quest = "q", item = "i", container = "c", drop = "d" } -- trainer = nil
 
+V.GOLD_CRAFTS = 10
+
 function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   limits = limits or {}
+  local gold = ctx.goal == "gold"
   local now, soon, gray, candidates, unpriced, nowTotal, soonTotal = {}, {}, {}, 0, 0, 0, 0
   for _, c in ipairs(crafts) do
     local offer = ctx.offer and ctx.offer(c.id)
@@ -322,16 +397,21 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       }, { __index = ctx })
       local e = V.Evaluate(rec, own)
       e.recommend = recommend
+      e.priceKnown = (way and way.kind == "quest") or fee ~= nil          -- the price of learning it is known in gold
+      e.useful = math.max(1, (c.gr or at + 60) - math.max(skill, at))      -- skill points it stays useful for from now
       -- a trainer recipe whose rank the character has not trained yet (ctx.maxSkill = profession maximum)
       e.rankGated = ctx.maxSkill and way and way.rank and ctx.maxSkill < (RANK_MAX[way.rank] or 0) or false
-      if e.chance == 0 then
+      if e.chance == 0 and not gold then
         e.gray, e.perPoint = true, nil                          -- gives no skill point any more
       elseif #e.missing > 0 or #c.mats == 0 then
         e.unpriced, e.perPoint = true, nil
         unpriced = unpriced + 1
       else
         candidates = candidates + 1
-        if fee and fee > 0 then
+        if gold then
+          e.score = e.profit - (fee or 0) / V.GOLD_CRAFTS
+          e.perPoint = -e.score
+        elseif fee and fee > 0 then
           local points = math.max(1, (c.gr or at + 60) - math.max(skill, at))
           e.points, e.amortised = points, e.perPoint + fee / points
         end
@@ -352,11 +432,23 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   while limits.now and #now > limits.now do now[#now] = nil end
   while limits.soon and #soon > limits.soon do soon[#soon] = nil end
   local best
-  -- only a known way to get it; a recipe at a rank already trained is preferred to one that first needs the rank
-  for _, gated in ipairs({ false, true }) do
-    for _, e in ipairs(now) do
-      if not best and e.recommend and not e.unpriced and e.rankGated == gated then best = e end
+  -- only a known way to get it; a recipe at a rank already trained is preferred to one that first needs the rank. Then
+  -- orange/yellow before green, the one that stays useful longest (gray threshold - skill), then the cheapest
+  local function better(a, b)
+    if gold then return byCost(a, b) end
+    if (a.rec.d <= 1) ~= (b.rec.d <= 1) then return a.rec.d <= 1 end
+    if a.useful ~= b.useful then return a.useful > b.useful end
+    return byCost(a, b)
+  end
+  -- a recipe whose learning price is known in gold comes before one whose price is unknown (currency, item, not in the data)
+  for _, known in ipairs({ true, false }) do
+    for _, gated in ipairs({ false, true }) do
+      for _, e in ipairs(now) do
+        if e.recommend and not e.unpriced and e.rankGated == gated and e.priceKnown == known and (not best or better(e, best)) then best = e end
+      end
+      if best then break end
     end
+    if best then break end
   end
   local gain = (best and not best.floor and knownBest and rankValue(best) < knownBest) and (knownBest - rankValue(best)) or nil
   return { now = now, soon = soon, gray = gray, best = best, gain = gain, candidates = candidates, unpriced = unpriced,

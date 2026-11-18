@@ -51,10 +51,10 @@ describe("Leveling.Evaluate", function()
 end)
 
 describe("Leveling.Plan", function()
-  it("ranks by cost per point, cheapest first, ties by id, leaving out gray and unpriced recipes", function()
+  it("ranks by colour first (orange, yellow, green), then cost per point, leaving out gray and unpriced recipes", function()
     -- A: 10 x reagent 20 (30c) = 300, out 31 sells 200 -> net 100, orange -> 100 per point
     -- B: 8 x 30 = 240, out 32 sells 180 -> net 60, yellow -> 60 / 0.75 = 80
-    -- C: 5 x 30 = 150, out 33 sells 130 -> net 20, green -> 20 / 0.25 = 80 (ties with B: id 2 before id 3)
+    -- C: 5 x 30 = 150, out 33 sells 130 -> net 20, green -> 20 / 0.25 = 80: colour decides, not the cost per point
     -- D: gray (never listed). E: reagent 99 has no price -> unpriced.
     local prof = { skill = 50, recipes = {
       [1] = { id = 1, d = 0, out = 31, oq = 1, mats = { { 20, 10 } } },
@@ -66,9 +66,9 @@ describe("Leveling.Plan", function()
     local plan = V.Plan(prof, ctx())
     local order = {}
     for i, e in ipairs(plan.rows) do order[i] = e.rec.id end
-    assert.are.same({ 2, 3, 1 }, order)
-    assert.are.equal(80, plan.rows[1].perPoint)
-    assert.are.equal(2, plan.best.rec.id)
+    assert.are.same({ 1, 2, 3 }, order)
+    assert.are.equal(100, plan.rows[1].perPoint)
+    assert.are.equal(1, plan.best.rec.id)
     assert.are.equal(1, #plan.unpriced)
     assert.are.same({ 99 }, plan.unpriced[1].missing)
     assert.are.equal(5, plan.known)
@@ -202,7 +202,7 @@ describe("Leveling recipes to learn", function()
     assert.are.same({ 103, 106 }, ids(r.soon))   -- 106 has an unknown reagent price: listed after the priced one
     assert.are.equal(-850, r.soon[1].perPoint)
     assert.is_true(r.soon[2].unpriced); assert.is_nil(r.soon[2].perPoint)
-    assert.are.equal(101, r.best.rec.id)
+    assert.are.equal(102, r.best.rec.id)         -- orange and useful for longer than 101 (yellow, gray sooner)
     assert.are.equal(3, r.nowTotal)      -- 101, 102, 105 (104 is known, 108 has no learn skill)
     assert.are.equal(2, r.soonTotal)     -- 103, 106
     assert.are.equal(3, r.candidates)    -- priced and above gray: 101, 102, 103
@@ -210,7 +210,7 @@ describe("Leveling recipes to learn", function()
   end)
 
   it("says so when the best recipe to learn beats the best known one, and by how much", function()
-    assert.is_near(133.33, V.Learnable(crafts, 50, learnCtx(), nil, nil, -1000).gain, 0.01)
+    assert.are.equal(250, V.Learnable(crafts, 50, learnCtx(), nil, nil, -500).gain)       -- best 102: -750 vs -500
     assert.is_nil(V.Learnable(crafts, 50, learnCtx(), nil, nil, -2000).gain)
     assert.is_nil(V.Learnable(crafts, 50, learnCtx()).gain)
   end)
@@ -463,12 +463,13 @@ describe("Leveling.Way (how a recipe is obtained, from the library)", function()
 
   it("a vendor: its NPC of the player's faction and its gold price (a currency price has no gold figure)", function()
     local sources = { vendor = { { id = 6, name = "Alliance vendor" }, { id = 7, name = "Horde vendor" }, total = 2 } }
-    local w = way(sources, { cost = { [6] = { { 500 }, { 250 } }, [7] = { { 100 } } }, faction = { [6] = "Alliance", [7] = "Horde" } })
+    local w = way(sources, { cost = { [6] = { { copper = 500 }, { copper = 250 } }, [7] = { { copper = 100 } } }, faction = { [6] = "Alliance", [7] = "Horde" } })
     assert.are.equal("vendor", w.kind)
     assert.are.same({ "Alliance vendor" }, w.npcs)              -- the Horde vendor is not for us
     assert.are.equal(750, w.vendorCost)                          -- 500 + 250 copper
-    w = way(sources, { cost = { [6] = { { 3402, 40 } } }, faction = { [6] = "Alliance", [7] = "Horde" } })
+    w = way(sources, { cost = { [6] = { { currencyID = 3402, amount = 40 } } }, faction = { [6] = "Alliance", [7] = "Horde" } })
     assert.is_nil(w.vendorCost)                                  -- Merchant's Favor: no gold price
+    assert.are.same({ id = 3402, amount = 40 }, w.currency)
   end)
 
   it("a teaching item and no source is an item recipe; nothing at all is unknown unless the skill is the client's own", function()
@@ -675,5 +676,210 @@ describe("Forever trainer table (wowforever.be, in-game observed)", function()
     assert.are.equal(1, V.Learnable(cs, 61, c).best.rec.id)       -- Journeyman trained: the cheapest wins
     c.maxSkill = nil
     assert.are.equal(1, V.Learnable(cs, 61, c).best.rec.id)
+  end)
+end)
+
+describe("Leveling: skill points first, money second (the owner's Leatherworking 61 bag)", function()
+  local function counts(t) return function(id) return t[id] or 0 end end
+  -- reagent 10: AH 100c; reagent 20: vendor 30c; output 30: AH 1000c (950 net); output 32: vendor 180c
+  -- Brassards (id 1): green, 1 x reagent 10 (100c) -> sells 950: profit 850 per craft, 850 / 0.25 = 3400 "per point" (the old winner)
+  -- Gants (id 2): orange, 10 x reagent 20 (300c) -> sells 180: costs 120 per craft and per point
+  local function prof()
+    return { skill = 61, max = 75, recipes = {
+      [1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 10, 1 } } },
+      [2] = { id = 2, d = 0, out = 32, oq = 1, mats = { { 20, 10 } } },
+    } }
+  end
+  local bag = counts({ [10] = 5, [20] = 70 })   -- Brassards x5, Gants x7
+
+  it("with the bag, the recipe with the most expected skill points wins: 7 orange crafts beat 5 green ones", function()
+    local plan = V.Plan(prof(), ctx(), nil, bag)
+    assert.are.equal(2, plan.best.rec.id)
+    assert.are.equal(7, plan.best.times); assert.are.equal(7, plan.best.points)
+    assert.are.equal(1, plan.rows[2].rec.id); assert.are.equal(1.25, plan.rows[2].points)   -- 5 x 0.25
+    assert.are.equal(120, plan.best.perPoint)                                                -- costs money, still wins
+    assert.is_true(plan.rows[2].perPoint < 0)                                                -- the green one "earns" 3400 per point
+  end)
+
+  it("cost per point only breaks a tie of expected points", function()
+    local p = { skill = 61, recipes = {
+      [1] = { id = 1, d = 0, out = 32, oq = 1, mats = { { 20, 10 } } },   -- 120 per point
+      [2] = { id = 2, d = 0, out = 30, oq = 1, mats = { { 10, 1 } } },    -- earns 850 per point
+    } }
+    local plan = V.Plan(p, ctx(), nil, counts({ [10] = 7, [20] = 70 }))   -- both x7 = 7 points
+    assert.are.equal(2, plan.best.rec.id)
+  end)
+
+  it("without the bag, colour comes first: orange, then yellow, then green, gray never", function()
+    local p = { skill = 61, recipes = {
+      [1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 10, 1 } } },    -- green, earns a lot
+      [2] = { id = 2, d = 1, out = 32, oq = 1, mats = { { 20, 10 } } },   -- yellow, costs
+      [3] = { id = 3, d = 0, out = 32, oq = 1, mats = { { 20, 20 } } },   -- orange, costs more
+      [4] = { id = 4, d = 3, out = 30, oq = 1, mats = { { 10, 1 } } },    -- gray
+    } }
+    local order = {}
+    for i, e in ipairs(V.Plan(p, ctx()).rows) do order[i] = e.rec.id end
+    assert.are.same({ 3, 2, 1 }, order)
+    -- a green recipe wins only when no orange or yellow one is priced (reagent 99 has no price)
+    p.recipes[2].mats, p.recipes[3].mats = { { 99, 1 } }, { { 99, 1 } }
+    assert.are.equal(1, V.Plan(p, ctx()).best.rec.id)
+  end)
+
+  it("shows the second-best ('puis') when the best gives fewer points than the gap to its next colour change", function()
+    local th = function() return { 40, 70, 85, 100 } end              -- Gants turn yellow at 70: 9 points from skill 61
+    local plan = V.Plan(prof(), ctx(), nil, bag, th)
+    assert.are.equal(1, plan.second.e.rec.id); assert.are.equal(5, plan.second.times); assert.are.equal(1.25, plan.second.points)
+    -- 7 points >= a gap of 5: the best covers the stretch, no second line
+    assert.is_nil(V.Plan(prof(), ctx(), nil, bag, function() return { 40, 66, 85, 100 } end).second)
+    -- the second one only gets what the best leaves in the bag: the shared reagent 20 is used up by the best
+    local p = prof()
+    p.recipes[1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 20, 7 } } }
+    plan = V.Plan(p, ctx(), nil, counts({ [20] = 77 }), th)           -- Gants x7 (7 points) use 70, 7 left: Brassards x1
+    assert.are.equal(2, plan.best.rec.id); assert.are.equal(1, plan.second.times)
+    -- no second recipe when the bag has nothing left for it
+    assert.is_nil(V.Plan(p, ctx(), nil, counts({ [20] = 70 }), th).second)
+    -- without the bag filter there is no second line
+    assert.is_nil(V.Plan(prof(), ctx(), nil, nil, th).second)
+  end)
+
+  it("flags a profit that exists only by selling at the auction house", function()
+    local e = V.Evaluate(prof().recipes[1], ctx())
+    assert.is_true(e.net < 0); assert.is_true(e.resale)
+    assert.is_false(V.Evaluate(prof().recipes[2], ctx()).resale)       -- costs money: nothing to flag
+    local vendorSale = V.Evaluate({ id = 3, d = 0, out = 31, oq = 1, mats = { { 20, 1 } } }, ctx())   -- vendor value 200 > cost 30
+    assert.is_true(vendorSale.net < 0); assert.is_false(vendorSale.resale)
+  end)
+
+  it("recipes to learn: orange or yellow before green, then the one that stays useful longest, then the cost", function()
+    local function craft(id, learn, y, g, gr, mats)
+      return { id = id, learn = learn, y = y, g = g, gr = gr, src = "v", out = 30, oq = 1, mats = mats or { { 10, 1 } } }
+    end
+    local lc = ctx()
+    lc.known = function() return false end
+    -- skill 61: 1 green (cheapest), 2 orange gray at 75 (useful 14), 3 yellow gray at 100 (useful 39), 4 orange gray at 100 but dearer
+    local crafts = { craft(1, 30, 40, 50, 120), craft(2, 40, 62, 70, 75), craft(3, 50, 55, 80, 100), craft(4, 50, 70, 80, 100, { { 10, 2 } }) }
+    local r = V.Learnable(crafts, 61, lc)
+    assert.are.equal(3, r.best.rec.id)       -- 3 and 4 stay useful for 39 points; 3 is cheaper; the green 1 does not win
+    assert.are.equal(39, r.best.useful)
+    local only = V.Learnable({ crafts[1], crafts[2] }, 61, lc)
+    assert.are.equal(2, only.best.rec.id)    -- orange beats green even if the green stays useful for longer (59)
+  end)
+end)
+
+describe("Leveling: Gagner de l'or (goal gold)", function()
+  local function counts(t) return function(id) return t[id] or 0 end end
+  -- same case as above: Brassards (id 1, green, 1 x reagent 10 = 100c, sells 950 at the AH: profit 850 per craft),
+  -- Gants (id 2, orange, 10 x reagent 20 = 300c, sells 180 at the vendor: costs 120), Cape (id 3, gray, 1 x reagent 10, sells 180
+  -- at the vendor: profit 80 per craft; gray recipes still sell)
+  local function prof()
+    return { skill = 61, max = 75, recipes = {
+      [1] = { id = 1, d = 2, out = 30, oq = 1, mats = { { 10, 1 } } },
+      [2] = { id = 2, d = 0, out = 32, oq = 1, mats = { { 20, 10 } } },
+      [3] = { id = 3, d = 3, out = 32, oq = 1, mats = { { 10, 1 } } },
+    } }
+  end
+  local bag = counts({ [10] = 5, [20] = 70 })
+
+  it("ranks by profit per craft (skill chance ignored) and includes gray recipes; the levelling view leaves gray out", function()
+    local gold = V.Plan(prof(), ctx(), nil, nil, nil, "gold")
+    assert.are.equal(1, gold.best.rec.id); assert.are.equal(850, gold.best.profit)         -- 950 - 100
+    local order = {}
+    for i, e in ipairs(gold.rows) do order[i] = e.rec.id end
+    assert.are.same({ 1, 3, 2 }, order)                                                      -- 850, 80, -120
+    assert.are.equal("gold", gold.goal)
+    local level = V.Plan(prof(), ctx())
+    assert.are.equal(2, #level.rows)                                                        -- the gray Cape is not there
+    assert.are.equal(2, level.best.rec.id)
+  end)
+
+  it("with the bag: total profit = times x profit per craft", function()
+    local gold = V.Plan(prof(), ctx(), nil, bag, nil, "gold")
+    assert.are.equal(1, gold.best.rec.id); assert.are.equal(5, gold.best.times); assert.are.equal(4250, gold.best.total)  -- 5 x 850
+    local p = prof()
+    p.recipes[2] = { id = 2, d = 0, out = 30, oq = 1, mats = { { 20, 1 } } }                 -- Gants earn 920 per craft, x70
+    assert.are.equal(2, V.Plan(p, ctx(), nil, bag, nil, "gold").best.rec.id)                 -- 70 x 920 beats 5 x 850
+  end)
+
+  it("recommends nothing when no recipe earns money, and never a profit priced from an undated AH price", function()
+    local p = { skill = 61, recipes = { [2] = prof().recipes[2] } }
+    assert.is_nil(V.Plan(p, ctx(), nil, nil, nil, "gold").best)                              -- costs 120: nothing earns
+    local c = ctx(); c.ageKnown = false                                                      -- the price addon cannot date prices
+    local plan = V.Plan({ skill = 61, recipes = { [1] = prof().recipes[1] } }, c, nil, nil, nil, "gold")
+    assert.is_true(plan.rows[1].noAge); assert.is_nil(plan.best)
+  end)
+
+  it("tells the AH resale, the age of its price, and an old AH price (vendor value used)", function()
+    local c = ctx()
+    local ah = { [30] = { 1000, 3 } }                                                        -- 3 days old: still used
+    c.price = function(id) local p = ah[id] or ({ [10] = { 100, 0 } })[id]; if p then return p[1], p[2] end end
+    local e = V.Evaluate({ id = 1, d = 0, out = 30, oq = 1, mats = { { 10, 1 } } }, c)
+    assert.is_true(e.ahSale); assert.are.equal(3, e.saleAge); assert.is_false(e.oldAh)
+    ah[30] = { 1000, 30 }                                                                    -- 30 days: older than the old days
+    e = V.Evaluate({ id = 1, d = 0, out = 30, oq = 1, mats = { { 10, 1 } } }, c)
+    assert.is_true(e.oldAh); assert.is_false(e.ahSale); assert.are.equal(-50, e.profit)   -- vendor value 50 - cost 100
+  end)
+
+  it("recipes to learn: profit per craft minus the learning fee spread over 10 crafts, gray recipes included", function()
+    local lc = ctx(); lc.known = function() return false end; lc.goal = "gold"
+    -- all sell output 30 (950 net). A: reagent 10 (100c) -> profit 850, fee 1000 -> score 850 - 100 = 750.
+    -- B: 2 x reagent 10 -> profit 750, fee unknown -> 750 (ties with A; A's price is known, so A wins).
+    -- C: gray at 61, profit 850, fee 3000 -> 850 - 300 = 550
+    local function craft(id, mats, gr, vendorCost)
+      return { id = id, learn = 40, y = 45, g = 50, gr = gr, out = 30, oq = 1, mats = mats,
+        how = { kind = "vendor", confirmed = true, npcs = {}, vendorCost = vendorCost } }
+    end
+    local crafts = { craft(1, { { 10, 1 } }, 100, 1000), craft(2, { { 10, 2 } }, 100, nil), craft(3, { { 10, 1 } }, 55, 3000) }
+    local r = V.Learnable(crafts, 61, lc)
+    local by = {}
+    for _, e in ipairs(r.now) do by[e.rec.id] = e end
+    assert.are.equal(750, by[1].score)          -- 850 - 1000 / 10
+    assert.are.equal(750, by[2].score)          -- 950 - 200, no known fee
+    assert.are.equal(550, by[3].score)          -- gray at 61 (gr 55): still counted; 850 - 3000 / 10
+    assert.are.equal(0, #r.gray)
+    -- tie on score: the recipe whose price is KNOWN wins over the unknown-price one
+    assert.are.equal(1, r.best.rec.id)
+  end)
+end)
+
+describe("Leveling: faction of vendors and the learning price of vendor recipes", function()
+  local function way(sources, over, forever, entry)
+    local DB = fakeLib({ sources = { [1] = sources }, items = {}, borrowed = {} })
+    function DB:GetVendorCost(_, npc) return over and over.cost and over.cost[npc] end
+    function DB:GetSourceFaction(npc) return over and over.faction and over.faction[npc] end
+    return function(faction) return V.Way(DB, 1, entry or { requiredSkill = 40 }, faction, forever) end
+  end
+  local alliance = { vendor = { { id = 6, name = "Alliance vendor" }, total = 1 } }
+
+  it("a vendor recipe whose vendors are all the other faction is not a vendor recipe for this player", function()
+    local w = way(alliance, { faction = { [6] = "Alliance" } }, nil, {})
+    assert.are.equal("vendor", w("A").kind)
+    assert.are.equal("unknown", w("H").kind)                                   -- Horde player: nothing else to fall through to
+    local drop = way({ vendor = alliance.vendor, drop = { { id = 2, name = "Mob" }, total = 9 } }, { faction = { [6] = "Alliance" } }, nil, {})
+    assert.are.equal("drop", drop("H").kind)                                   -- falls through to the next source kind
+    local mixed = way({ vendor = { { id = 6, name = "Alliance vendor" }, { id = 7, name = "Neutral vendor" }, total = 2 } }, { faction = { [6] = "Alliance" } })
+    assert.are.equal("vendor", mixed("H").kind); assert.are.same({ "Neutral vendor" }, mixed("H").npcs)
+  end)
+
+  it("the Gustwoven recipes (Alliance vendors in the library) are Vayn Moongaze's for a Horde player", function()
+    local w = way(alliance, { faction = { [6] = "Alliance" } }, { [1] = { learn = 40, vendor = "Vayn Moongaze (Zephras Isle)" } })("H")
+    assert.are.equal("vendor", w.kind); assert.are.same({ "Vayn Moongaze" }, w.npcs); assert.are.equal("Vayn Moongaze (Zephras Isle)", w.where)
+    assert.is_nil(w.vendorCost); assert.is_nil(w.currency)                    -- price unknown
+  end)
+
+  it("learning price: unknown or a currency is not a gold price; a known gold price is preferred for the best recipe", function()
+    local lc = ctx(); lc.known = function() return false end
+    local function craft(id, mats, how)
+      return { id = id, learn = 40, y = 45, g = 80, gr = 100, out = 30, oq = 1, mats = mats, how = how }
+    end
+    local unknownCheap = craft(1, { { 10, 1 } }, { kind = "vendor", confirmed = true, npcs = {} })
+    local currency = craft(2, { { 10, 1 } }, { kind = "vendor", confirmed = true, npcs = {}, currency = { id = 3402, amount = 240 } })
+    local priced = craft(3, { { 10, 2 } }, { kind = "vendor", confirmed = true, npcs = {}, vendorCost = 500 })
+    local r = V.Learnable({ unknownCheap, currency, priced }, 61, lc)
+    local by = {}
+    for _, e in ipairs(r.now) do by[e.rec.id] = e end
+    assert.is_false(by[1].priceKnown); assert.is_false(by[2].priceKnown); assert.is_true(by[3].priceKnown)
+    assert.are.equal(3, r.best.rec.id)                                         -- dearer per point, but its price is known
+    r = V.Learnable({ unknownCheap, currency }, 61, lc)
+    assert.are.equal(1, r.best.rec.id)                                         -- nothing priced: an unknown price may still be best
   end)
 end)

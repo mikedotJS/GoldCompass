@@ -197,3 +197,15 @@ The Forever recipe data of LibProfessionDB v1.10.1 (MIT, by Pimptasty) is inside
 | 103 | `Meilleure à apprendre` while the profession maximum is still 75 | A recipe at an Apprentice trainer is preferred to a cheaper one that first needs the Compagnon rank | Screenshot |
 | 104 | Map icon of a recipe that needs Compagnon / Expert | The pin goes to the nearest trainer of your faction whose rank is high enough (never a trainer of a lower rank); a trainer window you opened wins | Screenshot |
 | 105 | A trainer recipe the table does not know (the library said trainer) | Not listed as `entraîneur`; if it has no other source it is not listed at all. Tell me any recipe a trainer really offers that is missing | Names |
+
+## Métier tab: objective, ranking, map buttons
+
+| # | Type | Expected | Send back |
+|---|---|---|---|
+| 106 | `Avec mon sac` on, Travail du cuir 61 | `Monte avec Gants en cuir estampé : ×7, ~7 points attendus, coûte ~X par point` (orange, 7 crafts) wins over `Brassards en cuir cousu main` (green, ~1,25 points). `Fabriquer ×7` crafts the Gants | Screenshot |
+| 107 | Second line | `puis <recette> ×M (~Q points)` appears when the best gives fewer points than the gap to its next colour change | Yes / no |
+| 108 | `Objectif : Monter le métier | Gagner de l'or` under the checkbox | The active one is lit; the choice is kept after `/reload`; the footer names the active objective | Screenshot |
+| 109 | `Gagner de l'or` | `Fabrique <recette> ×N : rapporte ~X par fabrication (~T au total)`, the note `rentable seulement si tu revends à l'HV · prix HV de N j`, gray recipes listed; `Fabriquer` crafts the recommended one | Screenshot |
+| 110 | Recipes to learn, Horde | No recipe is labelled `vendeur` when all its vendors are Alliance; Gustwoven recipes say `vendeur · prix de la recette inconnu` (Vayn Moongaze); a recipe with a known gold price is preferred as `Meilleure à apprendre` | Screenshot |
+| 111 | Click the map icon of every kind of row | Trainer: the pin on the nearest Horde trainer. Vendor with no coordinates: chat `Où l'apprendre : Vayn Moongaze, île de Zephras (position exacte inconnue).`. Drop / container: the source in the chat. Each click prints something | The chat lines |
+| 112 | `/gc log` after clicking | One line `where click: <recette> -> pin | zone | text (<npc>)` per click | The log lines |

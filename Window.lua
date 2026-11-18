@@ -30,8 +30,10 @@ W.Layout = {
   },
   list = { lines = rect(PAD, 52, FRAME_W - PAD, 52 + LINES * LINE_H) },
   -- Métier tab: the checkbox and "Voir sans filtre" sit above the scroll area
+  -- second row: the objective toggle "Objectif : Monter le métier | Gagner de l'or"
   job = { bagBox = rect(PAD, 52, 230, 52 + LINE_H - 1), bagOff = rect(296, 50, 446, 68),
-    lines = rect(PAD, 73, FRAME_W - PAD, 52 + LINES * LINE_H) },
+    goalLabel = rect(PAD, 76, 72, 92), goalLevel = rect(74, 72, 254, 94), goalGold = rect(258, 72, 446, 94),
+    lines = rect(PAD, 98, FRAME_W - PAD, 52 + LINES * LINE_H) },
   panel = { panel = rect(PAD, 80, FRAME_W - PAD, 300) },
 }
 
@@ -129,9 +131,20 @@ W.OpenMap = openMap -- exposed for tests
 
 -- "Où l'apprendre": pins the NPC with a user waypoint and opens the map on it. Out of combat only (in combat the place
 -- is only written in the chat). Without a precise place, only the free text of the data is written in the chat.
-function W.GoTo(t)
-  if not t.mapID then return ns.Print(t.text and S.where_text:format(t.text) or S.where_none) end
+function W.GoTo(t, recipe)
+  local function log(decision) ns.Log("frame", ("where click: %s -> %s (%s)"):format(tostring(recipe), decision, tostring(t.name or t.text))) end
+  if not t.mapID then
+    log("text")
+    if t.name and t.zone then return ns.Print(S.where_zone_only:format(t.name, S.zone_names[t.zone] or t.zone)) end
+    return ns.Print(t.text and S.where_text:format(t.text) or S.where_none)
+  end
   local label = ns.ZoneLabel(t)
+  if not t.x then   -- zone only: open its map, say the position is unknown
+    log("zone")
+    ns.Print(S.where_zone_only:format(t.name, label))
+    return openMap(t.mapID)
+  end
+  log("pin")
   if InCombatLockdown() then return ns.Print(S.where_combat:format(("%s, %s (%.1f, %.1f)"):format(t.name, label, t.x, t.y))) end
   local pinned = false
   local C = C_Map
@@ -196,7 +209,10 @@ end
 -- Tooltip of the map button: NPC, zone (client language when known), coordinates, and the Classic caveat.
 function W.TargetTooltipLines(t)
   local tip = { S.where_title }
-  if t.mapID then
+  if t.mapID and not t.x then
+    tip[#tip + 1] = t.name
+    tip[#tip + 1] = S.where_zone_only:format(t.name, ns.ZoneLabel(t))
+  elseif t.mapID then
     tip[#tip + 1] = t.name
     tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t), t.x, t.y)
     tip[#tip + 1] = t.recorded and S.where_recorded or S.where_classic
@@ -384,6 +400,17 @@ local function build()
     W.UpdateControls()
     W.Refresh()
   end)
+  -- objective toggle: two buttons, the active one lit (remembered per character, default "Monter le métier")
+  f.goalLabel = text(f, "GameFontHighlightSmall", { 0.79, 0.73, 0.54 })
+  place(f.goalLabel, L.job.goalLabel, f)
+  f.goalLabel:SetText(S.goal_label)
+  f.goalBtns = {}
+  for _, g in ipairs({ { "level", S.goal_level, L.job.goalLevel }, { "gold", S.goal_gold, L.job.goalGold } }) do
+    local b = button(f, g[2], g[3].r - g[3].l)
+    place(b, g[3], f)
+    b:SetScript("OnClick", function() W.SetGoal(g[1]) end)
+    f.goalBtns[g[1]] = b
+  end
   f.profBtn = button(f, "", L.map.profBtn.r - L.map.profBtn.l)
   place(f.profBtn, L.map.profBtn, f)
   f.profBtn:SetScript("OnClick", function()
@@ -525,7 +552,14 @@ local function setLines(entries, tail, area)
       go.icon:SetAllPoints()
       go.icon:SetTexture("Interface\\Icons\\INV_Misc_Map_01")
       go.icon:SetTexCoord(0.08, 0.92, 0.08, 0.92)
-      go:SetScript("OnClick", function(self) if self.target then W.GoTo(self.target) end end)
+      go:EnableMouse(true)
+      go:RegisterForClicks("LeftButtonUp")
+      local level = content:GetFrameLevel()
+      go:SetFrameLevel((type(level) == "number" and level or 1) + 5)  -- above the line's text and the craft button
+      go:SetScript("OnClick", function(self)
+        -- a recycled line shows another recipe each refresh: always the button's current target, never the first row's
+        if self.target then W.GoTo(self.target, self.recipe) else ns.Log("frame", "where click: no target on this line") end
+      end)
       go:SetScript("OnEnter", function(self)
         if not self.target then return end
         local tip = W.TargetTooltipLines(self.target)
@@ -551,6 +585,7 @@ local function setLines(entries, tail, area)
       l.craft:SetShown(l.craft.entry ~= nil)
     end
     l.go.target = e and e.target or nil
+    l.go.recipe = e and e.recipe or nil
     l.go:SetShown(l.go.target ~= nil)
     -- a line with a map button leaves its room (the button sits at the right end)
     l.left:SetWidth((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or W.LineWide.r)
@@ -681,16 +716,20 @@ end
 
 -- Profession leveling tab: per profession the cheapest known recipe per skill point, all labelled as estimates.
 -- Footer of the Métier tab. Must fit two lines of the footer slot (about 79 characters each at the real font).
-function W.JobFooter(filtered) return S.job_footer .. (filtered and (" " .. S.job_footer_bag) or "") end
+-- Footer of the Métier tab: the active objective in one short line, the caveat, and the bag note when the filter is on.
+function W.JobFooter(filtered, goal)
+  return (goal == "gold" and S.job_goal_gold or S.job_goal_level) .. " " .. S.job_footer .. (filtered and (" " .. S.job_footer_bag) or "")
+end
 
 -- Recipes to learn of one profession (Leveling.Learnable result): best one, then the others, then the "soon" ones.
 -- Returns true when the bag filter left nothing to show (the empty state with its way out).
 local function addLearn(entries, p)
-  local lr, L = p.learn, ns.Leveling
+  local lr, L, gold = p.learn, ns.Leveling, p.goal == "gold"
   local function grey(msg) entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. msg .. "|r" } end
   local function perPoint(e)
     if e.gray then return S.learn_pp_gray end
     if e.unpriced then return S.learn_pp_unknown end
+    if gold then return (e.profit >= 0 and S.job_gold_row_gain or S.job_gold_row_cost):format(ns.Money(math.abs(e.profit))) end
     local gain = e.perPoint < 0
     local fmt = e.floor and (gain and S.learn_pp_floor_gain or S.learn_pp_floor) or (gain and S.learn_pp_gain or S.learn_pp)
     return fmt:format(ns.Money(math.abs(e.perPoint)))
@@ -706,7 +745,7 @@ local function addLearn(entries, p)
   local function row(e)
     local t, name = e.rec.trainer, e.name or ns.Fmt.RecipeName(e.rec)
     entries[#entries + 1] = { left = t and S.learn_row_seen:format(name, ns.Money(e.rec.fee or 0), t.npc)
-      or S.learn_row:format(name, ns.Fmt.Source(e.rec), e.rec.learn), right = perPoint(e), target = e.target }
+      or S.learn_row:format(name, ns.Fmt.Source(e.rec), e.rec.learn), right = perPoint(e), target = e.target, recipe = name }
   end
   if #lr.now > 0 then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_now .. "|r" }
@@ -715,18 +754,22 @@ local function addLearn(entries, p)
       local label = e.name or ns.Fmt.RecipeName(e.rec)
       local fmt = e.floor and (e.perPoint < 0 and S.learn_best_floor_gain or S.learn_best_floor)
         or (e.perPoint < 0 and S.learn_best_gain or S.learn_best)
-      entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. fmt:format(label, ns.Money(math.abs(e.perPoint))) .. "|r",
-        target = e.target }
+      local line = fmt:format(label, ns.Money(math.abs(e.perPoint)))
+      if gold then   -- money: the profit per craft (the learning fee is in the ranking, not in the figure)
+        line = (e.profit >= 0 and S.learn_gold_best or S.learn_gold_best_cost):format(label, ns.Money(math.abs(e.profit)))
+          .. (e.priceKnown and "" or " " .. S.learn_gold_excl)
+      end
+      entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. line .. "|r", target = e.target, recipe = label }
       local t = e.rec.trainer
       if t then -- the real trainer: its name, the real skill and the real fee
         grey(S.learn_detail_seen:format(ns.Money(e.rec.fee or 0), t.npc, e.rec.learn, L.COLOR[e.rec.d] or "?",
           math.floor(e.chance * 100 + 0.5)))
       else
         grey(S.learn_detail:format(ns.Fmt.Source(e.rec, true), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
-          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0 and not (e.rec.way and e.rec.way.cost)) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
+          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0 and not (e.rec.way and (e.rec.way.cost or e.rec.way.kind == "vendor"))) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
       end
       if lr.gain then
-        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. S.learn_beats:format(label, ns.Money(lr.gain)) .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (gold and S.learn_gold_beats or S.learn_beats):format(label, ns.Money(lr.gain)) .. "|r" }
       end
     end
     for _, o in ipairs(lr.now) do if o ~= e then row(o) end end
@@ -746,6 +789,22 @@ local function addLearn(entries, p)
   end
 end
 
+-- Expected skill points, one decimal at most, French comma: 7, 1,3
+local function fmtPoints(n) return ((("%.1f"):format(n):gsub("%.0$", "")):gsub("%.", ",")) end
+
+-- The dim note under the recommended recipe about where its sale value comes from: an AH resale (with the price age), an old or
+-- undated AH price. nil when the value is the vendor's.
+local function saleNote(e)
+  local parts = {}
+  if e.oldAh then parts[#parts + 1] = S.job_ah_old end
+  if e.noAge then parts[#parts + 1] = S.job_ah_noage end
+  if e.ahSale then
+    parts[#parts + 1] = S.job_resale
+    if e.saleAge then parts[#parts + 1] = e.saleAge < 1 and S.job_ah_today or S.job_ah_age:format(math.floor(e.saleAge + 0.5)) end
+  end
+  return #parts > 0 and table.concat(parts, " · ") or nil
+end
+
 local function renderJob(res)
   render(res, "job")
   if res.state ~= "ok" then
@@ -756,7 +815,7 @@ local function renderJob(res)
   f.subtitle:SetText("")
   f.banner:SetText("")
   local filtered = ns.char.onlyBag
-  f.footer:SetText(W.JobFooter(filtered))
+  f.footer:SetText(W.JobFooter(filtered, ns.Goal()))
   local entries, nothing = {}, false -- the checkbox sits above the scroll area
   for _, p in ipairs(res.profs) do
     entries[#entries + 1] = { head = true, left = S.job_head:format(p.name, tostring(p.skill or "?"), tostring(p.max or "?")) }
@@ -765,29 +824,54 @@ local function renderJob(res)
     elseif p.status == "norecipes" then
       entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_norecipes .. "|r" }
     else
-      local plan = p.plan
-      if plan.best then
+      local plan, gold = p.plan, p.goal == "gold"
+      if plan.best and gold then
         local e = plan.best
-        local suffix = p.filtered and S.job_bag_suffix:format(e.times or 0) or ""
-        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (e.perPoint < 0 and S.job_best_gain or S.job_best):format(
-          e.name or ns.Fmt.RecipeName(e.rec), suffix, ns.Money(math.abs(e.perPoint))) .. "|r" }
-        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
-          (e.rec.d == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+        local name, money = e.name or ns.Fmt.RecipeName(e.rec), ns.Money(math.abs(e.profit))
+        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (p.filtered
+          and S.job_gold_best_bag:format(name, e.times or 0, money, ns.Money(math.max(0, e.total or 0)))
+          or S.job_gold_best:format(name, money)) .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (saleNote(e) or S.job_vendor_sale) .. "|r" }
         if p.craft then entries[#entries + 1] = { left = "", craft = p.craft } end
         if #plan.rows > 1 then
           entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_others .. "|r" }
           for i = 2, #plan.rows do
             local o = plan.rows[i]
-            local gain = o.perPoint < 0
             entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.rec.d] or "?"),
-              right = (gain and S.learn_pp_gain or S.learn_pp):format(ns.Money(math.abs(o.perPoint))) }
+              right = (o.profit >= 0 and S.job_gold_row_gain or S.job_gold_row_cost):format(ns.Money(math.abs(o.profit))) }
+          end
+        end
+      elseif plan.best then
+        local e = plan.best
+        local name, gain, money = e.name or ns.Fmt.RecipeName(e.rec), e.perPoint < 0, ns.Money(math.abs(e.perPoint))
+        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (p.filtered
+          and (gain and S.job_best_bag_gain or S.job_best_bag):format(name, e.times or 0, fmtPoints(e.points or 0), money)
+          or (gain and S.job_best_gain or S.job_best):format(name, money)) .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
+          (e.rec.d == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
+        local note = (e.resale or e.oldAh) and saleNote(e)
+        if note then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. note .. "|r" } end
+        if plan.second then
+          local s2 = plan.second
+          entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_then:format(s2.e.name or ns.Fmt.RecipeName(s2.e.rec),
+            s2.times, fmtPoints(s2.points)) .. "|r" }
+        end
+        if p.craft then entries[#entries + 1] = { left = "", craft = p.craft } end
+        if #plan.rows > 1 then
+          entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_others .. "|r" }
+          for i = 2, #plan.rows do
+            local o = plan.rows[i]
+            local ogain = o.perPoint < 0
+            entries[#entries + 1] = { left = S.job_other_row:format(o.name or ns.Fmt.RecipeName(o.rec), ns.Leveling.COLOR[o.rec.d] or "?"),
+              right = (ogain and S.learn_pp_gain or S.learn_pp):format(ns.Money(math.abs(o.perPoint))) }
           end
         end
       elseif p.filtered and plan.known > 0 and (plan.craftable or 0) == 0 then
         nothing = true
         entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.job_nothing_t .. "|r" }
       else
-        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (plan.known == 0 and S.job_none_known or S.job_no_best) .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (plan.known == 0 and S.job_none_known
+          or (gold and S.job_gold_none or S.job_no_best)) .. "|r" }
       end
       if p.almost then
         local parts = {}
@@ -812,7 +896,22 @@ end
 function W.UpdateControls()
   f.levelBox:SetOn(ns.db.onlyLevel and true or false)
   f.bagBox:SetOn(ns.char and ns.char.onlyBag and true or false)
+  for key, b in pairs(f.goalBtns) do        -- the active objective is lit gold, the other dim
+    local on = ns.Goal() == key
+    b.edge:SetColorTexture(on and 0.83 or 0.35, on and 0.69 or 0.15, on and 0.22 or 0.1)
+    b.fill:SetColorTexture(on and 0.55 or 0.16, on and 0.1 or 0.05, on and 0.06 or 0.03)
+    b.label:SetTextColor(on and 1 or 0.6, on and 1 or 0.5, on and 1 or 0.4)
+  end
   f.profBtn.label:SetText(S.prof_label:format(ns.db.profession and S.prof_names[ns.db.profession] or S.prof_all))
+end
+
+-- Objective of the Métier tab ("level" or "gold"), remembered per character.
+function W.SetGoal(goal)
+  if ns.Goal() == goal then return end
+  ns.char.goal = goal
+  ns.Log("frame", "objective: " .. goal)
+  W.UpdateControls()
+  W.Refresh()
 end
 
 function W.Refresh()
@@ -854,6 +953,8 @@ function W.SetTab(key)
   f.levelBox:SetShown(key == "map")
   f.profBtn:SetShown(key == "map")
   f.bagBox:SetShown(key == "job")
+  f.goalLabel:SetShown(key == "job")
+  for _, b in pairs(f.goalBtns) do b:SetShown(key == "job") end
   f.bagOff:Hide()
   scroll:SetVerticalScroll(0) -- each tab starts at its top
   W.UpdateControls()

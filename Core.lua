@@ -360,6 +360,9 @@ local function libCrafts(p, faction)
   return libCache[key]
 end
 
+-- The objective of the Métier tab, remembered per character: "level" (Monter le métier, default) or "gold" (Gagner de l'or).
+function ns.Goal() return ns.char and ns.char.goal == "gold" and "gold" or "level" end
+
 -- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable); nil when it has no recipe data.
 function ns.LearnFor(p, ctx, count, knownBest)
   local english = SKILL_LINES[p.line]
@@ -368,13 +371,15 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local data = ns.char and ns.char.profs[p.name]
   local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}   -- trainer windows recorded in game
   local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end,
-    offer = function(id) return offers[id] end, maxSkill = p.max }, { __index = ctx })
+    offer = function(id) return offers[id] end, maxSkill = p.max, goal = ns.Goal() }, { __index = ctx })
   local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
   -- where to go to learn each one (a pin, or a text only): recorded trainer, library NPC, Classic coordinates, text
   local env = whereEnv(ctx)
   for _, bucket in ipairs({ result.now, result.soon, result.gray }) do
     for _, row in ipairs(bucket) do
       row.target = ns.Where.Target(row.rec, english, env)
+      -- never an empty answer: the source itself ("butin", "conteneur", ...) when no place is known
+      if not row.target.mapID and not row.target.text then row.target.text = ns.Fmt.Source(row.rec, true) end
       if row.rec.src == "i" and row.rec.teachItem then row.rec.itemName = ns.ItemName(row.rec.teachItem) end
     end
   end
@@ -429,7 +434,10 @@ function ns.RunLeveling(done)
           -- "Avec mon sac": count what is carried (bags only: no bank, no reagent bank)
           local count = ns.char.onlyBag and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
           entry.filtered = count ~= nil
-          entry.plan = ns.Leveling.Plan(data, ctx, nil, count)
+          entry.plan = ns.Leveling.Plan(data, ctx, nil, count, function(id)
+            local r = ns.ForeverDB:GetRecipes(p.line)
+            return r and r[id] and r[id].difficulty
+          end, ns.Goal())
           -- the "Fabriquer" button crafts the recommended recipe as many times as the bags allow, filter or not
           local best = entry.plan.best
           if best then
@@ -437,12 +445,14 @@ function ns.RunLeveling(done)
             entry.craft = { id = best.rec.id, times = times, prof = p.name, line = p.line }
           end
           for _, row in ipairs(entry.plan.rows) do row.name = ns.Fmt.RecipeName(row.rec) end
+          if entry.plan.second then entry.plan.second.e.name = entry.plan.second.e.name or ns.Fmt.RecipeName(entry.plan.second.e.rec) end
           local almost = entry.plan.almost
           if almost then
             entry.almost = { name = ns.Fmt.RecipeName(almost.rec), missing = {} }
             for i, s in ipairs(almost.short) do entry.almost.missing[i] = { ns.ItemName(s[1]), s[2] } end
           end
-          entry.learn = ns.LearnFor(p, ctx, count, entry.plan.best and entry.plan.best.perPoint)
+          entry.goal = entry.plan.goal
+          entry.learn = ns.LearnFor(p, ctx, count, best and (entry.goal == "gold" and -best.profit or best.perPoint))
           if entry.learn then
             for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {} }) do
               for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end

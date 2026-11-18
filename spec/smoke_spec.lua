@@ -122,7 +122,7 @@ local function setup(opts)
     end
   end
   _G.IsPlayerSpell = function(id) return not opts.noSpell and id == 2329 end -- Elixir of Minor Strength
-  _G.UnitFactionGroup = function() return "Alliance" end
+  _G.UnitFactionGroup = function() return opts.faction or "Alliance" end
   _G.InCombatLockdown = function() return opts.combat or false end
   _G.IsShiftKeyDown = function() return false end
   _G.IsAddOnLoaded = function(name) return opts.ledger and name == "ForeverLedger" or false end
@@ -1263,7 +1263,7 @@ describe("Avec mon sac (bag filter on the leveling tab)", function()
     local ns = start({ on = true, counts = { [2447] = 5 } }) -- recipe 1: floor(5/2) = 2 ; recipe 2 lacks 2448
     ns.Window.Toggle(); ns.Window.SetTab("job")
     local text = lineTexts(ns)
-    assert.matches("Monte avec Potion de soins %(avec ton sac, ×2%)", text)
+    assert.matches("Monte avec Potion de soins : ×2, ~2 points attendus, coûte ~", text)   -- 2 orange crafts: 2 points
     assert.matches("Sac valorisé au prix du marché", ns.Window.Footer().text)
   end)
 
@@ -1977,3 +1977,161 @@ describe("recipes to learn (stubbed recipe data)", function()
   end)
 end)
 
+
+describe("Métier tab: objective toggle", function()
+  local function lineTexts(ns)
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
+    return table.concat(out, "\n")
+  end
+  -- Potion (id 1): orange, 2 x 2447 (35c each = 70c), sells 33c -> costs money.
+  -- Elixir vert (id 2): green, 1 x 2447, output 2770 sells 38c at the AH -> earns 3c per craft.
+  -- Vieille potion (id 3): gray, same as the Elixir -> earns, but only the money view lists it.
+  local alchemy = { skill = 50, max = 75, recipes = {
+    [1] = { id = 1, name = "Potion de soins", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } },
+    [2] = { id = 2, name = "Elixir vert", d = 2, out = 2770, oq = 1, mats = { { 2447, 1 } } },
+    [3] = { id = 3, name = "Vieille potion", d = 3, out = 2770, oq = 1, mats = { { 2447, 1 } } },
+  } }
+  local function start(opts)
+    opts = opts or {}
+    opts.scanned, opts.profs, opts.counts = true, { { 171, 50, "Alchimie", 75 } }, { [2447] = 5 }
+    setup(opts)
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy }, onlyBag = true }
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    return ns
+  end
+
+  it("defaults to Monter le métier and remembers the choice per character", function()
+    local ns = start()
+    assert.are.equal("level", ns.Goal())
+    assert.matches("Monte avec Potion de soins : ×2, ~2 points attendus", lineTexts(ns))     -- 2 orange crafts beat 5 green ones (1.25)
+    assert.matches("Objectif : monter le métier", ns.Window.Footer().text)
+    ns.Window.SetGoal("gold")
+    assert.are.equal("gold", ns.char.goal)                                                     -- saved with the character
+    assert.are.equal("gold", ns.Goal())
+    ns.Window.Toggle(); ns.Window.Toggle()                                                     -- close and reopen
+    assert.are.equal("gold", ns.Goal())
+    assert.matches("Objectif : gagner de l'or", ns.Window.Footer().text)
+    ns.Window.SetGoal("level")
+    assert.are.equal("level", ns.char.goal)
+  end)
+
+  it("Gagner de l'or ranks by profit per craft with the total, the AH note and its age, and lists the gray recipe", function()
+    local ns = start()
+    local level = lineTexts(ns)
+    assert.is_nil(level:find("Vieille potion", 1, true))                                       -- gray: only in the money view
+    ns.Window.SetGoal("gold")
+    local text = lineTexts(ns)
+    assert.matches("Fabrique Elixir vert ×5 : rapporte ~[^\n]* par fabrication %(~[^\n]* au total%)", text)
+    assert.matches("rentable seulement si tu revends à l'HV · prix HV de 1 j", text)
+    assert.matches("Vieille potion", text)
+    assert.matches("Potion de soins[^\n]* coûte ~[^\n]*/fab%.", text)
+  end)
+
+  it("the footer explains the active objective and stays within two lines", function()
+    local ns = start()
+    for _, goal in ipairs({ "level", "gold" }) do
+      assert.is_true(#ns.Window.JobFooter(false, goal) <= 150)
+      assert.is_true(#ns.Window.JobFooter(true, goal) <= 150)
+    end
+  end)
+
+  it("the learning price of a vendor recipe is said on its line: gold, a currency or unknown", function()
+    local ns = start()
+    ns.Money = function(c) return c .. "c" end
+    assert.are.equal("vendeur · 500c", ns.Fmt.Source({ src = "v", way = { kind = "vendor", vendorCost = 500 } }))
+    assert.are.equal("vendeur · prix de la recette inconnu", ns.Fmt.Source({ src = "v", way = { kind = "vendor" } }))
+    assert.are.equal("vendeur · 240 Faveur du marchand", ns.Fmt.Source({ src = "v", way = { kind = "vendor", currency = { id = 3402, amount = 240 } } }))
+    _G.C_CurrencyInfo = { GetCurrencyInfo = function(id) return { name = "Faveur (jeu) " .. id } end }
+    assert.are.equal("vendeur · 240 Faveur (jeu) 3402", ns.Fmt.Source({ src = "v", way = { kind = "vendor", currency = { id = 3402, amount = 240 } } }))
+    _G.C_CurrencyInfo = nil
+  end)
+end)
+
+describe("Où l'apprendre: every map button answers (real Forever data, Horde, Leatherworking 61)", function()
+  local known = dofile("spec/fixtures/owner_profiles.lua")[1].known
+  local function start()
+    setup({ scanned = true, faction = "Horde", profs = { { 165, 61, "Travail du cuir", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    local recipes = {}
+    for _, id in ipairs(known) do recipes[id] = { id = id, name = "known" .. id, d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } end
+    ns.char = { learned = {}, profs = { ["Travail du cuir"] = { skill = 61, max = 75, recipes = recipes } } }
+    return ns
+  end
+  local function logged(ns)
+    local out = {}
+    for _, e in ipairs(ns.LogRecent(200)) do out[#out + 1] = e.text end
+    return table.concat(out, "\n")
+  end
+
+  it("gives every learnable row a target of kind pin, zone or text, a Horde trainer for trainer rows", function()
+    local ns = start()
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local lr = res.profs[1].learn
+    local seen, kinds = 0, {}
+    for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do
+      for _, row in ipairs(bucket) do
+        seen = seen + 1
+        local t = row.target
+        assert.is_true(t.kind == "pin" or t.kind == "zone" or t.kind == "text", row.rec.name)
+        assert.is_true(t.mapID ~= nil or t.text ~= nil, row.rec.name .. " has neither a map nor a text")
+        kinds[row.rec.id] = t.kind
+        if row.rec.way.kind == "trainer" then
+          assert.are.equal("pin", t.kind, row.rec.name)
+          for _, tr in ipairs(ns.Trainers.Leatherworking) do
+            if tr[1] == t.name then assert.is_true(tr[5] == nil or tr[5] == "H", t.name .. " is not a Horde trainer") end
+          end
+        end
+      end
+    end
+    assert.is_true(seen > 60)
+    assert.are.equal("pin", kinds[3763])           -- Ceinture élégante: a Journeyman trainer
+    assert.are.equal("pin", kinds[9062])           -- Petite giberne: a trainer
+    assert.are.equal("text", kinds[1301431])       -- Gustwoven (Vayn Moongaze, Zephras Isle): no map, no coordinates
+  end)
+
+  it("a click always answers: pin, zone or text in the chat, and one log line with the recipe and the decision", function()
+    local ns = start()
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local n = 0
+    for _, l in ipairs(ns.Window.Lines()) do
+      if l.go.target then
+        n = n + 1
+        local before = #printed
+        l.go.scripts.OnClick(l.go)
+        assert.is_true(#printed > before, "no answer for " .. tostring(l.go.recipe))
+        local kind = l.go.target.kind
+        assert.matches("where click: " .. l.go.recipe:gsub("%p", "%%%0") .. " %-> " .. kind, logged(ns))
+      end
+    end
+    assert.is_true(n > 10)
+  end)
+
+  it("a recycled line rebinds its own target: the click goes to the recipe now shown on that line", function()
+    local ns = start()
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local function check()
+      local checked = 0
+      for _, l in ipairs(ns.Window.Lines()) do
+        if l.go.target and l.left.text ~= "" then
+          assert.is_not_nil(l.left.text:find(l.go.recipe, 1, true), l.left.text .. " is bound to " .. tostring(l.go.recipe))
+          checked = checked + 1
+        end
+      end
+      return checked
+    end
+    assert.is_true(check() > 10)
+    ns.Window.SetGoal("gold")                      -- every line is recycled for another list
+    assert.is_true(check() > 10)
+    local line
+    for _, l in ipairs(ns.Window.Lines()) do if l.go.target and not line then line = l end end
+    local before = #printed
+    line.go.scripts.OnClick(line.go)
+    assert.is_true(#printed > before)
+    assert.matches("where click: " .. line.go.recipe:gsub("%p", "%%%0"), logged(ns))
+  end)
+end)

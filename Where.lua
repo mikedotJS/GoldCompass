@@ -37,18 +37,22 @@ end
 
 -- Target for a recipe to learn: { name, zone, mapID, x, y } (a place to pin), or { text = "..." } when only a free-text
 -- description exists (or nothing: text = nil, "lieu non précis"). `prof` is the English profession name of the data.
+-- Every target has a `kind`: "pin" (an exact position), "zone" (a vendor whose zone has a map but no coordinates: open that map)
+-- or "text" (the free text, or nothing: the caller words it).
 function Wh.Target(rec, prof, env)
   -- a trainer window recorded in game beats the Classic coordinates: the NPC and where it really stands
   local seen = rec.trainer
   if seen and seen.mapID and seen.x and seen.y then
-    return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true }
+    return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true, kind = "pin" }
   end
   if rec.src == nil then
     local rank, found = Wh.NeededRank(rec.learn or 0, rec.way and rec.way.rank), {}
     for _, t in ipairs(env.trainers[prof] or {}) do
       if t[6] >= rank and (t[5] == nil or t[5] == env.faction) then found[#found + 1] = { name = t[1], zone = t[2], x = t[3], y = t[4] } end
     end
-    return pick(found, env) or { text = nil }
+    local best = pick(found, env)
+    if best then best.kind = "pin"; return best end
+    return { kind = "text" }
   end
   -- vendors and quest givers: the NPC names of LibProfessionDB (rec.npcNames, no coordinates there) and of the
   -- Classic "where" text, both looked up in the Classic NPC positions
@@ -60,5 +64,15 @@ function Wh.Target(rec, prof, env)
     local n = env.npcs[name]
     if n and (n[4] == nil or n[4] == env.faction) then found[#found + 1] = { name = name, zone = n[1], x = n[2], y = n[3] } end
   end
-  return pick(found, env) or { text = info and info[1] or nil }
+  local best = pick(found, env)
+  if best then best.kind = "pin"; return best end
+  -- no coordinates anywhere: the "NPC (Zone)" of wowforever.be, as a zone to open when its map is known
+  local where = rec.way and rec.way.where
+  if where then
+    local name, zone = where:match("^(.-)%s*%((.-)%)%s*$")
+    local map = zone and env.maps[zone]
+    if map then return { name = name, zone = zone, mapID = map[1], kind = "zone" } end
+    return { name = name or where, zone = zone, text = where, kind = "text" }
+  end
+  return { text = info and info[1] or nil, kind = "text" }
 end
