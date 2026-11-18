@@ -2363,7 +2363,7 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
     for _, bucket in ipairs({ res.profs[1].learn.now, res.profs[1].learn.soon, res.profs[1].learn.gray }) do
       for _, row in ipairs(bucket) do by[row.rec.id] = row; list[#list + 1] = row end
     end
-    return ns, by, list
+    return ns, by, list, res.profs[1].learn
   end
   local function cooking()
     return rows(185, 124, "Cuisine", 150, { [2538] = { id = 2538, name = "x", d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } })
@@ -2462,6 +2462,7 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
     assert.are.equal("A", croc.rec.way.onlyFaction); assert.are.equal("item", croc.rec.way.kind)
     assert.is_false(croc.recommend and croc.rec.fee == nil)          -- only an auction price could make it worth proposing
     assert.is_true(croc.target.auction or croc.target.onlyFaction == "A")
+    assert.is_not_nil(ns.Fmt.SiteSources(croc.rec.way):find("Kendor Kabonka (Stormwind City) (côté Alliance uniquement)", 1, true))
     for _, row in ipairs(list) do
       local way = row.rec.way
       if way.kind == "vendor" or way.kind == "quest" then
@@ -2509,6 +2510,18 @@ describe("Où l'apprendre: Forever-confirmed places (real data, Horde, Cooking 1
     local way = ns.Leveling.Way(ns.ForeverDB, 1255139, { requiredSkill = 70 }, "H", ns.ForeverTrainers)
     assert.are.equal("Pawani (The Barrens)", way.where); assert.are.equal("Pawani", way.npcs[1])
     assert.are.same({ id = 3402, amount = 30 }, way.currency)
+  end)
+
+  it("the rank book pins its Forever vendor of the player's faction (Expert Cookbook: Wulan in Desolace, not Shandrina)", function()
+    local ns, _, _, lr = cooking()
+    local book
+    for _, b in ipairs(lr.books or {}) do if b.rec.id == 3413 then book = b end end
+    assert.is_not_nil(book)
+    assert.are.same({ 3955, 12033 }, ns.FdbVendors[3413])
+    local t = book.target
+    assert.are.equal("pin", t.kind); assert.are.equal("Wulan", t.name); assert.are.same({ 1443, 26.1, 69.7 }, { t.mapID, t.x, t.y })
+    assert.is_true(t.confirmed); assert.are.equal("foreverdb", t.source)
+    assert.are.equal(10000, book.rec.way.vendorCost)          -- 1 gold, ForeverDB's vendor price
   end)
 
   it("the Leatherworking trainer rows pin a Horde trainer ForeverDB lists, at the place it was seen on Forever", function()

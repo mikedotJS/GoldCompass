@@ -115,7 +115,10 @@ function F.SiteSources(way)
     zoneUsed = true
   end
   if k:find("q", 1, true) and way.questName then parts[#parts + 1] = S.site_q .. " : " .. F.QuestName(way) end
-  if k:find("v", 1, true) and way.where then parts[#parts + 1] = S.site_v .. " : " .. way.where end
+  if k:find("v", 1, true) and way.where then   -- a vendor of the other faction only is said as such
+    parts[#parts + 1] = S.site_v .. " : " .. way.where
+      .. (way.onlyFaction and (" (" .. S.only_side:format(way.onlyFaction == "A" and S.faction_a or S.faction_h) .. ")") or "")
+  end
   return #parts > 0 and table.concat(parts, " / ") or nil
 end
 

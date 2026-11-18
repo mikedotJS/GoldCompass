@@ -161,7 +161,8 @@ function T.Scan()
   return record
 end
 
--- A merchant window: where the vendor stands (a vendor of a recipe is a place to go to as much as a trainer).
+-- A merchant or auction house window: where the NPC stands (a vendor of a recipe, or the auctioneer a pattern is bought from, is a
+-- place to go to as much as a trainer).
 function T.ScanMerchant()
   if not ns.db then return end
   local id = T.NpcID(UnitGUID and UnitGUID("npc"))
@@ -174,9 +175,9 @@ end
 
 local pending = false
 local frame = CreateFrame("Frame")
-for _, e in ipairs({ "TRAINER_SHOW", "TRAINER_UPDATE", "MERCHANT_SHOW" }) do pcall(frame.RegisterEvent, frame, e) end
+for _, e in ipairs({ "TRAINER_SHOW", "TRAINER_UPDATE", "MERCHANT_SHOW", "AUCTION_HOUSE_SHOW" }) do pcall(frame.RegisterEvent, frame, e) end
 frame:SetScript("OnEvent", function(_, event)
-  if event == "MERCHANT_SHOW" then return pcall(T.ScanMerchant) end
+  if event == "MERCHANT_SHOW" or event == "AUCTION_HOUSE_SHOW" then return pcall(T.ScanMerchant) end
   if pending then return end
   pending = true
   C_Timer.After(0.4, function() pending = false; pcall(T.Scan) end)

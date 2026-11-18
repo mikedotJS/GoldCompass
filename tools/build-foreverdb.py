@@ -83,6 +83,14 @@ def main():
             vendors[int(spell)] = [v for v in sold[item] if v in npcs]
             if price[item] > 0:
                 costs[int(spell)] = price[item]
+    # the teaching items of Gold Compass's own recipe data that ForeverDB's recipe list does not carry (the rank books: Expert Cookbook...)
+    own_rows = re.findall(r'\{ (\d+), \d+, \d+, \d+, \d+, \d+, \d+, "[^"]*", (\d+), "[^"]*" \}', (ROOT / "Data/ForeverRecipes.lua").read_text(encoding="utf-8"))
+    for spell, item in own_rows:
+        spell, item = int(spell), int(item)
+        if item and spell not in vendors and item in sold and item not in cut:
+            vendors[spell] = [v for v in sold[item] if v in npcs]
+            if price[item] > 0:
+                costs[spell] = price[item]
     # recipeInfo: [spell] = {..., q = "quest title(s)", fav = Merchant's Favor cost, ...}
     info = table(rec_src, "recipeInfo")
     favor = {int(sp): int(f) for sp, f in re.findall(r"\[(\d+)\]=\{[^{}]*?\bfav=(\d+)", info)}
