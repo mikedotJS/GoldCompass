@@ -219,3 +219,6 @@ The Forever recipe data of LibProfessionDB v1.10.1 (MIT, by Pimptasty) is inside
 | 120 | Map button of a pattern with an Auctionator price (Bottes élégantes en cuir) | Pins the nearest auction house of your faction (Horde: Orgrimmar, Thunder Bluff, Undercity); tooltip `Patron en vente à l'HV : ~<prix> (prix HV de N j)`, `butin : <zone>` / `pickpocket` / `pêche` from the site, `Source : pfQuest (positions Classic).` | The tooltip |
 | 121 | `Meilleure à apprendre` | Its level is at most your skill (never under `À apprendre maintenant` with a higher level) | Screenshot |
 | 122 | A learnable whose crafted item has an old or undated AH price | `(HV ?)` after the figure, dim line `prix HV incertain · prix HV de N j`, listed after the reliable ones | Screenshot |
+| 123 | After a trainer window was recorded (Leatherworking 61/75) | `Meilleure à apprendre` is never a Journeyman recipe; a recipe the trainer shows greyed is not the best | Screenshot |
+| 124 | Tab Métier, each profession | Learnable rows on two lines (name + figure, then dim details), nothing cut; `Au-delà de 75 : il faut le rang Compagnon` with a map button; `Pour dépasser <max> : <livre>` near the cap, also with `Avec mon sac` | Screenshot |
+| 125 | Cast a Hearthstone or mount with the Métier tab open | The craft button stays enabled, the tab does not redraw | Observation |

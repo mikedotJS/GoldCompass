@@ -186,7 +186,18 @@ end
 function W.Rows() return rows end
 function W.Lines() return lines end
 -- "Fabriquer": inputs of Leveling.CraftButton for a craft entry { id, times, prof, line }, read from the game.
-local crafting, craftClicks = false, 0
+local crafting, craftClicks, craftSpell = false, 0, nil
+
+-- Is this spell a craft? The recipe handed to CraftRecipe, or one of the recipes the character knows (a craft started in the
+-- profession window itself). A Hearthstone, a mount or a heal is not.
+function W.IsCraftSpell(spellID)
+  if not spellID then return false end
+  if spellID == craftSpell then return true end
+  for _, p in pairs(ns.char and ns.char.profs or {}) do
+    if p.recipes and p.recipes[spellID] then return true end
+  end
+  return false
+end
 local function craftInputs(c)
   local open, openID = ns.OpenTradeSkill()
   return { times = c.times, open = open ~= nil and (open == c.prof or openID == c.line), combat = InCombatLockdown(),
@@ -220,7 +231,7 @@ function W.Craft(c)
   local ok, err = pcall(T.CraftRecipe, c.id, c.times)
   ns.Log("frame", ("craft: CraftRecipe(%d, %d) -> %s %s"):format(c.id, c.times, tostring(ok), ok and "" or tostring(err)))
   if not ok then return ns.Print(S.craft_fail) end
-  crafting = true
+  crafting, craftSpell = true, c.id
   craftClicks = craftClicks + 1
   local click = craftClicks
   -- no cast started after 2 s: nothing is being crafted, release the button; 60 s at most in any case
@@ -1074,7 +1085,7 @@ local function refreshJobLater()
 end
 
 local castToken = 0
-watcher:SetScript("OnEvent", function(_, event, unit)
+watcher:SetScript("OnEvent", function(_, event, unit, _, spellID)
   if not (f and f:IsShown()) then return end
   if event:sub(1, 13) == "PLAYER_REGEN_" then
     if current == "job" then W.UpdateCraft() end
@@ -1082,6 +1093,8 @@ watcher:SetScript("OnEvent", function(_, event, unit)
   end
   if event:sub(1, 14) == "UNIT_SPELLCAST" then
     if unit ~= "player" or current ~= "job" then return end
+    -- only a craft counts: a Hearthstone, a mount or a heal changes nothing here (no busy state, no redraw)
+    if not W.IsCraftSpell(spellID) then return end
     castToken = castToken + 1
     if event == "UNIT_SPELLCAST_START" then
       W.CastSeen, crafting = true, true

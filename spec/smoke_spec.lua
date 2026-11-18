@@ -1800,17 +1800,33 @@ describe("Fabriquer (craft button on the recommended recipe)", function()
     local ns = start({}, openAlchemy)
     local runs, real = 0, ns.RunLeveling
     ns.RunLeveling = function(...) runs = runs + 1; return real(...) end
-    fire("UNIT_SPELLCAST_START", "player")
+    local recipe = craftButton().entry.id
+    fire("UNIT_SPELLCAST_START", "player", "guid", recipe)
     local b = craftButton()
     assert.is_false(ns.Window.CraftState(b.entry).enabled)
     assert.are.equal("Fabrication en cours...", b.label.text)
-    fire("UNIT_SPELLCAST_START", "someone")                 -- other units are ignored (start already seen: still busy)
+    fire("UNIT_SPELLCAST_START", "someone", "guid", recipe)  -- other units are ignored (start already seen: still busy)
     timers = {}
-    fire("UNIT_SPELLCAST_STOP", "player")
+    fire("UNIT_SPELLCAST_STOP", "player", "guid", recipe)
     for _, fn in ipairs(timers) do fn() end                  -- the release debounce, then the throttled refresh
     for _, fn in ipairs(timers) do fn() end
     assert.is_true(ns.Window.CraftState(craftButton().entry).enabled)
     assert.is_true(runs >= 1)                                -- quantities redrawn
+  end)
+
+  it("a cast that is not a craft (Hearthstone, mount) never disables the button nor redraws the tab", function()
+    local ns = start({}, openAlchemy)
+    local runs, real = 0, ns.RunLeveling
+    ns.RunLeveling = function(...) runs = runs + 1; return real(...) end
+    timers = {}
+    for _, event in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_SUCCEEDED" }) do fire(event, "player", "guid", 8690) end
+    assert.is_true(ns.Window.CraftState(craftButton().entry).enabled)
+    for _, fn in ipairs(timers) do fn() end
+    assert.are.equal(0, runs); assert.are.equal(0, #timers)
+    assert.is_false(ns.Window.IsCraftSpell(nil))
+    -- the recipe handed to CraftRecipe counts, even when the character has not recorded it
+    ns.Window.Craft(craftButton().entry)
+    assert.is_true(ns.Window.IsCraftSpell(craftButton().entry.id))
   end)
 
   it("a cast of another unit alone never disables the button", function()
