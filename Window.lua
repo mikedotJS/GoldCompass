@@ -796,6 +796,9 @@ end
 
 -- Recipes to learn of one profession (Leveling.Learnable result): best one, then the others, then the "soon" ones.
 -- Returns true when the bag filter left nothing to show (the empty state with its way out).
+-- Expected skill points, one decimal at most, French comma: 7, 1,3
+local function fmtPoints(n) return ((("%.1f"):format(n):gsub("%.0$", "")):gsub("%.", ",")) end
+
 local addLearnMain
 local function addLearn(entries, p)
   local result = addLearnMain(entries, p)
@@ -824,6 +827,7 @@ function addLearnMain(entries, p)
   local function perPoint(e)
     if e.gray then return S.learn_pp_gray end
     if e.unpriced then return S.learn_pp_unknown end
+    if not gold then return S.job_ingr_row:format(fmtPoints(e.unitsPerPoint)) end      -- levelling: effort, never gold
     if gold then return (e.profit >= 0 and S.job_gold_row_gain or S.job_gold_row_cost):format(ns.Money(math.abs(e.profit))) end
     local gain = e.perPoint < 0
     local fmt = e.floor and (gain and S.learn_pp_floor_gain or S.learn_pp_floor) or (gain and S.learn_pp_gain or S.learn_pp)
@@ -862,6 +866,7 @@ function addLearnMain(entries, p)
       local fmt = e.floor and (e.perPoint < 0 and S.learn_best_floor_gain or S.learn_best_floor)
         or (e.perPoint < 0 and S.learn_best_gain or S.learn_best)
       local line = fmt:format(label, ns.Money(math.abs(e.perPoint)))
+      if not gold then line = S.learn_best_effort:format(label, fmtPoints(e.unitsPerPoint), fmtPoints(e.craftsPerPoint)) end
       if gold then   -- money: the profit per craft (the learning fee is in the ranking, not in the figure)
         line = (e.profit >= 0 and S.learn_gold_best or S.learn_gold_best_cost):format(label, ns.Money(math.abs(e.profit)))
           .. (e.priceKnown and "" or " " .. S.learn_gold_excl)
@@ -879,7 +884,8 @@ function addLearnMain(entries, p)
       local note = ns.Fmt.PriceNote(e)
       if note then grey(note) end                                           -- "prix HV incertain · prix HV de 5 j"
       if lr.gain then
-        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (gold and S.learn_gold_beats or S.learn_beats):format(label, ns.Money(lr.gain)) .. "|r" }
+        entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (gold and S.learn_gold_beats:format(label, ns.Money(lr.gain))
+          or S.learn_beats_effort:format(label, fmtPoints(lr.gainFrom), fmtPoints(lr.gainTo))) .. "|r" }
       end
     end
     for _, o in ipairs(lr.now) do if o ~= e then row(o) end end
@@ -898,9 +904,6 @@ function addLearnMain(entries, p)
     end
   end
 end
-
--- Expected skill points, one decimal at most, French comma: 7, 1,3
-local function fmtPoints(n) return ((("%.1f"):format(n):gsub("%.0$", "")):gsub("%.", ",")) end
 
 -- The dim note under the recommended recipe about where its sale value comes from: an AH resale (with the price age), an old or
 -- undated AH price. nil when the value is the vendor's.
@@ -953,7 +956,7 @@ local function renderJob(res)
         end
       elseif plan.best then
         local e = plan.best
-        local name, gain, money = e.name or ns.Fmt.RecipeName(e.rec), e.perPoint < 0, ns.Money(math.abs(e.perPoint))
+        local name = e.name or ns.Fmt.RecipeName(e.rec)
         -- the effort first: ingredients and crafts per skill point; the gold cost is a dim secondary figure
         local ingredients = {}
         for i, m in ipairs(e.rec.mats or {}) do
@@ -964,7 +967,6 @@ local function renderJob(res)
           and S.job_best_bag:format(name, e.times or 0, fmtPoints(e.points or 0), (e.points or 0) >= 1.5 and "s" or "",
             fmtPoints(e.unitsPerPoint), fmtPoints(e.craftsPerPoint), (e.craftsPerPoint or 0) >= 1.5 and "s" or "")
           or S.job_best:format(name, fmtPoints(e.unitsPerPoint), table.concat(ingredients, ", "), fmtPoints(e.craftsPerPoint))) .. "|r" }
-        entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (gain and S.job_gain_dim or S.job_cost_dim):format(money) .. "|r" }
         entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.job_detail:format(ns.Leveling.COLOR[e.d or e.rec.d] or "?", math.floor(e.chance * 100 + 0.5),
           e.exact and "" or S.chance_estimate, ((e.d or e.rec.d) == 2 and e.rec.greenAt) and S.job_green:format(e.rec.greenAt) or "") .. "|r" }
         for _, sub in ipairs(e.subs or {}) do      -- an intermediate reagent to make first (or buy): "Peau légère traitée"

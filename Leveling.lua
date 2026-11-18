@@ -510,6 +510,24 @@ local function byLearnRank(a, b)
   return byCost(a, b)
 end
 
+-- Levelling order of the recipes to learn: the effort rule of the known recipes (V.EasierThan: ingredients per point, then fewer crafts per point,
+-- craftable now, no intermediate craft) with the points the recipe stays useful for as a tie-break (the longer, the better); recipes with an
+-- unknown reagent price last, by required skill.
+local function byLearnEffort(a, b)
+  if a.unpriced ~= b.unpriced then return not a.unpriced end
+  if a.unpriced then
+    if learnAt(a) ~= learnAt(b) then return learnAt(a) < learnAt(b) end
+    return a.rec.id < b.rec.id
+  end
+  local ua, ub = math.floor(a.unitsPerPoint * 100 + 0.5), math.floor(b.unitsPerPoint * 100 + 0.5)
+  if ua ~= ub then return ua < ub end
+  if math.abs(a.chance - b.chance) > 1e-9 then return a.chance > b.chance end
+  if (a.craftNow or false) ~= (b.craftNow or false) then return a.craftNow or false end
+  if (#a.subs == 0) ~= (#b.subs == 0) then return #a.subs == 0 end
+  if a.useful ~= b.useful then return a.useful > b.useful end
+  return byCost(a, b)
+end
+
 -- Recipes the character does not know, ranked by estimated cost per skill point (same maths as Evaluate; the colour
 -- is the estimate above, taken at the skill the character will have when the recipe can be learned). `ctx.known(id)`
 -- says which recipes are known. A reagent without an AH price falls back to its vendor buy price (ctx.buy), then to
@@ -601,6 +619,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       local e = V.Evaluate(rec, own, gold and "gold" or "level", math.max(skill, at), th)
       e.exact = (c.y and c.g and c.gr) ~= nil or e.d == 0
       e.recommend = recommend
+      if ctx.owned then e.craftNow = V.Craftable(rec, ctx.owned) >= 1 end
       e.target = place
       -- how sure the place is: 0 a position seen on Forever, 1 a hint (Classic position or a zone), 2 text only
       e.placeRank = place and ((place.kind == "pin" and place.confirmed) and 0 or ((place.kind == "pin" or place.kind == "zone") and 1 or 2)) or 2
@@ -636,8 +655,8 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
     if a.rec.learn ~= b.rec.learn then return a.rec.learn < b.rec.learn end
     return a.rec.id < b.rec.id
   end)
-  table.sort(now, byLearnRank)
-  table.sort(soon, byLearnRank)
+  table.sort(now, gold and byLearnRank or byLearnEffort)
+  table.sort(soon, gold and byLearnRank or byLearnEffort)
   table.sort(gray, function(a, b)
     if a.rec.learn ~= b.rec.learn then return a.rec.learn < b.rec.learn end
     return a.rec.id < b.rec.id
@@ -655,18 +674,45 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
     if a.useful ~= b.useful then return a.useful > b.useful end
     return byCost(a, b)
   end
+  -- levelling: within 15 % of the fewest ingredients per point, more chance (fewer crafts), then a place to pin, no intermediate craft, the longest useful
+  local function leaner(a, b)
+    if math.abs(a.chance - b.chance) > 1e-9 then return a.chance > b.chance end
+    if (a.placeRank or 2) ~= (b.placeRank or 2) then return (a.placeRank or 2) < (b.placeRank or 2) end
+    if (#a.subs == 0) ~= (#b.subs == 0) then return #a.subs == 0 end
+    if a.useful ~= b.useful then return a.useful > b.useful end
+    return byLearnEffort(a, b)
+  end
   -- a recipe whose learning price is known in gold comes before one whose price is unknown (currency, item, not in the data)
   for _, known in ipairs({ true, false }) do
     for _, gated in ipairs({ false, true }) do
+      local tier, lean = {}, math.huge
       for _, e in ipairs(now) do
-        if e.recommend and not e.unpriced and e.rankGated == gated and e.priceKnown == known and (not best or better(e, best)) then best = e end
+        if e.recommend and not e.unpriced and e.rankGated == gated and e.priceKnown == known then
+          tier[#tier + 1] = e
+          lean = math.min(lean, e.unitsPerPoint or math.huge)
+        end
+      end
+      for _, e in ipairs(tier) do
+        if gold then
+          if not best or better(e, best) then best = e end
+        elseif (e.unitsPerPoint or math.huge) <= lean * 1.15 and (not best or leaner(e, best)) then
+          best = e
+        end
       end
       if best then break end
     end
     if best then break end
   end
-  local gain = (best and not best.floor and knownBest and rankValue(best) < knownBest) and (knownBest - rankValue(best)) or nil
-  return { now = now, soon = soon, gray = gray, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
+  -- better than the best known recipe: gold: money per point; levelling: ingredients per point (from -> to)
+  local gain, from, to
+  if best and knownBest then
+    if gold then
+      if not best.floor and rankValue(best) < knownBest then gain = knownBest - rankValue(best) end
+    elseif best.unitsPerPoint and best.unitsPerPoint < knownBest then
+      gain, from, to = knownBest - best.unitsPerPoint, knownBest, best.unitsPerPoint
+    end
+  end
+  return { now = now, soon = soon, gray = gray, best = best, gain = gain, gainFrom = from, gainTo = to, candidates = candidates, unpriced = unpriced,
     nowTotal = nowTotal, soonTotal = soonTotal, books = books, beyond = beyond, otherFaction = otherFaction }
 end
 

@@ -170,6 +170,8 @@ ns.S = {
   learn_row = "%s",learn_pp = "coûte ~%s/pt", learn_pp_gain = "rapporte ~%s/pt",
   learn_detail = "%s, niv. %d%s · %s ~%d %%%s",
   learn_rank = ", rang supérieur possible",
+  learn_best_effort = "Meilleure à apprendre : %s : ~%s ingrédients par point, ~%s fabrications par point",
+  learn_beats_effort = "Apprendre %s te ferait passer de ~%s à ~%s ingrédients par point",
   learn_beats = "Apprendre %s ferait baisser ton coût par point de ~%s",
   learn_none = "Aucune recette à apprendre pour ce métier.",
   learn_gray = "Les recettes à ta portée ne font plus monter le métier.",

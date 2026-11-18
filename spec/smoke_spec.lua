@@ -1413,7 +1413,7 @@ describe("recipes to learn without prices, footer and line slots", function()
     assert.is_nil(text:match("sans prix pour leurs composants"))
   end)
 
-  it("values reagents without AH price at their vendor sell value and labels the figure as a floor", function()
+  it("values reagents without AH price at their vendor sell value (a floor), and levelling shows ingredients, not a gold figure", function()
     local ns = start({ pickupNoAh = true })                    -- vendor sell value 25 for every item
     local res
     ns.RunLeveling(function(r) res = r end)
@@ -1421,8 +1421,8 @@ describe("recipes to learn without prices, footer and line slots", function()
     for _, e in ipairs(res.profs[1].learn.now) do if e.floor then found = true end end
     assert.is_true(found)
     ns.Window.Toggle(); ns.Window.SetTab("job")
-    local text = lineTexts(ns)
-    assert.is_true(text:find("dès ~", 1, true) ~= nil or text:find("gain max ~", 1, true) ~= nil)
+    assert.is_nil(lineTexts(ns):find("dès ~", 1, true))          -- levelling: ingredients, no gold figure
+    assert.matches("ingr%./pt", lineTexts(ns))
   end)
 
   it("keeps the footer within two lines of the footer slot (character budget), with and without the bag filter", function()
@@ -2839,9 +2839,67 @@ describe("Métier tab, 'Monter le métier': no AH resale note, the chance is exa
     local all = table.concat(text, "\n")
     assert.matches("Monte avec ", all)
     assert.matches("ingrédients par point %(6 Item2318, 2 Item2320%)", all)
-    assert.matches("coût en or ~", all)
+    assert.is_nil(all:find("coût", 1, true))                                        -- levelling talks effort, not gold
     assert.matches("chance d'un point ~100 %%\n", all .. "\n")                   -- thresholds known (orange): exact, no "(estimation)"
     assert.is_nil(all:find("rentable seulement", 1, true))
     assert.is_nil(all:find("prix HV du jour", 1, true))
+  end)
+end)
+
+describe("Monter le métier shows effort everywhere (owner's data, Horde)", function()
+  local function plain(s) return ((s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
+  local function render(goal, bag)
+    setup({ scanned = true, faction = "Horde", counts = bag and { [2318] = 10, [2320] = 10, [2308] = 10, [2309] = 10 } or nil,
+      profs = { { 165, 61, "Travail du cuir", 75 }, { 185, 124, "Cuisine", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {}, onlyBag = bag or false, goal = goal }
+    for _, p in ipairs(dofile("spec/fixtures/owner_profiles.lua")) do
+      local recipes = {}
+      for _, id in ipairs(p.known) do recipes[id] = { id = id, name = "r" .. id, d = 2, out = 2302, oq = 1, mats = { { 2318, 1 } } } end
+      ns.char.profs[p.name] = { skill = p.skill, max = p.skill > 100 and 150 or 75, recipes = recipes }
+    end
+    _G.GetLocale = function() return "frFR" end
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local due = timers; timers = {}
+    for _, fn in ipairs(due) do pcall(fn) end
+    return ns
+  end
+
+  it("no gold wording or coin icon in any line, except the learning price on a dim detail line", function()
+    for _, bag in ipairs({ false, true }) do
+      local ns = render("level", bag)
+      for _, l in ipairs(ns.Window.Lines()) do
+        local left, right = plain(l.left.text), plain(l.right.text)
+        for _, word in ipairs({ "rapporte", "coût", "coûte" }) do
+          assert.is_nil(left:find(word, 1, true), word .. " in: " .. left)
+          assert.is_nil(right:find(word, 1, true), word .. " in: " .. right)
+        end
+        assert.is_nil((l.right.text or ""):find("Interface\\", 1, true), "coin icon in the figure: " .. tostring(l.right.text))
+      end
+    end
+  end)
+
+  it("gold mode keeps its gold wording", function()
+    local ns = render("gold", false)
+    local all = {}
+    for _, l in ipairs(ns.Window.Lines()) do all[#all + 1] = plain(l.left.text) .. " " .. plain(l.right.text) end
+    assert.matches("par fabrication", table.concat(all, "\n"))
+  end)
+
+  it("the best recipe to learn follows the effort rule: nothing in the learn lists has fewer ingredients per point within the 15 % window with a better chance", function()
+    local ns = render("level", false)
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    for _, p in ipairs(res.profs) do
+      local lr = p.learn
+      if lr and lr.best then
+        local lean = math.huge
+        for _, e in ipairs(lr.now) do
+          if e.recommend and not e.unpriced and e.rankGated == lr.best.rankGated and e.priceKnown == lr.best.priceKnown then lean = math.min(lean, e.unitsPerPoint or math.huge) end
+        end
+        assert.is_true(lr.best.unitsPerPoint <= lean * 1.15 + 1e-9, p.name)
+      end
+    end
   end)
 end)

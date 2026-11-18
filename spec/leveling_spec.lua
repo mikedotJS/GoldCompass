@@ -204,7 +204,7 @@ describe("Leveling recipes to learn", function()
     assert.are.same({ 103, 106 }, ids(r.soon))   -- 106 has an unknown reagent price: listed after the priced one
     assert.are.equal(50, r.soon[1].perPoint)
     assert.is_true(r.soon[2].unpriced); assert.is_nil(r.soon[2].perPoint)
-    assert.are.equal(102, r.best.rec.id)         -- orange and useful for longer than 101 (yellow, gray sooner)
+    assert.are.equal(101, r.best.rec.id)         -- 1 ingredient / 0.889 = 1.125 per point against 2 for 102 (orange, 2 reagents)
     assert.are.equal(3, r.nowTotal)      -- 101, 102, 105 (104 is known, 108 has no learn skill)
     assert.are.equal(2, r.soonTotal)     -- 103, 106
     assert.are.equal(3, r.candidates)    -- priced and above gray: 101, 102, 103
@@ -212,8 +212,9 @@ describe("Leveling recipes to learn", function()
   end)
 
   it("says so when the best recipe to learn beats the best known one, and by how much", function()
-    assert.are.equal(250, V.Learnable(crafts, 50, learnCtx(), nil, nil, 400).gain)       -- best 102: 150 vs 400
-    assert.is_nil(V.Learnable(crafts, 50, learnCtx(), nil, nil, -2000).gain)
+    local g = V.Learnable(crafts, 50, learnCtx(), nil, nil, 3)                            -- best 101: 1.125 ingredients per point vs 3
+    assert.is_near(1.875, g.gain, 1e-9); assert.are.equal(3, g.gainFrom); assert.is_near(1.125, g.gainTo, 1e-9)
+    assert.is_nil(V.Learnable(crafts, 50, learnCtx(), nil, nil, 1).gain)
     assert.is_nil(V.Learnable(crafts, 50, learnCtx()).gain)
   end)
 
@@ -394,7 +395,7 @@ describe("Leveling recipes offered by a recorded trainer", function()
     local r = V.Learnable(crafts, 61, lctx({ [401] = offer(35, 500), [402] = offer(35, 100) }), nil, nil, 60)
     assert.are.same({ 402, 401 }, { r.now[1].rec.id, r.now[2].rec.id })     -- fee 100 beats fee 500 (52.94 < 64.71)
     assert.are.equal(402, r.best.rec.id)
-    assert.is_near(60 - (50 + 100 / 34), r.gain, 1e-9)                      -- cheaper by ~7.06 per point
+    assert.is_near(60 - 1, r.gain, 1e-9)                                   -- 1 ingredient per point against 60 for the best known one
   end)
 
   it("lists a Forever recipe the data does not teach, and hides one the trainer lists as already known", function()
@@ -770,19 +771,24 @@ describe("Leveling: the effort rule, with and without the bag (the owner's Leath
     assert.is_true(vendorSale.net < 0); assert.is_false(vendorSale.resale)
   end)
 
-  it("recipes to learn: orange or yellow before green, then the one that stays useful longest, then the cost", function()
+  it("recipes to learn follow the effort rule: fewest ingredients per point, then chance, then the one that stays useful longest", function()
     local function craft(id, learn, y, g, gr, mats)
       return { id = id, learn = learn, y = y, g = g, gr = gr, src = "v", out = 30, oq = 1, mats = mats or { { 10, 1 } } }
     end
     local lc = ctx()
     lc.known = function() return false end
-    -- skill 61: 1 green (cheapest), 2 orange gray at 75 (useful 14), 3 yellow gray at 100 (useful 39), 4 orange gray at 100 but dearer
-    local crafts = { craft(1, 30, 40, 50, 120), craft(2, 40, 62, 70, 75), craft(3, 50, 55, 80, 100), craft(4, 50, 70, 80, 100, { { 10, 2 } }) }
+    -- skill 61, one ingredient each: 1 green (chance 0.74: 1.36 per point), 2 orange gray at 75 (1.0, useful 14),
+    -- 3 yellow (0.87: 1.15), 4 orange but 2 ingredients (2.0), 5 orange like 2 but gray at 100 (1.0, useful 39)
+    local crafts = { craft(1, 30, 40, 50, 120), craft(2, 40, 62, 70, 75), craft(3, 50, 55, 80, 100), craft(4, 50, 70, 80, 100, { { 10, 2 } }),
+      craft(5, 45, 62, 70, 100) }
     local r = V.Learnable(crafts, 61, lc)
-    assert.are.equal(3, r.best.rec.id)       -- 3 and 4 stay useful for 39 points; 3 is cheaper; the green 1 does not win
+    assert.are.equal(5, r.best.rec.id)       -- 2 and 5 tie on ingredients and chance: 5 stays useful for 39 points
     assert.are.equal(39, r.best.useful)
+    assert.are.equal(5, r.now[1].rec.id); assert.are.equal(2, r.now[2].rec.id)       -- the list follows the same rule
+    assert.are.equal(4, r.now[#r.now].rec.id)                                         -- 2 ingredients per point: last
+    assert.is_near(1.36, V.Learnable({ crafts[1] }, 61, lc).now[1].unitsPerPoint, 0.01)
     local only = V.Learnable({ crafts[1], crafts[2] }, 61, lc)
-    assert.are.equal(2, only.best.rec.id)    -- orange beats green even if the green stays useful for longer (59)
+    assert.are.equal(2, only.best.rec.id)    -- orange (1.0 per point) beats green (1.36) even if the green stays useful for longer (59)
   end)
 end)
 

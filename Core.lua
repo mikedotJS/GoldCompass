@@ -510,7 +510,7 @@ function ns.RunLeveling(done)
             for i, s in ipairs(almost.short) do entry.almost.missing[i] = { ns.ItemName(s[1]), s[2] } end
           end
           entry.goal = entry.plan.goal
-          entry.learn = ns.LearnFor(p, ctx, count, best and not best.uncertain and (entry.goal == "gold" and -best.profit or best.perPoint) or nil)
+          entry.learn = ns.LearnFor(p, ctx, count, best and not best.uncertain and (entry.goal == "gold" and -best.profit or best.unitsPerPoint) or nil)
           if entry.learn then
             for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {}, entry.learn.books or {} }) do
               for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end
