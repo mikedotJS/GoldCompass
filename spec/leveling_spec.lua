@@ -885,3 +885,50 @@ describe("Leveling: faction of vendors and the learning price of vendor recipes"
     assert.are.equal(1, r.best.rec.id)                                         -- nothing priced: an unknown price may still be best
   end)
 end)
+
+describe("Leveling.Learnable: the best is learnable now, AH figures can be uncertain", function()
+  local function lc(ah)
+    local c = ctx()
+    c.known = function() return false end
+    c.price = function(id) local p = ah[id]; if p then return p[1], p[2] end end
+    return c
+  end
+  local function craft(id, learn, out, over)
+    local c = { id = id, learn = learn, y = learn + 30, g = learn + 45, gr = learn + 60, out = out, oq = 1, mats = { { 10, 1 } },
+      how = { kind = "trainer", cost = 0, npcs = {} } }
+    for k, v in pairs(over or {}) do c[k] = v end
+    return c
+  end
+
+  it("a recipe of level 65 is never the best at skill 61, nor in the 'now' list; the best is among the recipes learnable now", function()
+    -- 3 (learn 65, soon) is far cheaper per point than 1 (learn 55, now)
+    local r = V.Learnable({ craft(1, 55, 31), craft(3, 65, 30) }, 61, lc({ [10] = { 100, 0 }, [30] = { 5000, 0 } }))
+    assert.are.equal(1, r.best.rec.id)
+    for _, e in ipairs(r.now) do assert.is_true(e.rec.learn <= 61) end
+    assert.are.equal(3, r.soon[1].rec.id)
+    -- only a soon recipe: no best at all (never promoted to 'now')
+    r = V.Learnable({ craft(3, 65, 30) }, 61, lc({ [10] = { 100, 0 }, [30] = { 5000, 0 } }))
+    assert.is_nil(r.best); assert.are.equal(0, #r.now); assert.are.equal(1, #r.soon)
+  end)
+
+  it("a crafted-item price older than the fresh days (or undated) is uncertain: sorted after reliable figures and never the best", function()
+    local ah = { [10] = { 100, 0 }, [30] = { 9000, 5 }, [32] = { 1000, 0 } }     -- 30 sells for a lot, but its price is 5 days old
+    local r = V.Learnable({ craft(1, 50, 30), craft(2, 50, 32) }, 61, lc(ah))
+    assert.is_true(r.now[2].uncertain or r.now[1].uncertain)
+    assert.are.equal(2, r.now[1].rec.id)                          -- the reliable one first although it earns less per point
+    assert.is_false(r.now[1].uncertain); assert.is_true(r.now[2].uncertain)
+    assert.are.equal(2, r.best.rec.id)
+    assert.are.equal(5, r.now[2].saleAge)
+    -- an undated price (the price addon cannot tell the age) is uncertain too
+    local c = lc(ah); c.ageKnown = false
+    assert.is_true(V.Learnable({ craft(1, 50, 30) }, 61, c).now[1].uncertain)
+    -- a fresh price is not
+    assert.is_false(V.Learnable({ craft(1, 50, 32) }, 61, lc(ah)).now[1].uncertain)
+  end)
+
+  it("keeps the price age of a priced teaching item", function()
+    local c = craft(5, 50, 31, { how = { kind = "item", itemID = 555, npcs = {} } })
+    local e = V.Learnable({ c }, 61, lc({ [10] = { 100, 0 }, [555] = { 20000, 3 }, [31] = { 500, 0 } })).now[1]
+    assert.are.equal(20000, e.rec.fee); assert.are.equal(3, e.rec.feeAge)
+  end)
+end)

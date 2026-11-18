@@ -70,6 +70,46 @@ function F.VendorPrice(way)
   return S.price_recipe_unknown
 end
 
+-- Age of an auction price: "prix HV du jour", "prix HV de 3 j", "prix HV sans date".
+function F.AgeNote(age)
+  if not age then return S.ah_age_unknown end
+  return age < 1 and S.job_ah_today or S.job_ah_age:format(math.floor(age + 0.5))
+end
+
+-- The note under a recipe whose figure rests on an AH price of the crafted item: "prix HV incertain · prix HV de 5 j"; nil otherwise.
+function F.PriceNote(e)
+  if not e.ahSale then return end
+  local parts = {}
+  if e.uncertain then parts[#parts + 1] = S.ah_uncertain end
+  parts[#parts + 1] = F.AgeNote(e.saleAge)
+  return table.concat(parts, " · ")
+end
+
+-- What the site (wowforever.be) says about where a recipe comes from, as "butin : <zone> / pickpocket / pêche / quête : <nom>"; nil when
+-- it says nothing. `way.kinds` are its source letters (v vendor, q quest, d drop, p pickpocket, f fished).
+function F.SiteSources(way)
+  local k = way and way.kinds
+  if not k or k == "" then return end
+  local zones = {}
+  for part in (way.zone or ""):gmatch("[^,]+") do
+    local z = part:match("^%s*(.-)%s*$")
+    zones[#zones + 1] = ns.ZoneLabel({ mapID = ns.MapIDs[z] and ns.MapIDs[z][1], zone = z })
+  end
+  local out, zoneUsed = {}, #zones == 0
+  for letter, label in pairs({ d = S.site_d, p = S.site_p, f = S.site_f }) do
+    if k:find(letter, 1, true) then out[#out + 1] = { letter, label } end
+  end
+  table.sort(out, function(a, b) return a[1] < b[1] end)
+  local parts = {}
+  for _, o in ipairs(out) do
+    parts[#parts + 1] = zoneUsed and o[2] or (o[2] .. " : " .. table.concat(zones, ", "))
+    zoneUsed = true
+  end
+  if k:find("q", 1, true) and way.questName then parts[#parts + 1] = S.site_q .. " : " .. way.questName end
+  if k:find("v", 1, true) and way.where then parts[#parts + 1] = S.site_v .. " : " .. way.where end
+  return #parts > 0 and table.concat(parts, " / ") or nil
+end
+
 -- Where a recipe to learn comes from, in French ("entraîneur", "vendeur", ...). Classic data, not confirmed on Forever.
 -- `long`: the full wording (trainer not confirmed on Forever, teaching item with its name).
 function F.Source(recipe, long)
@@ -86,6 +126,10 @@ function F.Source(recipe, long)
     return long and S.src_trainer_unc or S.src_trainer_unc_short
   end
   if key == "v" and way then return S.src_v_price:format(F.VendorPrice(way)) end
+  if key == "i" and recipe.fee and way and way.kind == "item" then   -- a pattern bought at the auction house
+    if not long then return S.src_i_ah:format(ns.Money(recipe.fee)) end
+    return S.src_i_ah_long:format(ns.Money(recipe.fee), F.AgeNote(recipe.feeAge))
+  end
   if key == "i" and long and recipe.itemName then return S.src_i_named:format(recipe.itemName) end
   return S["src_" .. key]
 end

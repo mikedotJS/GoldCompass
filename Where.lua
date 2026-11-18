@@ -37,7 +37,8 @@ local function pick(candidates, env)
         env.dist and env.dist(mapID, c.x, c.y) or math.huge, c.name }
       if not bestKey or key[1] < bestKey[1] or (key[1] == bestKey[1] and (key[2] < bestKey[2]
         or (key[2] == bestKey[2] and key[3] < bestKey[3]))) then
-        best, bestKey = { name = c.name, zone = c.zone, mapID = mapID, x = c.x, y = c.y, id = c.id, fr = c.fr, recorded = c.recorded }, key
+        best, bestKey = { name = c.name, zone = c.zone, mapID = mapID, x = c.x, y = c.y, id = c.id, fr = c.fr, recorded = c.recorded,
+          source = c.recorded and "recorded" or (c.id and "pfquest" or "classic") }, key
       end
     end
   end
@@ -114,7 +115,8 @@ function Wh.Target(rec, prof, env)
   -- a trainer window recorded in game beats the Classic coordinates: the NPC and where it really stands
   local seen = rec.trainer
   if seen and seen.mapID and seen.x and seen.y then
-    return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true, kind = "pin" }
+    return { name = seen.npc, zone = seen.zone or "", mapID = seen.mapID, x = seen.x, y = seen.y, recorded = true, kind = "pin",
+      source = "recorded" }
   end
   if rec.src == nil then
     if env.db then   -- the NPC database: nearest trainer of the player's faction whose rank covers the recipe
@@ -141,14 +143,7 @@ function Wh.Target(rec, prof, env)
   for i = 2, #(info or {}) do names[#names + 1] = info[i] end
   local siteVendors = Wh.ParseVendors(rec.way and rec.way.where)
   for _, v in ipairs(siteVendors) do names[#names + 1] = v.name end
-  -- a drop has no NPC: the drop zone of the site, and the map of that zone when it is known
   local way = rec.way
-  if way and way.zone and (way.kind == "drop" or way.kind == "container" or way.kind == "item") then
-    for part in way.zone:gmatch("[^,]+") do
-      local zone = part:match("^%s*(.-)%s*$")
-      if env.maps[zone] then return { zone = zone, mapID = env.maps[zone][1], kind = "zone", dropZone = true } end
-    end
-  end
   if env.db then   -- the NPC database: the NPCs the sources name (library ids, the site's vendors, the Classic names), by faction
     local ids, taken = {}, {}
     local function add(id) if not taken[id] then taken[id] = true; ids[#ids + 1] = id end end
@@ -159,7 +154,25 @@ function Wh.Target(rec, prof, env)
     local cands, other = fromDb(ids, env)
     local best = pick(cands, env)
     if best then best.kind = "pin"; return best end
+    -- a teaching item (pattern) with an auction price: the nearest auction house of the player's faction (neutral ones last)
+    if way and way.kind == "item" and rec.fee and env.auctioneers then
+      local own, neutral = {}, {}
+      for _, id in ipairs(env.auctioneers) do
+        local npc = env.db[id]
+        local list = npc and (npc[2] == "AH" and neutral or own)
+        if list then list[#list + 1] = id end
+      end
+      local a = pick((fromDb(own, env)), env) or pick((fromDb(neutral, env)), env)
+      if a then a.kind, a.auction = "pin", true; return a end
+    end
     if other then return { kind = "text", onlyFaction = onlyFor(env) } end
+  end
+  -- a drop has no NPC: the drop zone of the site, and the map of that zone when it is known
+  if way and way.zone and (way.kind == "drop" or way.kind == "container" or way.kind == "item") then
+    for part in way.zone:gmatch("[^,]+") do
+      local zone = part:match("^%s*(.-)%s*$")
+      if env.maps[zone] then return { zone = zone, mapID = env.maps[zone][1], kind = "zone", dropZone = true, source = "site" } end
+    end
   end
   for _, name in ipairs(names) do
     local n = env.npcs[name]
@@ -181,9 +194,9 @@ function Wh.Target(rec, prof, env)
     end
     if #list > 0 then
       for _, v in ipairs(list) do   -- the first vendor whose zone has a map: open it
-        if v.mapID then return { name = v.name, zone = v.zone, mapID = v.mapID, vendors = list, kind = "zone" } end
+        if v.mapID then return { name = v.name, zone = v.zone, mapID = v.mapID, vendors = list, kind = "zone", source = "site" } end
       end
-      return { name = list[1].name, zone = list[1].zone, vendors = list, text = where, kind = "text" }
+      return { name = list[1].name, zone = list[1].zone, vendors = list, text = where, kind = "text", source = "site" }
     end
   end
   return { text = info and info[1] or nil, kind = "text" }

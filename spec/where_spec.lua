@@ -223,3 +223,62 @@ describe("Where.Target with the real NPC database (pfQuest)", function()
     assert.are.equal("zone", t.kind); assert.is_true(t.dropZone); assert.are.equal(1411, t.mapID)
   end)
 end)
+
+describe("Where.Target for teaching items (patterns)", function()
+  local real = {}
+  for _, f in ipairs({ "Data/Zones", "Data/Locations", "Data/Npcs" }) do assert(loadfile(f .. ".lua"))("GoldCompass", real) end
+  local contOf = {}
+  for _, m in pairs(real.MapIDs) do contOf[m[1]] = m[2] end
+  local function renv(faction, over)
+    local e = { trainers = real.Trainers, npcs = real.NPCs, where = real.RecipeWhere, maps = real.MapIDs, db = real.Npcs,
+      byName = real.NpcByName, ntrainers = real.NpcTrainers, auctioneers = real.NpcAuctioneers, contOf = contOf, faction = faction }
+    for k, v in pairs(over or {}) do e[k] = v end
+    return e
+  end
+  local city = { [1454] = "Orgrimmar", [1456] = "Thunder Bluff", [1458] = "Undercity", [1453] = "Stormwind City", [1455] = "Ironforge",
+    [1457] = "Darnassus" }
+  local pattern = { id = 70, src = "i", fee = 25000, feeAge = 1, way = { kind = "item", itemID = 555, site = true, kinds = "d", zone = "Durotar" } }
+
+  it("a pattern with an auction price pins an auction house of the player's faction, whatever its drop zone", function()
+    local h = Wh.Target(pattern, "Leatherworking", renv("H"))
+    assert.are.equal("pin", h.kind); assert.is_true(h.auction)
+    assert.is_truthy(h.name:find("^Auctioneer")); assert.is_truthy(city[h.mapID]); assert.are_not.equal(1453, h.mapID)
+    assert.are.equal("H", real.Npcs[h.id][2])
+    local a = Wh.Target(pattern, "Leatherworking", renv("A"))
+    assert.are.equal("pin", a.kind); assert.are.equal("A", real.Npcs[a.id][2])
+    assert.is_true(({ [1453] = true, [1455] = true, [1457] = true, [1438] = true })[a.mapID] or false)
+  end)
+
+  it("the nearest auction house wins, and the neutral goblin ones only when no auction house of the faction exists", function()
+    local t = Wh.Target(pattern, "Leatherworking", renv("H", { continent = "K", dist = function(m) return m == 1456 and 1 or 80 end }))
+    assert.are.equal(1456, t.mapID)                              -- the player stands in Thunder Bluff
+    local gob = Wh.Target(pattern, "Leatherworking", renv("H", { auctioneers = { 8661, 9857 } }))     -- goblin houses only
+    assert.are.equal("AH", real.Npcs[gob.id][2])
+  end)
+
+  it("a pattern with no auction price keeps the drop zone (no auction house pinned)", function()
+    local free = { id = 71, src = "i", way = { kind = "item", itemID = 556, site = true, kinds = "d", zone = "Durotar" } }
+    local t = Wh.Target(free, "Leatherworking", renv("H"))
+    assert.are.equal("zone", t.kind); assert.is_true(t.dropZone); assert.are.equal(1411, t.mapID); assert.is_nil(t.auction)
+  end)
+
+  it("a pattern sold by a vendor of the player's faction pins that vendor, before the auction house", function()
+    local sold = { id = 72, src = "i", fee = 25000, way = { kind = "item", itemID = 557, site = true, kinds = "v", where = "Kilxx (The Barrens)", ids = { 3497 } } }
+    local t = Wh.Target(sold, "Cooking", renv("H"))
+    assert.are.equal("pin", t.kind); assert.are.equal("Kilxx", t.name); assert.is_nil(t.auction); assert.are.equal(1413, t.mapID)
+    -- an Alliance-only vendor is not proposed to the Horde: the auction house takes over (without a price: "uniquement côté Alliance")
+    local alliance = { id = 73, src = "i", fee = 25000, way = { kind = "item", itemID = 558, site = true, kinds = "v", where = "Lindea Rabonne (Hillsbrad Foothills)", ids = { 2383 } } }
+    local viaAh = Wh.Target(alliance, "Cooking", renv("H"))
+    assert.is_true(viaAh.auction); assert.are.equal("H", real.Npcs[viaAh.id][2])
+    alliance.fee = nil
+    assert.are.equal("A", Wh.Target(alliance, "Cooking", renv("H")).onlyFaction)
+  end)
+
+  it("every auctioneer of the data has a faction and a map position", function()
+    assert.is_true(#real.NpcAuctioneers >= 20)
+    for _, id in ipairs(real.NpcAuctioneers) do
+      local n = real.Npcs[id]
+      assert.is_truthy(n, tostring(id)); assert.is_truthy(n[1]:find("^Auctioneer")); assert.is_true(#n[3] > 0)
+    end
+  end)
+end)

@@ -323,7 +323,7 @@ end
 -- the player and of a map position; nil when the game cannot tell, then only the continent decides).
 local function whereEnv(ctx)
   local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = ctx.faction,
-    db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, recorded = ns.db and ns.db.npcs, contOf = {} }
+    db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, auctioneers = ns.NpcAuctioneers, recorded = ns.db and ns.db.npcs, contOf = {} }
   for _, m in pairs(ns.MapIDs) do env.contOf[m[1]] = m[2] end
   local C = C_Map
   local here = C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")
@@ -397,6 +397,9 @@ function ns.LearnFor(p, ctx, count, knownBest)
         end
         if not t.text then t.text = ns.Fmt.Source(row.rec, true) end
       end
+      if t.auction then t.text = ns.Fmt.Source(row.rec, true) end   -- "Patron en vente à l'HV : ~2g (prix HV de 3 j)"
+      t.extra = way and way.kind == "item" and ns.Fmt.SiteSources(way) or nil   -- what the site says: butin, pickpocket, pêche, quête
+      t.note = ns.Fmt.PriceNote(row)
       if row.rec.src == "i" and row.rec.teachItem then row.rec.itemName = ns.ItemName(row.rec.teachItem) end
     end
   end

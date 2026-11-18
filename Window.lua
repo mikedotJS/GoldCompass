@@ -173,7 +173,8 @@ function W.GoTo(t, recipe)
     end)
   end
   ns.Log("frame", ("where: %s (%s) map %d %.1f,%.1f pinned=%s"):format(tostring(t.name), label, t.mapID, t.x, t.y, tostring(pinned)))
-  ns.Print((pinned and S.where_pinned or S.where_coords):format(W.NpcName(t), label, t.x, t.y))
+  ns.Print((pinned and S.where_pinned or S.where_coords):format(W.NpcName(t), label, t.x, t.y, S.where_src[t.source or "classic"]))
+  if t.text then ns.Print(t.text) end                -- "Patron en vente à l'HV : ~2g (prix HV de 3 j)"
   openMap(t.mapID)
 end
 function W.Rows() return rows end
@@ -237,14 +238,16 @@ function W.TargetTooltipLines(t)
     tip[#tip + 1] = S.where_zone_tip
   elseif t.mapID then
     tip[#tip + 1] = W.NpcName(t)
-    tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t), t.x, t.y)
-    tip[#tip + 1] = t.recorded and S.where_recorded or S.where_classic
+    tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t) or "?", t.x, t.y)
+    if t.text then tip[#tip + 1] = t.text end
   else
     if t.onlyFaction then tip[#tip + 1] = S.where_only:format(t.onlyFaction == "A" and S.faction_a or S.faction_h) end
     if t.text then tip[#tip + 1] = t.text end
     tip[#tip + 1] = S.where_unclear
-    tip[#tip + 1] = S.where_classic
   end
+  if t.extra then tip[#tip + 1] = t.extra end       -- what the site says: butin, pickpocket, pêche, quête
+  if t.note then tip[#tip + 1] = t.note end         -- the AH price of the crafted item: its age, "prix HV incertain"
+  if t.source then tip[#tip + 1] = S.where_source:format(S.where_src[t.source]) end
   return tip
 end
 
@@ -756,7 +759,7 @@ local function addLearn(entries, p)
     if gold then return (e.profit >= 0 and S.job_gold_row_gain or S.job_gold_row_cost):format(ns.Money(math.abs(e.profit))) end
     local gain = e.perPoint < 0
     local fmt = e.floor and (gain and S.learn_pp_floor_gain or S.learn_pp_floor) or (gain and S.learn_pp_gain or S.learn_pp)
-    return fmt:format(ns.Money(math.abs(e.perPoint)))
+    return fmt:format(ns.Money(math.abs(e.perPoint))) .. (e.uncertain and S.ah_uncertain_tag or "")
   end
   local total = #lr.now + #lr.soon + #(lr.gray or {})
   if total == 0 then
@@ -790,8 +793,11 @@ local function addLearn(entries, p)
           math.floor(e.chance * 100 + 0.5)))
       else
         grey(S.learn_detail:format(ns.Fmt.Source(e.rec, true), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
-          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0 and not (e.rec.way and (e.rec.way.cost or e.rec.way.kind == "vendor"))) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
+          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0 and not (e.rec.way and (e.rec.way.cost or e.rec.way.kind == "vendor" or e.rec.way.kind == "item"))) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
       end
+      if e.target and e.target.extra then grey(e.target.extra) end          -- the site's butin / pickpocket / pêche / quête
+      local note = ns.Fmt.PriceNote(e)
+      if note then grey(note) end                                           -- "prix HV incertain · prix HV de 5 j"
       if lr.gain then
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. (gold and S.learn_gold_beats or S.learn_beats):format(label, ns.Money(lr.gain)) .. "|r" }
       end

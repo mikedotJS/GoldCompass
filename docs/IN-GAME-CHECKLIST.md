@@ -137,7 +137,7 @@ Sources (`entraîneur`, `vendeur`, `butin de monstre`, `butin`, `quête`) come f
 |---|---|---|---|
 | 74 | `/gc spike`, read the `S8` line | `C_Map.SetUserWaypoint`, `UiMapPoint`, `SetSuperTrackedUserWaypoint`, `CraftRecipe`, `OpenTradeSkill`, `IsTradeSkillReady` each true or false | The S8 line |
 | 75 | `Métier` tab: a small map icon at the right end of each recipe to learn (and of `Meilleure à apprendre`) | Icons only on those rows; the recipe text is not covered by the icon | Screenshot |
-| 76 | Hover an icon | Tooltip: `Où l'apprendre`, the NPC, `<zone en français> : x, y`, `Données Classic, à vérifier.` For a recipe with no place: its free text and `Lieu non précis.` | Screenshot |
+| 76 | Hover an icon | Tooltip: `Où l'apprendre`, the NPC, `<zone en français> : x, y`, `Source : pfQuest (positions Classic).` (or `observé en jeu`, `wowforever.be`) For a recipe with no place: its free text and `Lieu non précis.` | Screenshot |
 | 77 | Click an icon with a place (out of combat) | Chat `Repère posé : ...`, the world map opens, a yellow waypoint arrow points at the NPC, and you can follow it | Screenshot, and whether the NPC is really there |
 | 78 | Click an icon with no place | Only a chat line with the text and `lieu non précis`; the map does not open | The chat line |
 | 79 | Click in combat | Only a chat line `Indisponible en combat : ...`, no map, no pin | The chat line |
@@ -216,3 +216,6 @@ The Forever recipe data of LibProfessionDB v1.10.1 (MIT, by Pimptasty) is inside
 | 117 | Map button of `Poisson-chat moustachu` (Horde) | Pin on Derak Nightfall or Naal Mistrunner, never Lindea Rabonne; an Alliance character gets Lindea / Kilxx | The pin |
 | 118 | Open a vendor and a trainer window of a Forever-only NPC, then click its recipe | `/gc` log shows `merchant: <name> (<id>) at ...`; next click pins the recorded position | The log line |
 | 119 | A drop recipe | Chat `Où l'apprendre : <zone du drop>`, the map opens on that zone | Chat line |
+| 120 | Map button of a pattern with an Auctionator price (Bottes élégantes en cuir) | Pins the nearest auction house of your faction (Horde: Orgrimmar, Thunder Bluff, Undercity); tooltip `Patron en vente à l'HV : ~<prix> (prix HV de N j)`, `butin : <zone>` / `pickpocket` / `pêche` from the site, `Source : pfQuest (positions Classic).` | The tooltip |
+| 121 | `Meilleure à apprendre` | Its level is at most your skill (never under `À apprendre maintenant` with a higher level) | Screenshot |
+| 122 | A learnable whose crafted item has an old or undated AH price | `(HV ?)` after the figure, dim line `prix HV incertain · prix HV de N j`, listed after the reliable ones | Screenshot |

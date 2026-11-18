@@ -40,7 +40,7 @@ end
 -- resale = the profit exists only if the crafted item is sold at the auction house; ahSale = the sale value is an AH price
 -- (saleAge: its age in days when known; noAge: the price addon cannot date it, so it may not win a money ranking);
 -- oldAh = an AH price exists but is older than the configured old days (the vendor value is used instead: "prix HV ancien");
--- profit = -net, the money one craft makes (negative = it costs).
+-- profit = -net, the money one craft makes (negative = it costs); uncertain = the sale price is undated or older than the fresh days.
 function V.Evaluate(rec, ctx)
   local chance = V.CHANCE[rec.d] or 0
   local cost, missing, floor = 0, {}, false
@@ -59,7 +59,10 @@ function V.Evaluate(rec, ctx)
   return { rec = rec, chance = chance, color = V.COLOR[rec.d] or "?", cost = cost, result = result, net = net,
     perPoint = chance > 0 and net / chance or nil, missing = missing, noSale = noSale, floor = floor,
     resale = net < 0 and ahSale, ahSale = ahSale, saleAge = saleAge, profit = -net,
-    oldAh = oldAh, noAge = ahSale and ctx.ageKnown == false }
+    oldAh = oldAh, noAge = ahSale and ctx.ageKnown == false,
+    -- the figure rests on an AH price of the crafted item that is undated or past the "fresh" days: "prix HV incertain". (Auctionator
+    -- only tells the age of the last scan, not how many days of history stand behind it.)
+    uncertain = ahSale and (ctx.ageKnown == false or (saleAge ~= nil and saleAge > ZR.DEFAULTS.freshDays)) or false }
 end
 
 -- How many times the recipe can be crafted from what is carried: min over reagents of floor(owned / needed), and the
@@ -226,7 +229,8 @@ function V.Way(DB, id, e, faction, forever)
   -- where: "NPC (Zone)" of wowforever.be; zone: where it drops; questName: the quest that gives it
   -- the site's vendor list for the player's faction (two lists: Alliance, Horde), or its one list of unknown faction
   local vtext = ft and ((faction == "H" and ft.vh) or (faction ~= "H" and ft.va) or ft.vendor) or nil
-  local way = { npcs = {}, ids = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest }
+  local way = { npcs = {}, ids = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest,
+    kinds = ft and ft.k }          -- the site's source kinds (t v q d p f s c): where the recipe comes from, to show next to a teaching item
   local wanted = faction == "H" and "Horde" or "Alliance"
   local function names(kind)
     for _, n in ipairs(src[kind]) do
@@ -347,8 +351,12 @@ end
 local function learnAt(e) return e.rec.learn end
 
 -- Priced recipes first (cheapest per point), then the ones with an unknown reagent price by required skill.
+-- A figure that rests on an uncertain AH price of the crafted item comes after the reliable ones (so after them within a colour too).
 local function byLearnRank(a, b)
   if a.unpriced ~= b.unpriced then return not a.unpriced end
+  if not a.unpriced then
+    if a.uncertain ~= b.uncertain then return not a.uncertain end
+  end
   if a.unpriced then
     if learnAt(a) ~= learnAt(b) then return learnAt(a) < learnAt(b) end
     return a.rec.id < b.rec.id
@@ -402,19 +410,20 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       local isNow = at <= skill
       if isNow then nowTotal = nowTotal + 1 else soonTotal = soonTotal + 1 end
       -- how it is obtained, what it costs to learn, and whether it may be recommended
-      local way, fee, src, recommend = c.how, nil, c.src, true
+      local way, fee, src, recommend, feeAge = c.how, nil, c.src, true, nil
       if offer then
         way, fee, src = { kind = "trainer", confirmed = true, npcs = {} }, offer.cost, nil
       elseif way then
         local kind = way.kind
         local price = way.itemID and ahPrice(way.itemID, ctx)
+        if price then feeAge = select(2, ctx.price(way.itemID)) end
         if (kind == "drop" or kind == "container") and price then way = setmetatable({ kind = "item" }, { __index = way }); kind = "item" end
         if kind == "item" then fee = price elseif kind == "vendor" then fee = way.vendorCost elseif kind == "trainer" then fee = way.cost end
         src = SRC_OF_KIND[kind]
         recommend = kind == "trainer" or kind == "vendor" or kind == "quest" or (kind == "item" and price ~= nil)
       end
       local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats, way = way,
-        d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = fee,
+        d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = fee, feeAge = feeAge,
         npcNames = way and way.npcs, teachItem = way and way.itemID }
       local own = setmetatable({
         vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
@@ -460,6 +469,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   -- only a known way to get it; a recipe at a rank already trained is preferred to one that first needs the rank. Then
   -- orange/yellow before green, the one that stays useful longest (gray threshold - skill), then the cheapest
   local function better(a, b)
+    if a.uncertain ~= b.uncertain then return not a.uncertain end   -- an uncertain AH price never decides
     if gold then return byCost(a, b) end
     if (a.rec.d <= 1) ~= (b.rec.d <= 1) then return a.rec.d <= 1 end
     if a.useful ~= b.useful then return a.useful > b.useful end

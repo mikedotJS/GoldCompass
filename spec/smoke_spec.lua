@@ -1657,15 +1657,23 @@ describe("Où l'apprendre (map button on recipes to learn)", function()
     assert.matches("lieu non précis", chat)
   end)
 
-  it("builds the tooltip: NPC, zone (client language when known), coordinates, Classic caveat", function()
+  it("builds the tooltip: NPC, zone (client language when known), coordinates, and the real source (no 'Données Classic')", function()
     local ns = start()
-    _G.C_Map.GetMapInfo = function(id) return { name = "Forêt d'Elwynn" } end
-    local tip = table.concat(ns.Window.TargetTooltipLines(pin), "\n")
-    assert.matches("Mallory", tip)
-    assert.matches("Forêt d'Elwynn : 32.8, 49.0", tip)
-    assert.matches("Données Classic, à vérifier", tip)
-    local textual = table.concat(ns.Window.TargetTooltipLines({ text = "World drop" }), "\n")
+    _G.C_Map.GetMapInfo = function() return { name = "Forêt d'Elwynn" } end
+    local function tip(t) return table.concat(ns.Window.TargetTooltipLines(t), "\n") end
+    local base = { name = "Mallory", zone = "Elwynn Forest", mapID = 1429, x = 32.8, y = 49, kind = "pin" }
+    local function with(source) local t = {}; for k, v in pairs(base) do t[k] = v end; t.source = source; return t end
+    assert.matches("Mallory", tip(with("pfquest")))
+    assert.matches("Forêt d'Elwynn : 32.8, 49.0", tip(with("pfquest")))
+    assert.matches("Source : pfQuest %(positions Classic%)%.", tip(with("pfquest")))
+    assert.matches("Source : observé en jeu%.", tip(with("recorded")))
+    assert.matches("Source : wowforever%.be%.", tip({ kind = "zone", mapID = 1411, name = "Vayn", zone = "Durotar", source = "site", vendors = { { name = "Vayn", zone = "Durotar", mapID = 1411 } } }))
+    for _, src in ipairs({ "pfquest", "recorded", "site", "classic" }) do
+      assert.is_nil(tip(with(src)):find("Données Classic", 1, true)); assert.is_nil(tip(with(src)):find("à vérifier", 1, true))
+    end
+    local textual = tip({ text = "World drop" })
     assert.matches("World drop", textual); assert.matches("Lieu non précis", textual)
+    assert.is_nil(textual:find("Classic", 1, true))
   end)
 
   it("clicking the button of a row calls GoTo with that row's target", function()
@@ -2164,10 +2172,36 @@ describe("Où l'apprendre: the site's location text (real Forever data, Horde, C
     local lr, by = res.profs[1].learn, {}
     for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do for _, row in ipairs(bucket) do by[row.rec.id] = row end end
     assert.is_not_nil(by[1283400])
-    assert.matches("butin : ", by[1283400].target.text)             -- Journeyman Campfire: drops in Wailing Caverns
-    assert.is_not_nil(by[1283400].target.text:find("Wailing Caverns", 1, true) or by[1283400].target.text:find("Zone", 1, true))
+    -- Journeyman Campfire: a pattern with an auction price pins the auction house; the site's drop zone stays on the line
+    assert.is_true(by[1283400].target.auction)
+    assert.matches("Patron en vente à l'HV", by[1283400].target.text)
+    assert.matches("butin : ", by[1283400].target.extra)
+    assert.is_not_nil(by[1283400].target.extra:find("Wailing Caverns", 1, true) or by[1283400].target.extra:find("Zone", 1, true))
     assert.is_not_nil(by[6417])
     assert.are.equal("quête : Dig Rat Stew", by[6417].target.text)
+  end)
+
+  it("the map button of a priced pattern pins the Horde auction house: chat and tooltip give the price, its age, the site's sources", function()
+    setup({ scanned = true, faction = "Horde", profs = { { 185, 124, "Cuisine", 150 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Cuisine = { skill = 124, max = 150, recipes = { [2538] = { id = 2538, name = "x", d = 3, out = 2302, oq = 1, mats = { { 2318, 1 } } } } } } }
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local row
+    for _, bucket in ipairs({ res.profs[1].learn.now, res.profs[1].learn.soon, res.profs[1].learn.gray }) do
+      for _, r in ipairs(bucket) do if r.rec.id == 1283400 then row = r end end
+    end
+    assert.is_true(row.target.auction); assert.are.equal("pin", row.target.kind)
+    assert.is_truthy(row.target.name:find("^Auctioneer"))
+    local before = #printed
+    ns.Window.GoTo(row.target, "Feu de camp")
+    local chat = table.concat(printed, "\n", before + 1)
+    assert.matches("Auctioneer", chat); assert.matches("Source : pfQuest", chat); assert.matches("Patron en vente à l'HV : ~", chat)
+    local tip = table.concat(ns.Window.TargetTooltipLines(row.target), "\n")
+    assert.matches("Patron en vente à l'HV : ~", tip); assert.matches("prix HV", tip); assert.matches("butin : ", tip)
+    assert.matches("Source : pfQuest %(positions Classic%)%.", tip)
+    assert.is_nil(tip:find("Classic, à vérifier", 1, true))
   end)
 end)
 

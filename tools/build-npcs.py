@@ -91,6 +91,12 @@ def main():
     for row in re.findall(r'^  \[\d+\] = \{ "[^"]*", (.*) \},$', loc[loc.index("\nns.RecipeWhere = {"):], re.M):
         for name in re.findall(r'"([^"]+)"', row):
             wanted_names.append((name, None, "classic where"))
+    # the auctioneers of pfQuest's own meta list (db/meta.lua, ["auctioneer"] = { [npcID] = "A" | "H" | "AH" }): where a pattern with an
+    # auction price can be bought; "AH" = neutral (goblin) auction houses
+    meta = read(PFQ / "meta.lua")
+    meta = meta[meta.index('["auctioneer"]'):meta.index('["banker"]')]
+    auctioneers = {int(i): f for i, f in re.findall(r'\[(\d+)\] = "(\w+)"', meta) if int(i) in units and units[int(i)]["coords"]}
+    wanted_ids.update(auctioneers)
     fr_src = read(ROOT / "Data/ForeverRecipes.lua")
     src_block = fr_src[fr_src.index("}, src = {"):fr_src.index("}, name = {")]
     for ids in re.findall(r'\{ "[tvqcd]*", \{ ([\d, ]*) \}, \{ ([\d, ]*) \} \}', src_block):
@@ -138,7 +144,7 @@ def main():
                 unmapped_zones[zen.get(zid, str(zid))] += 1
         spawns = spawns[:MAX_SPAWNS]
         fr_name = fr.get(i)
-        out.append(f"  [{i}] = {{ {lua_str(en[i])}, {lua_str(units[i]['fac'] or 'AH')}, {{ " +
+        out.append(f"  [{i}] = {{ {lua_str(en[i])}, {lua_str(auctioneers.get(i) or units[i]['fac'] or 'AH')}, {{ " +
                    ", ".join(f"{{ {m}, {x:g}, {y:g} }}" for m, x, y in spawns) + " }" +
                    (f", {lua_str(fr_name)}" if fr_name and fr_name != en[i] else "") + " },")
     npc_trainers = collections.defaultdict(list)
@@ -157,6 +163,7 @@ def main():
         "-- are learned in game (merchant and trainer windows).",
         "-- ns.Npcs[npcID] = { English name, faction (\"A\" | \"H\" | \"AH\"), { { uiMapID, x, y }, ... up to 3 spawns }, French name | nil }",
         "-- ns.NpcTrainers[English profession] = { { npcID, top rank (0 Apprentice only, 1 Journeyman, 2 Expert, 3 Artisan) }, ... }",
+        "-- ns.NpcAuctioneers = { npcID, ... }: the auctioneers of pfQuest's meta list (faction \"AH\" = neutral goblin auction houses)",
         "-- ns.NpcByName[English name] = { npcID, ... }",
         "local _, ns = ...",
         "ns.Npcs = {",
@@ -164,7 +171,7 @@ def main():
     tail = ["}", "ns.NpcTrainers = {"]
     for prof in sorted(npc_trainers):
         tail.append(f"  [{lua_str(prof)}] = {{ " + ", ".join(f"{{ {i}, {r} }}" for i, r in npc_trainers[prof]) + " },")
-    tail += ["}", "ns.NpcByName = {"]
+    tail += ["}", "ns.NpcAuctioneers = { " + ", ".join(str(i) for i in sorted(auctioneers)) + " }", "ns.NpcByName = {"]
     for n in sorted(names):
         tail.append(f"  [{lua_str(n)}] = {{ {', '.join(str(i) for i in names[n])} }},")
     tail.append("}")
