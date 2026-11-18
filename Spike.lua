@@ -98,6 +98,18 @@ function ns.Spike()
     " C_SuperTrack.SetSuperTrackedUserWaypoint", tostring(C_SuperTrack and C_SuperTrack.SetSuperTrackedUserWaypoint ~= nil),
     " C_TradeSkillUI.CraftRecipe", tostring(T and T.CraftRecipe ~= nil), " OpenTradeSkill", tostring(T and T.OpenTradeSkill ~= nil),
     " IsTradeSkillReady", tostring(T and T.IsTradeSkillReady ~= nil))
+  -- S10: LibProfessionDB (runtime dependency): loaded, MINOR, readiness, and its Forever recipes per profession of the player
+  local DB, minor
+  if LibStub then DB, minor = LibStub("LibProfessionDB-1.0", true) end
+  if not DB then
+    out("S10 LibProfessionDB: MISSING (install it from CurseForge: the recipes to learn need it)")
+  else
+    out("S10 LibProfessionDB: loaded MINOR", minor, "ready", tostring(DB.IsReady and DB:IsReady()), "game",
+      tostring(DB.GetGameVersion and DB:GetGameVersion()), "recipes", tostring(DB.Count and DB:Count()))
+    for _, p in ipairs(ns.ProfessionList()) do
+      out("S10", p.name, (DB.ProfessionCount and DB:ProfessionCount(p.line)) or "?", "recipes", "(profession", p.line, ")")
+    end
+  end
   -- S9: trainer window APIs, and what was recorded
   local recorded = 0
   for _ in pairs(ns.db and ns.db.trainers or {}) do recorded = recorded + 1 end
@@ -110,7 +122,9 @@ function ns.Spike()
   for _, p in ipairs(ns.ProfessionList()) do
     if ns.char and ns.char.profs[p.name] then
       local ok, res = pcall(ns.LearnFor, p, ctx)
-      if ok and res then
+      if ok and res and res.error then
+        out("S7 learnable recipes", p.name, "library problem:", res.error)
+      elseif ok and res then
         out(("S7 learnable recipes %s (skill %s): %d now, %d soon, %d priced and ranked, %d without a reagent price"):format(
           p.name, tostring(p.skill), res.nowTotal, res.soonTotal, res.candidates, res.unpriced))
       else

@@ -133,6 +133,9 @@ ns.S = {
   where_coords = "%s, %s (%.1f, %.1f) : repère indisponible, carte ouverte. Données Classic, à vérifier.",
   where_combat = "Indisponible en combat : %s",
   where_text = "Où l'apprendre : %s (lieu non précis, données Classic).", where_none = "Où l'apprendre : lieu non précis.",
+  learn_nolib = "Installe LibProfessionDB (CurseForge) pour les recettes à apprendre.",
+  learn_notready = "LibProfessionDB n'a pas de données pour ce client : recharge l'interface.",
+  learn_gray_title = "Déjà grises à ton niveau (ne font plus monter)", learn_fee = " · apprentissage %s",
   learn_now = "À apprendre maintenant", learn_soon = "Bientôt (dans les %d prochains points)",
   learn_best = "Meilleure à apprendre : %s : coût ~%s par point",
   learn_best_gain = "Meilleure à apprendre : %s : gain ~%s par point",
@@ -144,10 +147,11 @@ ns.S = {
   learn_gray = "Les recettes à ta portée ne font plus monter le métier.",
   learn_best_floor = "Meilleure à apprendre : %s : coût dès ~%s par point",
   learn_best_floor_gain = "Meilleure à apprendre : %s : gain max ~%s par point",
-  learn_pp_floor = "dès ~%s/pt", learn_pp_floor_gain = "gain max ~%s/pt", learn_pp_unknown = "prix inconnu",
+  learn_pp_floor = "dès ~%s/pt", learn_pp_floor_gain = "gain max ~%s/pt", learn_pp_unknown = "prix inconnu", learn_pp_gray = "grise",
   learn_no_price = "Pas de prix HV : lance un scan Auctionator à l'hôtel des ventes.",
   learn_nothing_bag = "Le filtre « Avec mon sac » cache les recettes à apprendre.",
-  src_trainer = "entraîneur", src_v = "vendeur", src_m = "butin de monstre", src_d = "butin", src_q = "quête",
+  src_trainer = "entraîneur", src_trainer_unc = "entraîneur (non confirmé sur Forever)", src_trainer_unc_short = "entraîneur ?",
+  src_i = "objet d'apprentissage", src_i_named = "objet d'apprentissage : %s", src_c = "conteneur", src_v = "vendeur", src_m = "butin de monstre", src_d = "butin", src_q = "quête",
 
   -- map controls
   nolevel_t = "Aucune zone à ton niveau", nolevel_p = "Décoche « Mon niveau seulement » pour voir toutes les zones.",

@@ -55,7 +55,16 @@ function F.Where(recipe)
 end
 
 -- Where a recipe to learn comes from, in French ("entraîneur", "vendeur", ...). Classic data, not confirmed on Forever.
-function F.Source(recipe) return S["src_" .. ns.Leveling.Source(recipe)] end
+-- `long`: the full wording (trainer not confirmed on Forever, teaching item with its name).
+function F.Source(recipe, long)
+  local key = ns.Leveling.Source(recipe)
+  local way = recipe.way
+  if key == "trainer" and way and not way.confirmed and not recipe.trainer then
+    return long and S.src_trainer_unc or S.src_trainer_unc_short
+  end
+  if key == "i" and long and recipe.itemName then return S.src_i_named:format(recipe.itemName) end
+  return S["src_" .. key]
+end
 
 -- Colored status of an evaluated recipe.
 function F.Status(e)

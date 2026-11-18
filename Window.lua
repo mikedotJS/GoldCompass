@@ -687,21 +687,27 @@ function W.JobFooter(filtered) return S.job_footer .. (filtered and (" " .. S.jo
 -- Returns true when the bag filter left nothing to show (the empty state with its way out).
 local function addLearn(entries, p)
   local lr, L = p.learn, ns.Leveling
+  local function grey(msg) entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. msg .. "|r" } end
+  -- the library is missing or has no data: say how to fix it, the known recipes above still work
+  if lr.error then
+    entries[#entries + 1] = { wide = true, left = "|cffffd100" .. (lr.error == "nolib" and S.learn_nolib or S.learn_notready) .. "|r" }
+    return
+  end
   local function perPoint(e)
+    if e.gray then return S.learn_pp_gray end
     if e.unpriced then return S.learn_pp_unknown end
     local gain = e.perPoint < 0
     local fmt = e.floor and (gain and S.learn_pp_floor_gain or S.learn_pp_floor) or (gain and S.learn_pp_gain or S.learn_pp)
     return fmt:format(ns.Money(math.abs(e.perPoint)))
   end
-  local function grey(msg) entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. msg .. "|r" } end
-  if #lr.now + #lr.soon == 0 then
-    -- say the real reason: nothing to learn, everything gray, or hidden by the bag filter
-    if lr.nowTotal + lr.soonTotal == 0 then return grey(S.learn_none) end
-    if lr.candidates + lr.unpriced == 0 then return grey(S.learn_gray) end
-    if not p.filtered then return grey(S.learn_none) end
+  local total = #lr.now + #lr.soon + #(lr.gray or {})
+  if total == 0 then
+    -- say the real reason: nothing to learn, or hidden by the bag filter
+    if lr.nowTotal + lr.soonTotal == 0 or not p.filtered then return grey(S.learn_none) end
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_nothing_bag .. "|r" }
     return true
   end
+  if #lr.now + #lr.soon == 0 then grey(S.learn_gray) end   -- everything in reach is gray
   local function row(e)
     local t, name = e.rec.trainer, e.name or ns.Fmt.RecipeName(e.rec)
     entries[#entries + 1] = { left = t and S.learn_row_seen:format(name, ns.Money(e.rec.fee or 0), t.npc)
@@ -709,9 +715,8 @@ local function addLearn(entries, p)
   end
   if #lr.now > 0 then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_now .. "|r" }
-    local e, first = lr.best, 1
-    if e then -- "Meilleure à apprendre" is chosen among the priced rows only
-      first = 2
+    local e = lr.best
+    if e then -- "Meilleure à apprendre": a priced recipe with a known way to get it (trainer, vendor, quest, teaching item)
       local label = e.name or ns.Fmt.RecipeName(e.rec)
       local fmt = e.floor and (e.perPoint < 0 and S.learn_best_floor_gain or S.learn_best_floor)
         or (e.perPoint < 0 and S.learn_best_gain or S.learn_best)
@@ -722,22 +727,26 @@ local function addLearn(entries, p)
         grey(S.learn_detail_seen:format(ns.Money(e.rec.fee or 0), t.npc, e.rec.learn, L.COLOR[e.rec.d] or "?",
           math.floor(e.chance * 100 + 0.5)))
       else
-        grey(S.learn_detail:format(ns.Fmt.Source(e.rec), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
-          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)))
+        grey(S.learn_detail:format(ns.Fmt.Source(e.rec, true), e.rec.learn, L.MayNeedRank(e.rec) and S.learn_rank or "",
+          L.COLOR[e.rec.d] or "?", math.floor(e.chance * 100 + 0.5)) .. ((e.rec.fee and e.rec.fee > 0) and S.learn_fee:format(ns.Money(e.rec.fee)) or ""))
       end
       if lr.gain then
         entries[#entries + 1] = { wide = true, left = "|cff1eff00" .. S.learn_beats:format(label, ns.Money(lr.gain)) .. "|r" }
       end
     end
-    for i = first, #lr.now do row(lr.now[i]) end
+    for _, o in ipairs(lr.now) do if o ~= e then row(o) end end
   end
   if #lr.soon > 0 then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.learn_soon:format(L.SOON) .. "|r" }
-    for _, e in ipairs(lr.soon) do row(e) end
+    for _, o in ipairs(lr.soon) do row(o) end
+  end
+  if #(lr.gray or {}) > 0 then
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.learn_gray_title .. "|r" }
+    for _, o in ipairs(lr.gray) do row(o) end
   end
   for _, list in ipairs({ lr.now, lr.soon }) do
-    for _, e in ipairs(list) do
-      if e.unpriced then return grey(S.learn_no_price) end
+    for _, o in ipairs(list) do
+      if o.unpriced then return grey(S.learn_no_price) end
     end
   end
 end

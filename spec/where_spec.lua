@@ -132,3 +132,17 @@ describe("Where.Target prefers the recorded trainer", function()
   end)
 end)
 
+describe("Where.Target for a library recipe (NPC names, no coordinates there)", function()
+  local npcs = { Kania = { "Stormwind City", 50, 60, "A" } }
+  it("pins a library vendor through the Classic NPC positions", function()
+    local t = Wh.Target({ id = 77, src = "v", learn = 40, npcNames = { "Kania" } }, "Alchemy", env({ npcs = npcs }))
+    assert.are.equal("Kania", t.name); assert.are.equal(1453, t.mapID)
+  end)
+  it("gives no pin for a drop, a container or a teaching item", function()
+    for _, src in ipairs({ "d", "c", "i" }) do
+      local t = Wh.Target({ id = 77, src = src, learn = 40, npcNames = {} }, "Alchemy", env({ npcs = npcs }))
+      assert.is_nil(t.mapID)
+    end
+  end)
+end)
+

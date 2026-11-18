@@ -19,11 +19,14 @@ V.COLOR = { [0] = "orange", [1] = "jaune", [2] = "vert", [3] = "gris" }
 -- What buying one unit of a reagent costs: the cheaper of the usable AH price (gross: you pay it) and the vendor buy
 -- price. When neither is known, `ctx.floor(id)` (optional: the vendor SELL value, a floor of the real cost) is used and
 -- the second result is true. nil when nothing is known.
-local function buyCost(id, ctx)
-  local best
+-- The usable auction price of an item (not too old), or nil.
+local function ahPrice(id, ctx)
   local price, age = ctx.price(id)
-  local c = ZR.DEFAULTS
-  if price and (ctx.ageKnown == false or (age and age <= c.oldDays)) then best = price end
+  if price and (ctx.ageKnown == false or (age and age <= ZR.DEFAULTS.oldDays)) then return price end
+end
+
+local function buyCost(id, ctx)
+  local best = ahPrice(id, ctx)
   local buy = ctx.buy and ctx.buy(id)
   if buy and (not best or buy < best) then best = buy end
   if best then return best end
@@ -137,6 +140,86 @@ function V.Crafts(rows, prof)
   return out
 end
 
+-- How a recipe can be obtained, from LibProfessionDB (world databases: NOT Forever-verified, except what the library
+-- flags as its own). `DB` is the library, `e` the recipe entry, `faction` "A" or "H". Returns
+--   { kind, confirmed, npcs = { English NPC names }, vendorCost = copper | nil, itemID = teaching item | nil }
+-- kind: trainer, vendor, quest, item (a teaching item and no source), container, drop, unknown.
+-- Priority: trainer, vendor, quest, item, container, drop. A recipe with no source and no teaching item but a
+-- requiredSkill of the client's own (captured at a Forever trainer) is a trainer recipe. `confirmed`: the data is the
+-- client's own, not borrowed from Vanilla (trainer: the required skill; vendor and quest: the sources).
+function V.Way(DB, id, e, faction)
+  local own = function(field) return not (DB.IsBorrowed and DB:IsBorrowed(id, field)) end
+  local ownSkill = e.requiredSkill ~= nil and own("requiredSkill")
+  local src = DB.GetRecipeSources and DB:GetRecipeSources(id)
+  local function has(kind) local l = src and src[kind]; return l and (l.total or #l) > 0 end
+  local item = DB.GetRecipeItem and DB:GetRecipeItem(id)
+  local way = { npcs = {}, itemID = item }
+  local wanted = faction == "H" and "Horde" or "Alliance"
+  local function names(kind)
+    for _, n in ipairs(src[kind]) do
+      local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
+      if n.name and (f == nil or f == wanted) then way.npcs[#way.npcs + 1] = n.name end
+    end
+  end
+  if has("trainer") then
+    way.kind, way.confirmed = "trainer", ownSkill
+  elseif has("vendor") then
+    way.kind, way.confirmed = "vendor", own("sources")
+    names("vendor")
+    for _, n in ipairs(src.vendor) do
+      local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
+      local parts = n.cost or (DB.GetVendorCost and DB:GetVendorCost(id, n.id))
+      if (f == nil or f == wanted) and parts then
+        local copper = 0
+        for _, part in ipairs(parts) do
+          if #part == 1 then copper = copper + part[1] else copper = nil; break end -- a currency or an item: no gold price
+        end
+        if copper and (not way.vendorCost or copper < way.vendorCost) then way.vendorCost = copper end
+      end
+    end
+  elseif has("quest") then
+    way.kind, way.confirmed = "quest", own("sources")
+    names("quest")
+  elseif item then
+    way.kind = "item"
+  elseif has("container") then
+    way.kind = "container"
+  elseif has("drop") then
+    way.kind = "drop"
+  elseif ownSkill then
+    way.kind, way.confirmed = "trainer", true
+  else
+    way.kind = "unknown"
+  end
+  return way
+end
+
+-- Crafts of a profession (library profession id, e.g. 165 Leatherworking) from LibProfessionDB, in the shape of
+-- V.Crafts plus `how` (V.Way). Never-implemented and auto-granted recipes are left out. The colour thresholds
+-- (yellow, green, gray) are the library's, unless its tiers are unanchored (requiredSkill absent or borrowed and
+-- difficulty[1] == 1: a placeholder), then they are left nil and the estimate applies. `fallback(id)` gives a craft of
+-- Data/Recipes.lua (output quantity, vendor value, reagents) for what the library lacks.
+function V.LibCrafts(DB, profId, faction, fallback)
+  local out = {}
+  for id, e in pairs(DB:GetRecipes(profId) or {}) do
+    if not (DB.IsHiddenRecipe and DB:IsHiddenRecipe(id)) and not (DB.IsAutoTaughtRecipe and DB:IsAutoTaughtRecipe(id)) then
+      local d = e.difficulty
+      local borrowed = DB.IsBorrowed and DB:IsBorrowed(id, "requiredSkill")
+      local unanchored = (e.requiredSkill == nil or borrowed) and d and d[1] == 1
+      local mats = {}
+      for item, qty in pairs(e.reagents or {}) do mats[#mats + 1] = { item, qty } end
+      table.sort(mats, function(a, b) return a[1] < b[1] end)
+      local fb = fallback and fallback(id)
+      if #mats == 0 and fb then mats = fb.mats end
+      out[#out + 1] = { id = id, name = e.name, learn = e.requiredSkill, borrowed = borrowed and true or false,
+        y = (d and not unanchored) and d[2] or nil, g = (d and not unanchored) and d[3] or nil,
+        gr = (d and not unanchored) and d[4] or nil, out = e.craftedItemId or (fb and fb.out),
+        oq = fb and fb.oq or 1, sell = fb and fb.sell, mats = mats, how = V.Way(DB, id, e, faction) }
+    end
+  end
+  return out
+end
+
 -- Source key of a recipe: trainer (no source in the data: assumed), v vendor, m monster drop, d other drop, q quest.
 function V.Source(rec) return rec.src or "trainer" end
 
@@ -180,55 +263,79 @@ end
 --   count = optional bag count function: only recipes whose reagents are carried are kept ("Avec mon sac").
 --   knownBest = cost per point of the best KNOWN recipe: when the best learnable one is cheaper, `gain` is the
 --   difference per point (not given when that best recipe relies on a floor price).
--- Returns { now, soon, best (priced rows only), gain, candidates (priced and not gray, before the bag filter), unpriced
+-- Library crafts (c.how, see V.Way): the rows say how they are obtained (rec.src, rec.way), what learning costs (rec.fee: the
+-- recorded trainer's fee, the vendor's gold price or the teaching item's auction price) and only a trainer, vendor, quest
+-- or priced teaching item may be recommended; drops and containers are listed, never recommended. Recipes with no known
+-- way are not listed. `gray` = recipes in reach that give no skill point any more (listed, never ranked).
+-- Returns { now, soon, gray, best (priced, recommendable rows only), gain, candidates (priced and not gray, before the bag filter), unpriced
 -- (same, with an unknown reagent price), nowTotal, soonTotal (learnable in reach, gray or not) }. Nothing learnable:
 -- nowTotal + soonTotal = 0; everything gray: candidates + unpriced = 0; hidden by the bag filter: both lists empty.
+local SRC_OF_KIND = { vendor = "v", quest = "q", item = "i", container = "c", drop = "d" } -- trainer = nil
+
 function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
   limits = limits or {}
-  local now, soon, candidates, unpriced, nowTotal, soonTotal = {}, {}, 0, 0, 0, 0
+  local now, soon, gray, candidates, unpriced, nowTotal, soonTotal = {}, {}, {}, 0, 0, 0, 0
   for _, c in ipairs(crafts) do
     local offer = ctx.offer and ctx.offer(c.id)
-    if offer and offer.status == "used" then offer = nil; c = nil end -- the trainer lists it as already known
+    local skip = (offer and offer.status == "used")             -- the trainer lists it as already known
+      or (c.how and c.how.kind == "unknown" and not offer)      -- no known way to get it
     -- a recipe whose learn skill is unknown (and no trainer offers it) is not listed: mostly crafts not learnable yet
-    local at = c and (offer and math.max(1, offer.skill or 1) or c.learn)
+    local at = not skip and (offer and math.max(1, offer.skill or 1) or c.learn)
     if at and not ctx.known(c.id) and at <= skill + V.SOON then
       local isNow = at <= skill
       if isNow then nowTotal = nowTotal + 1 else soonTotal = soonTotal + 1 end
-      local src = c.src
-      if offer then src = nil end                  -- a trainer teaches it
-      local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats,
-        d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = offer and offer.cost or nil }
+      -- how it is obtained, what it costs to learn, and whether it may be recommended
+      local way, fee, src, recommend = c.how, nil, c.src, true
+      if offer then
+        way, fee, src = { kind = "trainer", confirmed = true, npcs = {} }, offer.cost, nil
+      elseif way then
+        local kind = way.kind
+        local price = way.itemID and ahPrice(way.itemID, ctx)
+        if (kind == "drop" or kind == "container") and price then way = setmetatable({ kind = "item" }, { __index = way }); kind = "item" end
+        if kind == "item" then fee = price elseif kind == "vendor" then fee = way.vendorCost end
+        src = SRC_OF_KIND[kind]
+        recommend = kind == "trainer" or kind == "vendor" or kind == "quest" or (kind == "item" and price ~= nil)
+      end
+      local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats, way = way,
+        d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = fee,
+        npcNames = way and way.npcs, teachItem = way and way.itemID }
       local own = setmetatable({
         vendor = function(id) return ctx.vendor(id) or (id == c.out and c.sell or nil) end,
         floor = function(id) return ctx.vendor(id) end,
       }, { __index = ctx })
       local e = V.Evaluate(rec, own)
-      if e.chance > 0 then
-        if #e.missing > 0 or #c.mats == 0 then
-          e.unpriced, e.perPoint = true, nil
-          unpriced = unpriced + 1
-        else
-          candidates = candidates + 1
-          if rec.fee and rec.fee > 0 then
-            local points = math.max(1, (c.gr or at + 60) - math.max(skill, at))
-            e.points, e.amortised = points, e.perPoint + rec.fee / points
-          end
+      e.recommend = recommend
+      if e.chance == 0 then
+        e.gray, e.perPoint = true, nil                          -- gives no skill point any more
+      elseif #e.missing > 0 or #c.mats == 0 then
+        e.unpriced, e.perPoint = true, nil
+        unpriced = unpriced + 1
+      else
+        candidates = candidates + 1
+        if fee and fee > 0 then
+          local points = math.max(1, (c.gr or at + 60) - math.max(skill, at))
+          e.points, e.amortised = points, e.perPoint + fee / points
         end
-        if count then e.times, e.short = V.Craftable(rec, count) end
-        if not count or e.times >= 1 then
-          local list = isNow and now or soon
-          list[#list + 1] = e
-        end
+      end
+      if count then e.times, e.short = V.Craftable(rec, count) end
+      if not count or e.times >= 1 then
+        local list = e.gray and gray or (isNow and now or soon)
+        list[#list + 1] = e
       end
     end
   end
   table.sort(now, byLearnRank)
   table.sort(soon, byLearnRank)
+  table.sort(gray, function(a, b)
+    if a.rec.learn ~= b.rec.learn then return a.rec.learn < b.rec.learn end
+    return a.rec.id < b.rec.id
+  end)
   while limits.now and #now > limits.now do now[#now] = nil end
   while limits.soon and #soon > limits.soon do soon[#soon] = nil end
-  local best = now[1] and not now[1].unpriced and now[1] or nil
+  local best
+  for _, e in ipairs(now) do if e.recommend and not e.unpriced then best = e; break end end   -- only a known way to get it
   local gain = (best and not best.floor and knownBest and rankValue(best) < knownBest) and (knownBest - rankValue(best)) or nil
-  return { now = now, soon = soon, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
+  return { now = now, soon = soon, gray = gray, best = best, gain = gain, candidates = candidates, unpriced = unpriced,
     nowTotal = nowTotal, soonTotal = soonTotal }
 end
 

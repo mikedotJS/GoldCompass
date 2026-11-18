@@ -346,21 +346,42 @@ local function whereEnv(ctx)
   return env
 end
 
--- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable); nil when the profession has no craft data.
-local craftsCache = {}
+-- Crafts of a profession from LibProfessionDB (a runtime dependency, never vendored): nil + "nolib" when the library is not
+-- installed, "notready" when it has no data for this client, nil alone when it has none for this profession.
+local libCache = {}
+local function libCrafts(p, faction)
+  local DB = LibStub and LibStub("LibProfessionDB-1.0", true)
+  if not DB then return nil, "nolib" end
+  if not (DB.IsReady and DB:IsReady()) then return nil, "notready" end
+  if not (DB.HasProfession and DB:HasProfession(p.line)) then return end
+  local key = p.line .. faction
+  if not libCache[key] then
+    local english, byId = SKILL_LINES[p.line], {}
+    for _, c in ipairs(english and ns.Leveling.Crafts(ns.RecipeRows or {}, english) or {}) do byId[c.id] = c end
+    libCache[key] = ns.Leveling.LibCrafts(DB, p.line, faction, function(id) return byId[id] end)
+  end
+  return libCache[key]
+end
+
+-- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable): { error = "nolib" | "notready" } when the
+-- library is missing, nil when the profession has no recipe data.
 function ns.LearnFor(p, ctx, count, knownBest)
   local english = SKILL_LINES[p.line]
-  if not english or not ns.RecipeRows then return end
-  craftsCache[english] = craftsCache[english] or ns.Leveling.Crafts(ns.RecipeRows, english)
+  local crafts, err = libCrafts(p, ctx.faction)
+  if err then return { error = err } end
+  if not crafts then return end
   local data = ns.char and ns.char.profs[p.name]
-  local offers = ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction)   -- trainer windows recorded in game
+  local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}   -- trainer windows recorded in game
   local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end,
     offer = function(id) return offers[id] end }, { __index = ctx })
-  local result = ns.Leveling.Learnable(craftsCache[english], p.skill or 0, own, count, nil, knownBest)
-  -- where to go to learn each one (a pin, or a text only), from the Classic location data
+  local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
+  -- where to go to learn each one (a pin, or a text only): recorded trainer, library NPC, Classic coordinates, text
   local env = whereEnv(ctx)
-  for _, bucket in ipairs({ result.now, result.soon }) do
-    for _, row in ipairs(bucket) do row.target = ns.Where.Target(row.rec, english, env) end
+  for _, bucket in ipairs({ result.now, result.soon, result.gray }) do
+    for _, row in ipairs(bucket) do
+      row.target = ns.Where.Target(row.rec, english, env)
+      if row.rec.src == "i" and row.rec.teachItem then row.rec.itemName = ns.ItemName(row.rec.teachItem) end
+    end
   end
   return result
 end
@@ -383,12 +404,14 @@ function ns.RunLeveling(done)
       if rec.out then ids[#ids + 1] = rec.out end
       for _, m in ipairs(rec.mats or {}) do ids[#ids + 1] = m[1] end
     end
-    -- reagents and outputs of the recipes that may be learned (within reach of the skill)
-    local offers = data and SKILL_LINES[p.line] and ns.TrainerLog.Offers(ns.db or {}, SKILL_LINES[p.line], UnitFactionGroup("player") == "Horde" and "H" or "A") or {}
-    for _, craft in ipairs(data and SKILL_LINES[p.line] and ns.Leveling.Crafts(ns.RecipeRows or {}, SKILL_LINES[p.line]) or {}) do
+    -- reagents, outputs and teaching items of the recipes that may be learned (within reach of the skill)
+    local faction = UnitFactionGroup("player") == "Horde" and "H" or "A"
+    local offers = data and SKILL_LINES[p.line] and ns.TrainerLog.Offers(ns.db or {}, SKILL_LINES[p.line], faction) or {}
+    for _, craft in ipairs(data and libCrafts(p, faction) or {}) do
       local at = offers[craft.id] and math.max(1, offers[craft.id].skill or 1) or craft.learn
       if at and at <= (p.skill or 0) + ns.Leveling.SOON then
         ids[#ids + 1] = craft.out
+        if craft.how and craft.how.itemID then ids[#ids + 1] = craft.how.itemID end
         for _, m in ipairs(craft.mats) do ids[#ids + 1] = m[1] end
       end
     end
@@ -426,7 +449,7 @@ function ns.RunLeveling(done)
           end
           entry.learn = ns.LearnFor(p, ctx, count, entry.plan.best and entry.plan.best.perPoint)
           if entry.learn then
-            for _, bucket in ipairs({ entry.learn.now, entry.learn.soon }) do
+            for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {} }) do
               for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end
             end
           end

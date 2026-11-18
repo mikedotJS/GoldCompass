@@ -47,3 +47,9 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+== LibProfessionDB (ProfessionDB) by Pimptasty, MIT licence: a runtime dependency installed separately, NOT included in Gold Compass ==
+
+Gold Compass only calls its public API (LibStub("LibProfessionDB-1.0")); none of its code or data is copied here. It is
+distributed under the MIT licence by its author; see the LICENSE file of the ProfessionDB addon.
+

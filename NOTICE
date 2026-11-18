@@ -21,4 +21,9 @@ yellow / green / gray skill thresholds and some recipe sources, matched by Engli
 also vendors its trainer table, NPC positions and recipe "where" texts. Classic-era data,
 not confirmed on Forever.
 
+LibProfessionDB (https://www.curseforge.com/wow/addons/professiondb, by Pimptasty, MIT licence, v1.10.1) is a RUNTIME
+dependency, listed in OptionalDeps as ProfessionDB: Gold Compass reads it through LibStub("LibProfessionDB-1.0") for the recipes to
+learn (required skills, colour thresholds, sources, teaching items) and does not copy, vendor or redistribute any of its data or
+code. Its licence applies to the addon the user installs separately; the notice is repeated in THIRD-PARTY.
+
 Learned.lua follows the approach of Forever Ledger's Professions.lua (read learned recipes when a profession window opens); no code was copied.

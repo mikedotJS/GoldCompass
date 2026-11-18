@@ -409,3 +409,182 @@ describe("Leveling recipes offered by a recorded trainer", function()
   end)
 end)
 
+-- A stand-in for LibProfessionDB with the owner's Leatherworking case
+local function fakeLib(extra)
+  local recipes = {
+    [9062] = { name = "Petite giberne en cuir", craftedItemId = 7279, reagents = { [2318] = 3, [2320] = 4 }, requiredSkill = 25, difficulty = { 25, 55, 70, 85 } },
+    [1255143] = { name = "Bottes lueur-de-lune", craftedItemId = 252427, reagents = { [2318] = 12 }, requiredSkill = 35, difficulty = { 35, 40, 40, 40 } },
+    [1255144] = { name = "Chaussures en écailles de Murloc", craftedItemId = 252426, reagents = { [2318] = 12 }, requiredSkill = 35, difficulty = { 35, 40, 40, 40 } },
+    [1255146] = { name = "Mules de dragonnet noir", craftedItemId = 252424, reagents = { [2318] = 12 }, requiredSkill = 35, difficulty = { 35, 40, 40, 40 } },
+    [2158] = { name = "Bottes élégantes en cuir", craftedItemId = 2307, reagents = { [2318] = 7 }, requiredSkill = 60, difficulty = { 60, 85, 100, 115 } },
+    [2149] = { name = "Bottes cousu main", craftedItemId = 2302, reagents = { [2318] = 2 }, requiredSkill = 1, difficulty = { 1, 25, 40, 55 } },
+    [9999] = { name = "Jamais obtenable", craftedItemId = 1, reagents = { [2318] = 1 }, requiredSkill = 30, difficulty = { 30, 60, 75, 90 } },
+  }
+  local DB = {
+    sources = { [9062] = { trainer = { { id = 1, name = "Kamari" }, total = 29 } },
+      [2158] = { drop = { { id = 2, name = "Some mob" }, total = 951 } } },
+    items = { [1255143] = 252764, [1255144] = 252763, [1255146] = 252761 },
+    hidden = { [9999] = true }, auto = { [2149] = true }, borrowed = {},
+  }
+  for k, v in pairs(extra or {}) do DB[k] = v end
+  function DB:GetRecipes() return recipes end
+  function DB:IsHiddenRecipe(id) return self.hidden[id] or false end
+  function DB:IsAutoTaughtRecipe(id) return self.auto[id] or false end
+  function DB:IsBorrowed(id, field) return self.borrowed[id .. field] end
+  function DB:GetRecipeSources(id) return self.sources[id] end
+  function DB:GetRecipeItem(id) return self.items[id] end
+  return DB, recipes
+end
+
+describe("Leveling.Way (how a recipe is obtained, from the library)", function()
+  local function way(sources, over, entry)
+    local DB = fakeLib({ sources = { [1] = sources }, items = over and over.items or {}, borrowed = over and over.borrowed or {} })
+    function DB:GetVendorCost(id, npc) return over and over.cost and over.cost[npc] end
+    function DB:GetSourceFaction(npc) return over and over.faction and over.faction[npc] end
+    return V.Way(DB, 1, entry or { requiredSkill = 40 }, "A")
+  end
+
+  it("a trainer is confirmed only when its required skill is the client's own", function()
+    local w = way({ trainer = { { id = 5, name = "Kamari" }, total = 1 } })
+    assert.are.equal("trainer", w.kind); assert.is_true(w.confirmed)
+    w = way({ trainer = { { id = 5, name = "Kamari" }, total = 1 } }, { borrowed = { ["1requiredSkill"] = "Vanilla" } })
+    assert.are.equal("trainer", w.kind); assert.is_false(w.confirmed)        -- "entraîneur (non confirmé sur Forever)"
+    w = way({ trainer = { { id = 5, name = "Kamari" }, total = 1 } }, nil, {})
+    assert.is_false(w.confirmed)                                             -- no required skill at all
+  end)
+
+  it("a drop or container is never a trainer; the source with the best priority wins", function()
+    assert.are.equal("drop", way({ drop = { { id = 2, name = "Mob" }, total = 951 } }).kind)
+    assert.are.equal("container", way({ container = { { id = 2, name = "Chest" }, total = 1 }, drop = { { id = 3, name = "Mob" }, total = 12 } }).kind)
+    assert.are.equal("quest", way({ quest = { { id = 4, name = "Giver" }, total = 1 }, drop = { { id = 3, name = "Mob" }, total = 12 } }).kind)
+    assert.are.equal("trainer", way({ trainer = { { id = 5, name = "T" }, total = 1 }, vendor = { { id = 6, name = "V" }, total = 1 } }).kind)
+  end)
+
+  it("a vendor: its NPC of the player's faction and its gold price (a currency price has no gold figure)", function()
+    local sources = { vendor = { { id = 6, name = "Alliance vendor" }, { id = 7, name = "Horde vendor" }, total = 2 } }
+    local w = way(sources, { cost = { [6] = { { 500 }, { 250 } }, [7] = { { 100 } } }, faction = { [6] = "Alliance", [7] = "Horde" } })
+    assert.are.equal("vendor", w.kind)
+    assert.are.same({ "Alliance vendor" }, w.npcs)              -- the Horde vendor is not for us
+    assert.are.equal(750, w.vendorCost)                          -- 500 + 250 copper
+    w = way(sources, { cost = { [6] = { { 3402, 40 } } }, faction = { [6] = "Alliance", [7] = "Horde" } })
+    assert.is_nil(w.vendorCost)                                  -- Merchant's Favor: no gold price
+  end)
+
+  it("a teaching item and no source is an item recipe; nothing at all is unknown unless the skill is the client's own", function()
+    local w = way(nil, { items = { [1] = 252764 } })
+    assert.are.equal("item", w.kind); assert.are.equal(252764, w.itemID)
+    assert.are.equal("unknown", way(nil, nil, {}).kind)
+    local captured = way(nil)                                    -- own requiredSkill, no source: captured at a Forever trainer
+    assert.are.equal("trainer", captured.kind); assert.is_true(captured.confirmed)
+  end)
+end)
+
+describe("Leveling.LibCrafts", function()
+  it("leaves out never-implemented and auto-granted recipes", function()
+    local crafts = V.LibCrafts(fakeLib(), 165, "A")
+    local ids = {}
+    for _, c in ipairs(crafts) do ids[c.id] = true end
+    assert.is_nil(ids[9999]); assert.is_nil(ids[2149])
+    assert.is_true(ids[9062] and ids[2158])
+  end)
+
+  it("takes the library's yellow / green / gray thresholds unless its tiers are unanchored", function()
+    local DB, recipes = fakeLib({ borrowed = { ["7requiredSkill"] = "Vanilla" } })
+    recipes[5] = { name = "a", reagents = {}, requiredSkill = 40, difficulty = { 40, 60, 80, 100 } }
+    recipes[6] = { name = "b", reagents = {}, difficulty = { 1, 10, 20, 30 } }                     -- no required skill, placeholder 1
+    recipes[7] = { name = "c", reagents = {}, requiredSkill = 70, difficulty = { 1, 10, 20, 30 } } -- borrowed skill, placeholder 1
+    recipes[8] = { name = "d", reagents = {}, difficulty = { 20, 40, 60, 80 } }                    -- no required skill but anchored
+    local by = {}
+    for _, c in ipairs(V.LibCrafts(DB, 165, "A")) do by[c.id] = c end
+    assert.are.same({ 60, 80, 100 }, { by[5].y, by[5].g, by[5].gr })
+    assert.is_nil(by[6].y); assert.is_nil(by[7].gr)                                                 -- estimate applies
+    assert.are.same({ 40, 60, 80 }, { by[8].y, by[8].g, by[8].gr })
+    assert.is_true(by[7].borrowed)
+  end)
+end)
+
+describe("Leveling.Learnable with library crafts: the owner's Leatherworking case at skill 61", function()
+  -- reagent 2318 and the outputs are worth money; the teaching item 252764 has an auction price, 252763 and 252761 have none
+  local function lcx(over)
+    local prices = { [2318] = 100, [2320] = 100, [7279] = 1000, [252427] = 1000, [252426] = 1000, [252424] = 1000, [2307] = 60000, [252764] = 700 }
+    for k, v in pairs(over or {}) do prices[k] = v end
+    local c = {
+      price = function(id) if prices[id] then return prices[id], 0 end end,
+      vendor = function() return 0 end, buy = function() end, ageKnown = false,
+      known = function() return false end,
+    }
+    return c
+  end
+  local function ids(list) local out = {} for i, e in ipairs(list) do out[i] = e.rec.id end return out end
+  local DB = fakeLib()
+  local crafts = V.LibCrafts(DB, 165, "A")
+
+  it("lists the trainer recipe, the teaching-item recipes and the drop; excludes hidden and auto-granted", function()
+    local r = V.Learnable(crafts, 61, lcx())
+    local all = {}
+    for _, bucket in ipairs({ r.now, r.soon, r.gray }) do for _, e in ipairs(bucket) do all[e.rec.id] = e end end
+    assert.is_not_nil(all[9062]); assert.is_not_nil(all[2158])
+    for _, id in ipairs({ 1255143, 1255144, 1255146 }) do assert.is_not_nil(all[id], tostring(id)) end   -- the three Forever recipes
+    assert.is_nil(all[9999]); assert.is_nil(all[2149])
+    assert.are.equal(5, r.nowTotal + r.soonTotal)                   -- 9062, 2158 and the three Forever recipes
+  end)
+
+  it("Fine Leather Boots is a drop: listed, never recommended and never labelled trainer, even when it is the cheapest", function()
+    local r = V.Learnable(crafts, 61, lcx())
+    local fine
+    for _, e in ipairs(r.now) do if e.rec.id == 2158 then fine = e end end
+    assert.is_not_nil(fine)
+    assert.are.equal("d", fine.rec.src); assert.are.equal("drop", fine.rec.way.kind)
+    assert.is_false(fine.recommend)
+    assert.is_true(fine.perPoint < r.best.perPoint)                 -- cheaper per point than the recommendation...
+    assert.are.equal(9062, r.best.rec.id)                           -- ...but the best is the trainer recipe
+  end)
+
+  it("uses the library's real thresholds: Petite giberne is yellow at 61, the Forever boots are gray", function()
+    local r = V.Learnable(crafts, 61, lcx())
+    assert.are.equal(9062, r.best.rec.id)
+    assert.are.equal(1, r.best.rec.d)                              -- yellow: 55 <= 61 < 70
+    assert.are.same({ 1255143, 1255144, 1255146 }, ids(r.gray))    -- 40 / 40 / 40: gray at 61, listed apart and never ranked
+    for _, e in ipairs(r.gray) do assert.is_true(e.gray); assert.is_nil(e.perPoint) end
+  end)
+
+  it("a teaching item with an auction price is the learning fee and makes the recipe recommendable", function()
+    local gray = V.Learnable(crafts, 61, lcx()).gray
+    local by = {}
+    for _, e in ipairs(gray) do by[e.rec.id] = e end
+    assert.are.equal("item", by[1255143].rec.way.kind)
+    assert.are.equal(700, by[1255143].rec.fee); assert.is_true(by[1255143].recommend)    -- 252764 has an AH price
+    assert.is_nil(by[1255144].rec.fee); assert.is_false(by[1255144].recommend)           -- no AH price: not recommendable
+    assert.are.equal("i", by[1255143].rec.src)
+    assert.are.equal(252764, by[1255143].rec.teachItem)
+  end)
+
+  it("the library's thresholds beat the estimate (orange here, yellow by the estimate)", function()
+    local DB2, recipes = fakeLib()
+    recipes[20] = { name = "x", craftedItemId = 7279, reagents = { [2318] = 1 }, requiredSkill = 20, difficulty = { 20, 62, 63, 64 } }
+    DB2.sources[20] = { trainer = { { id = 1, name = "T" }, total = 1 } }
+    local cs = V.LibCrafts(DB2, 165, "A")
+    local r = V.Learnable(cs, 61, lcx())
+    for _, e in ipairs(r.now) do if e.rec.id == 20 then assert.are.equal(0, e.rec.d) end end   -- 61 < 62: still orange
+    assert.are.equal(1, V.EstimateColor(61, 20))                                               -- the estimate would say yellow (50)
+  end)
+
+  it("the recorded trainer window beats the library: real skill and fee, confirmed", function()
+    local c = lcx()
+    c.offer = function(id) if id == 1255144 then return { skill = 35, cost = 500, status = "available", npc = "Kamari", mapID = 1411, x = 50, y = 25 } end end
+    local r = V.Learnable(crafts, 61, c)
+    local e
+    for _, bucket in ipairs({ r.now, r.soon, r.gray }) do for _, x in ipairs(bucket) do if x.rec.id == 1255144 then e = x end end end
+    assert.are.equal(500, e.rec.fee); assert.are.equal("Kamari", e.rec.trainer.npc)
+    assert.is_true(e.rec.way.confirmed); assert.is_nil(e.rec.src)
+  end)
+
+  it("a recipe the library has no way to get is not listed", function()
+    local DB2, recipes = fakeLib()
+    recipes[30] = { name = "?", reagents = { [2318] = 1 }, difficulty = { 30, 60, 75, 90 } }       -- no skill, no source, no item
+    local cs = V.LibCrafts(DB2, 165, "A")
+    local r = V.Learnable(cs, 61, lcx())
+    for _, bucket in ipairs({ r.now, r.soon, r.gray }) do for _, e in ipairs(bucket) do assert.are_not.equal(30, e.rec.id) end end
+  end)
+end)
+

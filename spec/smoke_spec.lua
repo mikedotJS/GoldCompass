@@ -31,6 +31,46 @@ local function proxy()
   end })
 end
 
+
+-- A stand-in for LibProfessionDB-1.0 built from Data/Recipes.lua: the learn skill becomes requiredSkill, the Classic source
+-- becomes the library's source kinds. opts.noLib: not installed; opts.libNotReady: no data for this client.
+local LINE = { [171] = "Alchemy", [164] = "Blacksmithing", [333] = "Enchanting", [202] = "Engineering", [165] = "Leatherworking",
+  [197] = "Tailoring", [185] = "Cooking", [129] = "First Aid", [186] = "Mining", [356] = "Fishing", [182] = "Herbalism", [393] = "Skinning" }
+local function libStub(opts)
+  if opts.noLib then return function() end end
+  local data = {}
+  assert(loadfile("Data/Recipes.lua"))("GoldCompass", data)
+  local byProf, rowById = {}, {}
+  for _, r in ipairs(data.RecipeRows) do
+    local e = { name = r[8], craftedItemId = r[4], reagents = {}, teaches = r[1], requiredSkill = (opts.libOverrides and opts.libOverrides.skill and opts.libOverrides.skill[r[1]]) or r[11],
+      difficulty = { r[11] or 1, r[12] or ((r[11] or 1) + 30), r[13] or ((r[11] or 1) + 45), r[14] or ((r[11] or 1) + 60) } }
+    for mat, n in r[9]:gmatch("(%d+):(%d+)") do e.reagents[tonumber(mat)] = tonumber(n) end
+    byProf[r[2]] = byProf[r[2]] or {}
+    byProf[r[2]][r[1]] = e
+    rowById[r[1]] = r
+  end
+  local DB = { overrides = opts.libOverrides or {} }
+  function DB:IsReady() return not opts.libNotReady end
+  function DB:HasProfession(id) return LINE[id] ~= nil end
+  function DB:GetRecipes(id) return byProf[LINE[id]] or {} end
+  function DB:IsHiddenRecipe(id) return self.overrides.hidden and self.overrides.hidden[id] or false end
+  function DB:IsAutoTaughtRecipe(id) return self.overrides.auto and self.overrides.auto[id] or false end
+  function DB:IsBorrowed(id, field) return self.overrides.borrowed and self.overrides.borrowed[id .. field] or nil end
+  function DB:GetRecipeItem(id) return self.overrides.items and self.overrides.items[id] or nil end
+  function DB:GetSourceFaction() return nil end
+  function DB:GetRecipeSources(id)
+    if self.overrides.sources and self.overrides.sources[id] ~= nil then return self.overrides.sources[id] or nil end
+    local r = rowById[id]
+    if not r or not r[11] then return nil end
+    local kind = ({ v = "vendor", q = "quest", m = "drop", d = "drop" })[r[10] or ""] or "trainer"
+    return { [kind] = { { id = 1, name = "Some NPC" }, total = 1 } }
+  end
+  function DB:Count() return 2516 end
+  function DB:GetGameVersion() return "Forever" end
+  function DB:ProfessionCount(id) local n = 0; for _ in pairs(byProf[LINE[id]] or {}) do n = n + 1 end; return n end
+  return function() return DB, 14 end
+end
+
 local function setup(opts)
   printed, handlers, frames, timers = {}, {}, {}, {}
   local loaded = {}
@@ -44,6 +84,7 @@ local function setup(opts)
   UIParent.GetHeight = function() return opts.screenH or 768 end
   _G.CreateFrame = function() local p = proxy(); frames[#frames + 1] = p; return p end
   _G.C_Timer = { After = function(_, fn) timers[#timers + 1] = fn end }
+  _G.LibStub = libStub(opts)
   _G.date = os.date
   _G.debugstack = function() return "stack line 1\nstack line 2" end
   _G.GetBuildInfo = function() return "1.60.1", "70938", "Nov 14 2026", 16001 end
@@ -1407,8 +1448,11 @@ describe("empty states of the recipes to learn say the real reason", function()
     assert.matches("Aucune recette à apprendre pour ce métier", show(lr({})))
   end)
   it("everything in reach is gray", function()
-    local text = show(lr({ nowTotal = 4 }))
+    local grayRow = { gray = true, name = "Potion grise", chance = 0, rec = { id = 5, name = "Potion grise", learn = 10, d = 3 } }
+    local text = show(lr({ nowTotal = 4, gray = { grayRow } }))
     assert.matches("ne font plus monter le métier", text)
+    assert.matches("Déjà grises à ton niveau", text)             -- the gray recipes are listed, never ranked
+    assert.matches("Potion grise", text)
     assert.is_nil(text:match("Aucune recette à apprendre"))
   end)
   it("hidden by the bag filter", function()
@@ -1853,6 +1897,89 @@ describe("trainer windows recorded in game (owner's case: Kamari, Travail du cui
     SlashCmdList.GOLDCOMPASS("spike")
     assert.matches("S9 trainer APIs: GetNumTrainerServices true.*GetTrainerServiceItemLink true.*trainers recorded: 1", table.concat(printed, "\n"))
     assert.is_not_nil(ns)
+  end)
+end)
+
+describe("recipes to learn from LibProfessionDB (stubbed library)", function()
+  local function lineTexts(ns)
+    local out = {}
+    for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = (l.left.text or "") .. " " .. (l.right.text or "") end
+    return table.concat(out, "\n")
+  end
+  local cuir = { skill = 61, max = 75, recipes = {
+    [2149] = { id = 2149, name = "Bottes en cuir cousu main", d = 2, out = 2302, oq = 1, mats = { { 2318, 2 } } } } }
+  local function start(opts)
+    opts = opts or {}
+    opts.scanned, opts.profs = true, { { 165, 61, "Travail du cuir", 75 } }
+    setup(opts)
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { ["Travail du cuir"] = cuir } }
+    return ns
+  end
+
+  it("missing library: an error line in the learn section with the way out, the known recipes still ranked", function()
+    local ns = start({ noLib = true })
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    assert.are.equal("nolib", res.profs[1].learn.error)
+    assert.is_not_nil(res.profs[1].plan.best)                      -- the known-recipe ranking works
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local text = lineTexts(ns)
+    assert.matches("Installe LibProfessionDB %(CurseForge%) pour les recettes à apprendre", text)
+    assert.matches("Monte avec", text)
+    assert.is_nil(text:match("Aucune recette à apprendre"))
+  end)
+
+  it("library without data for this client: its own message", function()
+    local ns = start({ libNotReady = true })
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    assert.matches("n'a pas de données pour ce client", lineTexts(ns))
+  end)
+
+  it("Fine Leather Boots (drop) is listed as a drop, never as a trainer recipe, never recommended", function()
+    local ns = start({ libOverrides = { skill = { [2158] = 60 }, sources = { [2158] = { drop = { { id = 2, name = "Mob" }, total = 951 } } } } })
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local lr = res.profs[1].learn
+    local fine
+    for _, bucket in ipairs({ lr.now, lr.soon, lr.gray }) do for _, e in ipairs(bucket) do if e.rec.id == 2158 then fine = e end end end
+    assert.is_not_nil(fine)
+    assert.are.equal("d", fine.rec.src)
+    assert.is_false(fine.recommend)
+    if lr.best then assert.are_not.equal(2158, lr.best.rec.id) end
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    local line
+    for _, l in ipairs(ns.Window.Lines()) do if (l.left.text or ""):find("Fine Leather Boots", 1, true) then line = l.left.text end end
+    assert.is_not_nil(line)
+    assert.matches("butin", line)
+    assert.is_nil(line:find("entraîneur", 1, true))
+  end)
+
+  it("unconfirmed trainer sources are labelled as such on the recommended line", function()
+    local ns = start({ libOverrides = { borrowed = {} } })
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local best = res.profs[1].learn.best
+    assert.is_not_nil(best)
+    -- a trainer recipe whose required skill is borrowed from Vanilla: "(non confirmé sur Forever)"
+    assert.are.equal("entraîneur (non confirmé sur Forever)", ns.Fmt.Source({ src = nil, way = { kind = "trainer", confirmed = false } }, true))
+    assert.are.equal("entraîneur", ns.Fmt.Source({ src = nil, way = { kind = "trainer", confirmed = true } }, true))
+    assert.are.equal("objet d'apprentissage : Cuir", ns.Fmt.Source({ src = "i", itemName = "Cuir" }, true))
+  end)
+
+  it("/gc spike reports the library: loaded, MINOR, readiness and the Forever recipes of each profession", function()
+    local ns = start()
+    SlashCmdList.GOLDCOMPASS("spike")
+    local chat = table.concat(printed, "\n")
+    assert.matches("S10 LibProfessionDB: loaded MINOR 14", chat)
+    assert.matches("S10 Travail du cuir %d+ recipes", chat)
+    assert.is_not_nil(ns)
+    local ns2 = start({ noLib = true })
+    printed = {}
+    SlashCmdList.GOLDCOMPASS("spike")
+    assert.matches("S10 LibProfessionDB: MISSING", table.concat(printed, "\n"))
+    assert.is_not_nil(ns2)
   end)
 end)
 
