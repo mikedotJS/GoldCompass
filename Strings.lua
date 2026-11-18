@@ -146,6 +146,8 @@ ns.S = {
   where_pin = "Clique : repère sur la carte", where_text_tip = "Clique : affiche le lieu dans le chat",
   where_pinned = "Repère posé : %s, %s (%.1f, %.1f). Données Classic, à vérifier.",
   where_coords = "%s, %s (%.1f, %.1f) : repère indisponible, carte ouverte. Données Classic, à vérifier.",
+  where_only = "Où l'apprendre : uniquement côté %s.", faction_a = "Alliance", faction_h = "Horde",
+  where_drop = "Où l'apprendre : %s.",
   where_zone_only = "Où l'apprendre : %s - position exacte inconnue.", where_zone_tip = "Position exacte inconnue.",
   zone_names = { ["Zephras Isle"] = "île de Zephras" },
   where_combat = "Indisponible en combat : %s",

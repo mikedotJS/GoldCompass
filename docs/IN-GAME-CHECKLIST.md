@@ -212,3 +212,7 @@ The Forever recipe data of LibProfessionDB v1.10.1 (MIT, by Pimptasty) is inside
 | 113 | Craft button of each section (Travail du cuir, Dépeçage) | `Ouvrir <la profession de la section>` / `Fabriquer ×N`: Travail du cuir never says Dépeçage; the Dépeçage section shows no leather recipe of Travail du cuir | Screenshot |
 | 114 | Click the map icon of `Poisson-chat moustachu` (Horde) | Chat: `Où l'apprendre : <PNJ> (<Zone en français>) ; <PNJ> (<Zone>) - position exacte inconnue.` with the Horde vendors only; the world map opens on the first zone | The chat line |
 | 115 | Footer | `Sources : wowforever.be (observé en jeu), données Forever.` within two lines | Screenshot |
+| 116 | Map button of a trainer recipe (Horde leatherworker) | A waypoint on the nearest Horde trainer of the right rank (Kamari in Orgrimmar for Apprentice), chat `Repère posé : <PNJ en français>, <zone> (x, y)` | The waypoint on the map |
+| 117 | Map button of `Poisson-chat moustachu` (Horde) | Pin on Derak Nightfall or Naal Mistrunner, never Lindea Rabonne; an Alliance character gets Lindea / Kilxx | The pin |
+| 118 | Open a vendor and a trainer window of a Forever-only NPC, then click its recipe | `/gc` log shows `merchant: <name> (<id>) at ...`; next click pins the recorded position | The log line |
+| 119 | A drop recipe | Chat `Où l'apprendre : <zone du drop>`, the map opens on that zone | Chat line |

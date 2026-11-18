@@ -322,7 +322,9 @@ end
 -- Environment for Where.Target: faction, the continent the player is on and a distance function (world coordinates of
 -- the player and of a map position; nil when the game cannot tell, then only the continent decides).
 local function whereEnv(ctx)
-  local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = ctx.faction }
+  local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = ctx.faction,
+    db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, recorded = ns.db and ns.db.npcs, contOf = {} }
+  for _, m in pairs(ns.MapIDs) do env.contOf[m[1]] = m[2] end
   local C = C_Map
   local here = C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")
   for _, m in pairs(ns.MapIDs) do if m[1] == here then env.continent = m[2] end end
@@ -380,7 +382,7 @@ function ns.LearnFor(p, ctx, count, knownBest)
       row.target = ns.Where.Target(row.rec, english, env)
       -- never an empty answer: the source itself ("butin", "conteneur", ...) when no place is known
       local t, way = row.target, row.rec.way
-      if not t.mapID then
+      if not t.mapID or t.dropZone then
         -- the site's location text: where it drops ("butin : Les Mortemines") or the quest that gives it
         if way and way.zone and (way.kind == "drop" or way.kind == "container" or way.kind == "item") then
           local zones = {}

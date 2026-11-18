@@ -176,7 +176,7 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format",
     "Prices", "Nodes", "Core", "Learned", "Trainers", "Spike", "Tooltip", "Window" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
@@ -2178,15 +2178,11 @@ describe("Où l'apprendre: vendors of the site, by faction (Cooking 124)", funct
     local row = by[7755]                                      -- Poisson-chat moustachu
     assert.is_not_nil(row)
     assert.are.equal("Derak Nightfall (Hillsbrad Foothills), Naal Mistrunner (Thunder Bluff)", row.rec.way.where)
-    local opened
-    _G.C_Map.OpenWorldMap = function(id) opened = id end
+    assert.are.equal("pin", row.target.kind)                  -- pfQuest knows both Horde vendors: an exact pin, never Lindea (Alliance)
+    assert.is_truthy(row.target.name == "Derak Nightfall" or row.target.name == "Naal Mistrunner")
     local before = #printed
     ns.Window.GoTo(row.target, "Poisson-chat moustachu")
-    local zoneA, zoneB = ns.MapIDs["Hillsbrad Foothills"][1], ns.MapIDs["Thunder Bluff"][1]
-    assert.are.equal(("Où l'apprendre : Derak Nightfall (Zone%d) ; Naal Mistrunner (Zone%d) - position exacte inconnue."):format(zoneA, zoneB),
-      printed[before + 1]:match("Où l'apprendre.*$"))
-    assert.are.equal(zoneA, opened)                           -- the map opens on the first vendor's zone
-    assert.is_nil(printed[before + 1]:find("Lindea", 1, true))
+    assert.is_nil(table.concat(printed, "\n", before + 1):find("Lindea", 1, true))
   end)
 
   it("an Alliance player gets the Alliance list", function()
@@ -2257,5 +2253,30 @@ describe("the craft button belongs to its own section (Travail du cuir vs Dépe�
     assert.is_nil(profs["Dépeçage"].recipes[2149])                           -- a leather recipe is not Skinning's
     ns.Learned.Capture(window("", 165, { 2149 }), learned, profs)
     assert.is_nil(profs[""])                                                  -- no entry under an empty name
+  end)
+end)
+
+describe("NPC positions recorded in game", function()
+  it("reads the NPC id of a creature GUID, nothing else", function()
+    setup({}); local ns = loadAddon()
+    assert.are.equal(3497, ns.TrainerLog.NpcID("Creature-0-4379-1-76-3497-00001A2B3C"))
+    assert.is_nil(ns.TrainerLog.NpcID("Player-4379-0123ABCD")); assert.is_nil(ns.TrainerLog.NpcID(nil))
+  end)
+
+  it("a merchant window records the vendor (id, name, map position) account-wide, a new visit replaces it", function()
+    setup({}); local ns = loadAddon()
+    ns.db = {}
+    _G.UnitGUID = function() return "Creature-0-1-1-1-3497-0000000001" end
+    _G.UnitName = function() return "Kilxx" end
+    _G.C_Map.GetBestMapForUnit = function() return 1413 end
+    _G.C_Map.GetMapInfo = function() return { name = "Les Tarides" } end
+    _G.C_Map.GetPlayerMapPosition = function() return { x = 0.628, y = 0.382 } end
+    ns.TrainerLog.ScanMerchant()
+    local r = ns.db.npcs[3497]
+    assert.are.equal("Kilxx", r.name); assert.are.equal(1413, r.mapID); assert.are.equal("Alliance" == nil and "" or "A", r.f)
+    assert.is_true(math.abs(r.x - 62.8) < 0.01)
+    _G.C_Map.GetPlayerMapPosition = function() return { x = 0.5, y = 0.5 } end
+    ns.TrainerLog.ScanMerchant()
+    assert.are.equal(50, ns.db.npcs[3497].x)
   end)
 end)

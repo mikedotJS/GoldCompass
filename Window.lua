@@ -140,21 +140,29 @@ function W.VendorText(t)
   return table.concat(parts, " ; ")
 end
 
+-- Name of the NPC of a target in the client's language (French names of pfQuest on a French client), else English.
+function W.NpcName(t)
+  local french = GetLocale and GetLocale() == "frFR" and t.fr
+  return french or t.name
+end
+
 function W.GoTo(t, recipe)
   local function log(decision) ns.Log("frame", ("where click: %s -> %s (%s)"):format(tostring(recipe), decision, tostring(t.name or t.text))) end
   if not t.mapID then
     log("text")
+    if t.onlyFaction then return ns.Print(S.where_only:format(t.onlyFaction == "A" and S.faction_a or S.faction_h)) end
     if t.vendors then return ns.Print(S.where_zone_only:format(W.VendorText(t))) end
     return ns.Print(t.text and S.where_text:format(t.text) or S.where_none)
   end
   local label = ns.ZoneLabel(t)
   if not t.x then   -- zone only: say the position is unknown, open the map on the zone (out of combat)
     log("zone")
-    ns.Print(S.where_zone_only:format(t.vendors and W.VendorText(t) or ("%s (%s)"):format(t.name, label)))
+    if t.dropZone then ns.Print(S.where_drop:format(t.text or label))
+    else ns.Print(S.where_zone_only:format(t.vendors and W.VendorText(t) or ("%s (%s)"):format(W.NpcName(t), label))) end
     return openMap(t.mapID)
   end
   log("pin")
-  if InCombatLockdown() then return ns.Print(S.where_combat:format(("%s, %s (%.1f, %.1f)"):format(t.name, label, t.x, t.y))) end
+  if InCombatLockdown() then return ns.Print(S.where_combat:format(("%s, %s (%.1f, %.1f)"):format(W.NpcName(t), label, t.x, t.y))) end
   local pinned = false
   local C = C_Map
   if C and C.SetUserWaypoint and UiMapPoint and UiMapPoint.CreateFromCoordinates
@@ -165,7 +173,7 @@ function W.GoTo(t, recipe)
     end)
   end
   ns.Log("frame", ("where: %s (%s) map %d %.1f,%.1f pinned=%s"):format(t.name, t.zone, t.mapID, t.x, t.y, tostring(pinned)))
-  ns.Print((pinned and S.where_pinned or S.where_coords):format(t.name, label, t.x, t.y))
+  ns.Print((pinned and S.where_pinned or S.where_coords):format(W.NpcName(t), label, t.x, t.y))
   openMap(t.mapID)
 end
 function W.Rows() return rows end
@@ -221,14 +229,18 @@ function W.TargetTooltipLines(t)
   if t.vendors then
     tip[#tip + 1] = W.VendorText(t)
     tip[#tip + 1] = S.where_zone_tip
+  elseif t.dropZone then
+    tip[#tip + 1] = t.text or ns.ZoneLabel(t)
+    tip[#tip + 1] = S.where_zone_tip
   elseif t.mapID and not t.x then
-    tip[#tip + 1] = t.name
+    tip[#tip + 1] = W.NpcName(t)
     tip[#tip + 1] = S.where_zone_tip
   elseif t.mapID then
-    tip[#tip + 1] = t.name
+    tip[#tip + 1] = W.NpcName(t)
     tip[#tip + 1] = ("%s : %.1f, %.1f"):format(ns.ZoneLabel(t), t.x, t.y)
     tip[#tip + 1] = t.recorded and S.where_recorded or S.where_classic
   else
+    if t.onlyFaction then tip[#tip + 1] = S.where_only:format(t.onlyFaction == "A" and S.faction_a or S.faction_h) end
     if t.text then tip[#tip + 1] = t.text end
     tip[#tip + 1] = S.where_unclear
     tip[#tip + 1] = S.where_classic

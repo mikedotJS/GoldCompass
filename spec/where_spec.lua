@@ -155,3 +155,71 @@ describe("Where.Target for a library recipe (NPC names, no coordinates there)", 
   end)
 end)
 
+
+describe("Where.Target with the real NPC database (pfQuest)", function()
+  local real = {}
+  for _, f in ipairs({ "Data/Zones", "Data/Locations", "Data/Npcs" }) do assert(loadfile(f .. ".lua"))("GoldCompass", real) end
+  local contOf = {}
+  for _, m in pairs(real.MapIDs) do contOf[m[1]] = m[2] end
+  local function renv(faction, over)
+    local e = { trainers = real.Trainers, npcs = real.NPCs, where = real.RecipeWhere, maps = real.MapIDs, db = real.Npcs,
+      byName = real.NpcByName, ntrainers = real.NpcTrainers, contOf = contOf, faction = faction }
+    for k, v in pairs(over or {}) do e[k] = v end
+    return e
+  end
+
+  it("every NPC position uses a map the data knows, and every zone used by the sources has a uiMapID", function()
+    local known = {}
+    for _, m in pairs(real.MapIDs) do known[m[1]] = true end
+    local n = 0
+    for id, npc in pairs(real.Npcs) do
+      assert.is_truthy(npc[1]); assert.is_truthy(npc[2] == "A" or npc[2] == "H" or npc[2] == "AH")
+      for _, s in ipairs(npc[3]) do assert.is_true(known[s[1]], "NPC " .. id .. " map " .. s[1]); n = n + 1 end
+    end
+    assert.is_true(n > 300)
+  end)
+
+  it("Kamari (5811) is pinned in Orgrimmar for a Horde leatherworker learning an Apprentice recipe", function()
+    local t = Wh.Target({ id = 1, learn = 1, src = nil, way = { rank = "Apprentice" } }, "Leatherworking",
+      renv("H", { continent = "K", dist = function(m) return m == 1454 and 1 or 90 end }))        -- the player stands in Orgrimmar
+    assert.are.equal("pin", t.kind); assert.are.equal("Kamari", t.name); assert.are.equal(5811, t.id)
+    assert.are.equal(1454, t.mapID); assert.are.equal(63.3, t.x)
+  end)
+
+  it("Kilxx (3497) is pinned in The Barrens for a vendor recipe of the Horde", function()
+    local t = Wh.Target({ id = 7755, src = "v", way = { site = true, ids = { 3497 }, where = "Kilxx (The Barrens)" } }, "Cooking", renv("H"))
+    assert.are.equal("pin", t.kind); assert.are.equal("Kilxx", t.name); assert.are.equal(1413, t.mapID)
+  end)
+
+  it("Lindea Rabonne (2383, Alliance) is never proposed to the Horde, who are told it is Alliance only", function()
+    local rec = { id = 7755, src = "v", way = { site = true, ids = { 2383 }, where = "Lindea Rabonne (Hillsbrad Foothills)" } }
+    local t = Wh.Target(rec, "Cooking", renv("H"))
+    assert.are_not.equal("pin", t.kind); assert.are.equal("A", t.onlyFaction)
+    local a = Wh.Target(rec, "Cooking", renv("A"))
+    assert.are.equal("pin", a.kind); assert.are.equal("Lindea Rabonne", a.name)
+  end)
+
+  it("a Forever-only NPC (not in pfQuest) falls back to the zone and the site's text", function()
+    local t = Wh.Target({ id = 9, src = "v", way = { site = true, where = "Vayn Moongaze (Zephras Isle)" } }, "Tailoring", renv("H"))
+    assert.are.equal("text", t.kind); assert.are.equal("Vayn Moongaze", t.vendors[1].name)
+    local z = Wh.Target({ id = 9, src = "v", way = { site = true, where = "Vayn Moongaze (Durotar)" } }, "Tailoring", renv("H"))
+    assert.are.equal("zone", z.kind); assert.are.equal(1411, z.mapID)
+  end)
+
+  it("a position recorded in game wins over pfQuest's", function()
+    local rec = { id = 7755, src = "v", way = { site = true, ids = { 3497 }, where = "Kilxx (The Barrens)" } }
+    local t = Wh.Target(rec, "Cooking", renv("H", { recorded = { [3497] = { name = "Kilxx", mapID = 1413, x = 11.1, y = 22.2 } } }))
+    assert.are.equal("pin", t.kind); assert.are.equal(11.1, t.x); assert.is_true(t.recorded)
+  end)
+
+  it("the nearest candidate of the player's continent wins", function()
+    local t = Wh.Target({ id = 1, learn = 100, src = nil, way = { rank = "Journeyman" } }, "Leatherworking",
+      renv("H", { continent = "K", dist = function(m) return m == 1454 and 5 or 50 end }))
+    assert.are.equal(1454, t.mapID)
+  end)
+
+  it("a drop recipe opens the drop zone, no NPC", function()
+    local t = Wh.Target({ id = 2, src = "d", way = { kind = "drop", site = true, zone = "Durotar" } }, "Leatherworking", renv("H"))
+    assert.are.equal("zone", t.kind); assert.is_true(t.dropZone); assert.are.equal(1411, t.mapID)
+  end)
+end)

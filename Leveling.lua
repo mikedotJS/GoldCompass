@@ -196,7 +196,7 @@ end
 
 -- How a recipe can be obtained, from the vendored LibProfessionDB data (world databases: NOT Forever-verified, except what it
 -- flags as its own). `DB` is the library, `e` the recipe entry, `faction` "A" or "H". Returns
---   { kind, confirmed, npcs = { English NPC names }, vendorCost = copper | nil, currency = { id | item, amount } | nil (the vendor
+--   { kind, confirmed, npcs = { English NPC names }, ids = { their NPC ids }, vendorCost = copper | nil, currency = { id | item, amount } | nil (the vendor
 --     asks a currency or an item instead of gold), itemID = teaching item | nil }
 -- kind: trainer, vendor, quest, item (a teaching item and no source), container, drop, unknown.
 -- Priority: trainer, vendor, quest, container, drop, item (a teaching item and no source). A recipe with no source and no teaching item but a
@@ -226,11 +226,12 @@ function V.Way(DB, id, e, faction, forever)
   -- where: "NPC (Zone)" of wowforever.be; zone: where it drops; questName: the quest that gives it
   -- the site's vendor list for the player's faction (two lists: Alliance, Horde), or its one list of unknown faction
   local vtext = ft and ((faction == "H" and ft.vh) or (faction ~= "H" and ft.va) or ft.vendor) or nil
-  local way = { npcs = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest }
+  local way = { npcs = {}, ids = {}, itemID = item, site = site, where = vtext, zone = ft and ft.zone, questName = ft and ft.quest }
   local wanted = faction == "H" and "Horde" or "Alliance"
   local function names(kind)
     for _, n in ipairs(src[kind]) do
       local f = n.faction or (DB.GetSourceFaction and DB:GetSourceFaction(n.id))
+      if f == nil or f == wanted then way.ids[#way.ids + 1] = n.id end
       if n.name and (f == nil or f == wanted) then way.npcs[#way.npcs + 1] = n.name end
     end
   end

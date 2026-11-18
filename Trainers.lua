@@ -72,6 +72,20 @@ function T.Save(db, record, npc, faction, where, now)
     mapID = where.mapID, x = where.x, y = where.y, zone = where.zone, seen = now, offers = record.offers }
 end
 
+-- NPC id of a creature GUID ("Creature-0-4379-1-76-3497-00001A2B3C"), nil for anything else.
+function T.NpcID(guid)
+  local kind, id = (guid or ""):match("^(%a+)%-%d+%-%d+%-%d+%-%d+%-(%d+)%-")
+  return kind == "Creature" and tonumber(id) or nil
+end
+
+-- Remembers where an NPC (trainer or merchant) stands, account-wide: db.npcs[npcID] = { name, mapID, x, y, f = the faction of the
+-- player who saw it }. A recorded position beats the pfQuest one (Where.Target), which covers the NPCs new to Forever.
+function T.SaveNpc(db, id, name, faction, where)
+  if not (id and where) then return end
+  db.npcs = db.npcs or {}
+  db.npcs[id] = { name = name, mapID = where.mapID, x = where.x, y = where.y, f = faction }
+end
+
 -- What the recorded trainers of this faction offer for a profession (English name): { [craftID] = { skill, cost, status,
 -- npc, mapID, x, y, zone } } with the cheapest offer when several trainers teach a recipe; a recipe a trainer lists as
 -- already known (status "used") is marked used. Pure.
@@ -137,6 +151,7 @@ function T.Scan()
   if not where then return ns.Log("trainer", "no player position, trainer not recorded") end
   local npc = (UnitName and UnitName("npc")) or "?"
   local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
+  T.SaveNpc(ns.db, T.NpcID(UnitGUID and UnitGUID("npc")), npc, faction, where)
   T.Save(ns.db, record, npc, faction, where, time())
   local count = 0
   for _ in pairs(record.offers) do count = count + 1 end
@@ -146,10 +161,22 @@ function T.Scan()
   return record
 end
 
+-- A merchant window: where the vendor stands (a vendor of a recipe is a place to go to as much as a trainer).
+function T.ScanMerchant()
+  if not ns.db then return end
+  local id = T.NpcID(UnitGUID and UnitGUID("npc"))
+  local where = id and playerLocation()
+  if not where then return end
+  local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
+  T.SaveNpc(ns.db, id, (UnitName and UnitName("npc")) or "?", faction, where)
+  ns.Log("merchant", ("%s (%d) at %s %.1f,%.1f"):format((UnitName and UnitName("npc")) or "?", id, tostring(where.zone), where.x, where.y))
+end
+
 local pending = false
 local frame = CreateFrame("Frame")
-for _, e in ipairs({ "TRAINER_SHOW", "TRAINER_UPDATE" }) do pcall(frame.RegisterEvent, frame, e) end
-frame:SetScript("OnEvent", function()
+for _, e in ipairs({ "TRAINER_SHOW", "TRAINER_UPDATE", "MERCHANT_SHOW" }) do pcall(frame.RegisterEvent, frame, e) end
+frame:SetScript("OnEvent", function(_, event)
+  if event == "MERCHANT_SHOW" then return pcall(T.ScanMerchant) end
   if pending then return end
   pending = true
   C_Timer.After(0.4, function() pending = false; pcall(T.Scan) end)
