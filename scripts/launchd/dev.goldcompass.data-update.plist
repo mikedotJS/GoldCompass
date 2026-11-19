@@ -1,0 +1,46 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!-- Template: `scripts/update-data.sh --install-agent` replaces __REPO__ and __HOME__ and loads it with launchctl bootstrap. -->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>dev.goldcompass.data-update</string>
+
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>__REPO__/scripts/update-data.sh</string>
+    </array>
+
+    <!-- daily source check at 09:30; launchd runs a missed job when the Mac wakes -->
+    <key>StartCalendarInterval</key>
+    <dict>
+        <key>Hour</key>
+        <integer>9</integer>
+        <key>Minute</key>
+        <integer>30</integer>
+    </dict>
+
+    <!-- hourly wake-up, same command: it only retries a pending deploy/push (the source check itself runs about once a day) -->
+    <key>StartInterval</key>
+    <integer>3600</integer>
+
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>HOME</key>
+        <string>__HOME__</string>
+        <key>PATH</key>
+        <string>__HOME__/.luarocks54/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin:/usr/sbin:/sbin</string>
+    </dict>
+
+    <key>ProcessType</key>
+    <string>Background</string>
+    <key>Nice</key>
+    <integer>5</integer>
+
+    <key>StandardOutPath</key>
+    <string>__HOME__/Library/Logs/GoldCompass/launchd.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>__HOME__/Library/Logs/GoldCompass/launchd.err.log</string>
+</dict>
+</plist>

@@ -34,6 +34,19 @@ busted
 
 In-game checks: [docs/IN-GAME-CHECKLIST.md](docs/IN-GAME-CHECKLIST.md). Design and build plan: [PLAN.md](PLAN.md). UI mockup: [docs/mockup.html](docs/mockup.html).
 
+## Data updates
+
+`scripts/update-data.sh` keeps the generated `Data/` files fresh, once a day, on the maintainer's Mac (launchd job `dev.goldcompass.data-update`, 09:30 daily, plus an hourly wake-up that only retries a pending deploy). It checks the ForeverDB data version, the wowforever.be pages, the latest LibProfessionDB release and the latest Forever Ledger and pfQuest commits, and does nothing when none changed. Otherwise it rebuilds only the affected generators (and what depends on them) in a temporary copy, and only if luacheck, busted, the audit score, a personal-data scan and a load test all pass does it commit, copy the addon to the gaming PC (`scripts/deploy.sh`) and push. A failure leaves the repo untouched and sends a notification. Requests are rate-limited (1 to 2 s) with a generic User-Agent; robots.txt allows the pages used.
+
+```sh
+scripts/update-data.sh --status         # last run, source versions, pending deploy
+scripts/update-data.sh --dry-run        # detect + build + gates in a temporary copy, nothing committed
+scripts/update-data.sh --force          # rebuild everything
+scripts/update-data.sh --install-agent  # (re)load the launchd job from scripts/launchd/
+```
+
+Log: `~/Library/Logs/GoldCompass/data-update.log` (about 1 MB cap). State and downloaded inputs: `~/.cache/goldcompass/`. ProfessionsTracker has no machine-readable release: its pinned copy must sit in `~/.cache/goldcompass/inputs/ProfessionTracker-1.2.0/`.
+
 ## Licence
 
 GPL-3.0, see [LICENSE](LICENSE) (the addon includes ForeverDB.net data, which is GPL-3.0; credit: "Data from ForeverDB.net"). Recipe and quest data are also vendored from [Forever Ledger](https://github.com/ivellos/forever-ledger) (MIT), see [NOTICE](NOTICE) and [THIRD-PARTY](THIRD-PARTY).
