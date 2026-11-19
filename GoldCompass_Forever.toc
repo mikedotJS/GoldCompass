@@ -21,6 +21,7 @@ Data\ForeverNpcs.lua
 Data\ForeverFixes.lua
 Data\QuestItems.lua
 Data\ForeverSkinning.lua
+Data\ForeverGather.lua
 ZoneRank.lua
 Advice.lua
 Here.lua
