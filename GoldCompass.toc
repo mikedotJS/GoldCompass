@@ -19,6 +19,7 @@ Data\ForeverRecipes.lua
 Data\Npcs.lua
 Data\ForeverNpcs.lua
 Data\ForeverRanks.lua
+Data\ForeverReagentSources.lua
 Data\ForeverFixes.lua
 Data\QuestItems.lua
 Data\ForeverSkinning.lua
