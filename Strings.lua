@@ -225,3 +225,15 @@ ns.S = {
   npc_header = "%d PNJ enregistrés en jeu (position confirmée sur Forever). Tape /reload pour les écrire sur le disque.",
   npc_line = "  %s · %s %.1f, %.1f", node_unverified = " (non vérifié sur Forever)",
 }
+
+-- "Où monter" and "Itinéraire" (Route.lua, RouteMap.lua): the gathering professions of the Métier tab, and the loop drawn on the world map.
+for k, v in pairs({
+  route_head = "Où monter", route_btn = "Itinéraire", route_rank = "Rang %s",
+  route_sub = "%s · niv. %s · %d spots", route_sub_nolevel = "%s · %d spots",
+  route_nospot = "Pas encore de points connus ici, parcours la zone une fois.",
+  route_none = "Aucune zone connue pour monter ce métier à ce niveau.",
+  route_note_skin = "Bêtes jaunes ou vertes pour toi : chaque dépeçage peut faire monter. Les grises sont ignorées.",
+  route_note_gather = "Points déjà vus (toi ou la base Forever) pour ton niveau de métier. Les grises sont ignorées.",
+  route_bar = "Boucle de %d points · départ au plus proche", route_next = "prochain : %d sur %d",
+  route_clear = "Effacer l'itinéraire", route_cleared = "Itinéraire effacé.",
+}) do ns.S[k] = v end

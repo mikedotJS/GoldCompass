@@ -568,6 +568,11 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   end
   local lr = entry.learn
   road.trainer = road.rankTarget or (lr and ((lr.beyond and lr.beyond.target) or (lr.books and lr.books[1] and lr.books[1].target))) or nil
+  if gathering then   -- "Où monter": the zones and the loop of the gathering professions (RouteMap.lua)
+    local ok, where = pcall(ns.RouteMap.Plan, p, road, SKILL_LINES[p.line])
+    road.where = ok and where or nil
+    if not ok then ns.Log("frame", "route plan failed: " .. tostring(where)) end
+  end
   road.recipes = {}
   for _, rec in pairs(data.recipes) do
     local th = thresholds(rec.id)

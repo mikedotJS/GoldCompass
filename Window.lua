@@ -52,6 +52,7 @@ W.LineParts = { left = rect(0, 0, 222, LINE_H), right = rect(226, 0, 386, LINE_H
 W.LineWide = rect(0, 0, 406, LINE_H)
 -- Roadmap rows: a left column for the skill range, the text after it.
 local LV_W = 58
+local ROUTE_W = 74   -- the "Itinéraire" button at the right end of a line
 
 -- Scale that keeps the whole frame on screen whatever the UI scale makes of UIParent's size.
 function W.FitScale(parentWidth, parentHeight)
@@ -663,14 +664,14 @@ local function setLines(entries, tail, area)
   -- a sentence too long for its slot goes on a second line (about 5.5 px a character), never cut: the map button stays on the first
   local function add(e)
     local plain = e.left and e.left:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")
-    local cap = math.floor((((e.target and W.LineParts.go.l - 4) or W.LineWide.r) - (e.lv and LV_W or 0)) / 5.5)
+    local cap = math.floor((((e.target and W.LineParts.go.l - 4) or (e.route and W.LineWide.r - ROUTE_W - 4) or W.LineWide.r) - (e.lv and LV_W or 0)) / 5.5)
     if not (e.wide and not e.craft and plain and #plain:gsub("[\128-\191]", "") > cap) then all[#all + 1] = e; return end
     local colour, body = e.left:match("^(|c%x%x%x%x%x%x%x%x)(.*)|r$")
     body = body or e.left
     local line, first = "", true
     local function flush()
       local copy = { wide = true, left = (colour or "") .. line .. (colour and "|r" or ""), lv = e.lv and (first and e.lv or "") or nil, tip = e.tip }
-      if first then copy.target, copy.recipe = e.target, e.recipe; first = false end
+      if first then copy.target, copy.recipe, copy.route = e.target, e.recipe, e.route; first = false end
       all[#all + 1] = copy
     end
     for word in body:gmatch("%S+") do
@@ -749,6 +750,18 @@ local function setLines(entries, tail, area)
       end)
       l.craft:SetScript("OnLeave", function() GameTooltip:Hide() end)
     end
+    -- the "Itinéraire" button (Où monter) is created when a line first needs it
+    if e and e.route and not l.route then
+      l.route = button(content, S.route_btn, ROUTE_W)
+      place(l.route, rect(W.LineWide.r - ROUTE_W, l.top, W.LineWide.r, l.top + LINE_H), content)
+      local level = content:GetFrameLevel()
+      l.route:SetFrameLevel((type(level) == "number" and level or 1) + 5)
+      l.route:SetScript("OnClick", function(self) if self.step then ns.RouteMap.Start(self.step) end end)
+    end
+    if l.route then
+      l.route.step = e and e.route or nil
+      l.route:SetShown(l.route.step ~= nil)
+    end
     if l.craft then
       l.craft.entry = e and e.craft or nil
       l.craft:SetShown(l.craft.entry ~= nil)
@@ -764,7 +777,7 @@ local function setLines(entries, tail, area)
     l.left:ClearAllPoints()
     l.left:SetPoint("TOPLEFT", content, "TOPLEFT", W.LineParts.left.l + shift, -l.top)
     -- a line with a map button leaves its room (the button sits at the right end)
-    l.left:SetWidth(((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or W.LineWide.r)
+    l.left:SetWidth(((e and e.wide) and (l.go.target and W.LineParts.go.l - 4 or (e.route and W.LineWide.r - ROUTE_W - 4) or W.LineWide.r)
       or (e and e.craft and W.LineWide.r - 154) or W.LineParts.left.r) - shift)
     l.left:SetFontObject(e and e.head and GameFontNormalSmall or GameFontHighlightSmall)
     l.left:SetText(e and e.left or "")
@@ -1027,6 +1040,34 @@ local DIFF_COLOUR = { [0] = "|cffff8040", [1] = "|cffffff00", [2] = "|cff40c040"
 -- "Monter le métier": the roadmap of one profession ("Ton parcours"): up to 5 steps, two lines each. Left column: the skill range;
 -- main line: the recipe coloured by its difficulty and the number of crafts; dim line: what is in the bag, what is missing, or where to
 -- learn it; a "Fabriquer" button on a step the bag can feed (the first one is the primary button), the map pin on a recipe to learn.
+-- "Où monter" (Route.lua): the gathering professions have no recipe to craft, their roadmap is the zones that still give skill points, with an
+-- "Itinéraire" button on each, and the rank step with its map pin. Two lines per step: range and zone, then names, levels and spots.
+local function addWhere(entries, p)
+  local r = p.road
+  local rank = r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
+  local function zoneOf(target) return target and (ns.ZoneLabel(target) or target.zone) end
+  entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.route_head .. "|r" }
+  local zones = 0
+  for _, s in ipairs(r.where.steps) do
+    if s.kind == "rank" then
+      local zone = zoneOf(r.trainer)
+      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.route_rank:format(rank), tip = r.rankTip }
+      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r",
+        target = r.trainer, recipe = rank, tip = r.rankTip }
+    else
+      zones = zones + 1
+      local named = table.concat(s.names, ", ")
+      local sub = s.lo and S.route_sub:format(named, s.lo == s.hi and s.lo or (s.lo .. "-" .. s.hi), s.spots) or S.route_sub_nolevel:format(named, s.spots)
+      local has = s.points and #s.points > 0
+      entries[#entries + 1] = { lv = "|cffa89c80" .. S.road_range:format(s.from, s.to) .. "|r", wide = true,
+        left = ns.ZoneLabel({ mapID = s.zone, zone = ns.Zones[s.zone] and ns.Zones[s.zone][1] }) or ("#" .. s.zone), route = has and s or nil }
+      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (has and sub or S.route_nospot) .. "|r" }
+    end
+  end
+  if zones == 0 then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.route_none .. "|r" } end
+  entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (p.line == 393 and S.route_note_skin or S.route_note_gather) .. "|r" }
+end
+
 local function addRoadmap(entries, p)
   local r = p.road
   local rank = r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
@@ -1036,6 +1077,7 @@ local function addRoadmap(entries, p)
       target = rank and r.trainer or nil, recipe = rank, tip = rank and r.rankTip or nil }
     return
   end
+  if r.gathering and r.where then return addWhere(entries, p) end
   if #r.steps > 0 then entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_title .. "|r" } end
   local primary = true
   for _, s in ipairs(r.steps) do

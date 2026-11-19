@@ -26,6 +26,7 @@ Data\ForeverSkinning.lua
 Data\ForeverSkinZones.lua
 Data\ForeverGather.lua
 ZoneRank.lua
+Route.lua
 SkinRank.lua
 Advice.lua
 Here.lua
@@ -41,4 +42,5 @@ Learned.lua
 Trainers.lua
 Spike.lua
 Tooltip.lua
+RouteMap.lua
 Window.lua
