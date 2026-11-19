@@ -10,15 +10,15 @@
 -- ns.SkinSpots[npcID] = { { uiMapID, x, y, forever = bool }, ... } up to 3 points, Forever-seen points first.
 local _, ns = ...
 ns.SkinningSeen = {  -- [itemID] = drops players saw in Forever, all sources together (Items.lua `s`)
-  [2934] = 26305,
-  [2318] = 27366,
-  [783] = 1245,
-  [2319] = 13300,
-  [4232] = 1201,
-  [4234] = 5589,
-  [4235] = 329,
-  [4304] = 955,
-  [8170] = 113,
+  [2934] = 26819,
+  [2318] = 27890,
+  [783] = 1255,
+  [2319] = 13441,
+  [4232] = 1217,
+  [4234] = 5652,
+  [4235] = 332,
+  [4304] = 961,
+  [8170] = 191,
 }
 ns.Skinning = {
   [2934] = {  -- Ruined Leather Scraps
@@ -228,7 +228,7 @@ ns.Skinning = {
 ns.SkinSpots = {
   [69] = { { 1429, 47, 40, forever = true }, { 1429, 48.1, 37.3, forever = true }, { 1429, 49.3, 49.3, forever = true } },
   [113] = { { 1429, 30.2, 80.2, forever = true }, { 1429, 40.6, 87.9, forever = true }, { 1429, 37.6, 70.8, forever = false } },
-  [205] = { { 1431, 60, 45.2, forever = false }, { 1431, 63.8, 50.5, forever = false }, { 1431, 66.2, 74, forever = false } },
+  [205] = { { 1431, 67.3, 74.2, forever = true }, { 1431, 60, 45.2, forever = false }, { 1431, 60.6, 40.7, forever = false } },
   [213] = { { 1431, 9.8, 64.5, forever = true }, { 1431, 37.9, 19.5, forever = true }, { 1431, 22.7, 28.5, forever = false } },
   [299] = { { 1429, 42.1, 56.3, forever = true }, { 1429, 44.5, 57.5, forever = true }, { 1429, 48.3, 45.8, forever = true } },
   [441] = { { 1433, 13.3, 73.3, forever = true }, { 1433, 42.4, 75.3, forever = true }, { 1433, 37.3, 33, forever = false } },
@@ -236,7 +236,7 @@ ns.SkinSpots = {
   [525] = { { 1429, 23.5, 77.7, forever = true }, { 1429, 54.4, 61.5, forever = true }, { 1429, 35.2, 70.3, forever = false } },
   [547] = { { 1433, 4.9, 86.5, forever = true }, { 1433, 29, 63.5, forever = true }, { 1433, 14.7, 40, forever = false } },
   [565] = { { 1431, 9.3, 40.3, forever = true }, { 1431, 54.2, 16.2, forever = true }, { 1431, 11, 32.3, forever = false } },
-  [628] = { { 1431, 47.9, 61.7, forever = true }, { 1431, 66.2, 22.8, forever = true }, { 1431, 52.7, 63.2, forever = false } },
+  [628] = { { 1431, 47.9, 61.7, forever = true }, { 1431, 64.2, 29.4, forever = true }, { 1431, 48.6, 61.5, forever = false } },
   [681] = { { 1434, 31.2, 7.8, forever = true }, { 1434, 31.9, 9.8, forever = false }, { 1434, 37.3, 11.6, forever = false } },
   [687] = { { 1434, 24.5, 48.9, forever = true }, { 1434, 23.4, 49.3, forever = false }, { 1434, 28.5, 43.5, forever = false } },
   [689] = { { 1434, 23.4, 17.4, forever = false }, { 1434, 25.5, 18.1, forever = false }, { 1434, 47, 5.8, forever = false } },
@@ -287,10 +287,10 @@ ns.SkinSpots = {
   [2734] = { { 1418, 7.9, 58.9, forever = true }, { 1418, 13.8, 55.7, forever = false }, { 1418, 19.9, 72.5, forever = false } },
   [2831] = { { 1418, 8, 70.1, forever = true }, { 1418, 12.3, 71, forever = false }, { 1418, 24.4, 76.2, forever = false } },
   [2960] = { { 1412, 37.7, 13.7, forever = true }, { 1412, 57.8, 59.8, forever = true }, { 1412, 49.2, 40.1, forever = false } },
-  [3239] = { { 1413, 43.9, 61.3, forever = true }, { 1413, 43.4, 61.2, forever = false }, { 1413, 46.4, 63.9, forever = false } },
+  [3239] = { { 1413, 44.3, 62.1, forever = true }, { 1413, 43.4, 61.2, forever = false }, { 1413, 46.4, 63.9, forever = false } },
   [3244] = { { 1413, 47.2, 14, forever = true }, { 1413, 54.6, 23.6, forever = true }, { 1413, 49.8, 30.6, forever = false } },
   [3252] = { { 1413, 42.6, 69.4, forever = true }, { 1413, 46, 73, forever = true }, { 1413, 43.2, 70.5, forever = false } },
-  [3425] = { { 1413, 40.6, 21.6, forever = true }, { 1413, 58.1, 39.5, forever = true }, { 1413, 43.6, 39.3, forever = false } },
+  [3425] = { { 1413, 40.6, 21.6, forever = true }, { 1413, 57.8, 39.6, forever = true }, { 1413, 43.6, 32.3, forever = false } },
   [3426] = { { 1413, 45, 15.2, forever = true }, { 1413, 45.3, 16.1, forever = false }, { 1413, 55.1, 51.3, forever = false } },
   [3463] = { { 1413, 44.1, 57.7, forever = true }, { 1413, 46.1, 56.9, forever = true }, { 1413, 43.3, 46, forever = false } },
   [3566] = { { 1412, 38.2, 27.8, forever = true }, { 1412, 51.8, 22.8, forever = true }, { 1412, 49.1, 25.1, forever = false } },

@@ -10,7 +10,7 @@ The Forever Ledger commit is recorded in the header of each generated file.
 import argparse, re, urllib.request, pathlib
 
 REPO = "ivellos/forever-ledger"
-SHA = "5457f71607380ca95cf68f71bab4a77aac03c915"
+SHA = "25c02308da21ded6396a459a7de08aa498822df0"
 PT_VERSION = "1.2.0"
 ROOT = pathlib.Path(__file__).resolve().parent.parent
 
