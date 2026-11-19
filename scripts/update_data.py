@@ -7,7 +7,7 @@ copies the result into the repo, commits, deploys to the gaming PC (scripts/depl
 exactly as it was (the build never touches it) and sends a notification.
 
 Sources (last seen state in ~/.cache/goldcompass/state.json):
-  foreverdb       foreverdb.net/downloads/addon-manifest.json (data version)   -> foreverdb, skinning, gather, reagents, fixes
+  foreverdb       foreverdb.net/downloads/addon-manifest.json (data version)   -> foreverdb, skinning, skinzones, gather, reagents, fixes
   wowforever      wowforever.be recipe pages + fishing page (hash of each)      -> trainers, gather
   lpdb            LibProfessionDB release on CurseForge (via api.cfwidget.com)  -> lpdb, trainers
   forever_ledger  latest commit of github.com/ivellos/forever-ledger            -> data
@@ -28,7 +28,7 @@ PATTERN_FILE = CACHE_HOME / "personal-patterns.txt"      # regex of personal dat
 LOG_DIR = HOME / "Library" / "Logs" / "GoldCompass"
 LOG_FILE = LOG_DIR / "data-update.log"
 UA = "GoldCompass-data-build/1.0 (personal addon data build; credit: Data from ForeverDB.net)"
-TOOLS_CACHE = ["cache-foreverdb", "cache-wowforever", "cache-pfquest"]
+TOOLS_CACHE = ["cache-foreverdb", "cache-wowforever", "cache-pfquest", "cache-cmangos"]
 PT_VERSION = "1.2.0"
 CHECK_EVERY_H = 20          # source check about once a day, although launchd also wakes the job hourly (pending-deploy retry)
 PAGE_MAX_AGE_D = 7          # item pages are re-downloaded at most weekly, and only when ForeverDB data changed
@@ -54,6 +54,7 @@ GENERATORS = {
     "foreverdb": ({"foreverdb", "pfquest"}, {"data", "lpdb", "npcs"}),
     "fixes": ({"foreverdb"}, {"data", "lpdb", "trainers", "npcs", "foreverdb"}),
     "skinning": ({"foreverdb"}, set()),
+    "skinzones": ({"foreverdb"}, set()),
     "gather": ({"foreverdb", "wowforever"}, set()),
     "reagents": ({"foreverdb", "pfquest"}, {"data", "lpdb"}),
 }
@@ -222,7 +223,8 @@ def wanted_item_ids():
     for name in ("Recipes.lua", "ForeverRecipes.lua"):
         for grp in re.findall(r'"((?:\d+:\d+,?)+)"', (REPO / "Data" / name).read_text(encoding="utf-8")):
             ids.update(int(a) for a, _ in re.findall(r"(\d+):(\d+)", grp))
-    ids.update(int(i) for i in re.findall(r"^\s+(\d+): \(", (REPO / "tools" / "build-skinning.py").read_text(encoding="utf-8"), re.M))
+    for tool in ("build-skinning.py", "build-skin-zones.py"):
+        ids.update(int(i) for i in re.findall(r"^\s+(\d+): \(", (REPO / "tools" / tool).read_text(encoding="utf-8"), re.M))
     return sorted(ids)
 
 
@@ -361,6 +363,8 @@ def generate(tmp, todo, v, inputs):
         run(["lua", "tools/build-forever-fixes.lua", "tools/cache-foreverdb"], cwd=tmp)
     if "skinning" in todo:
         run(py + ["tools/build-skinning.py"], cwd=tmp)
+    if "skinzones" in todo:
+        run(py + ["tools/build-skin-zones.py"], cwd=tmp)
     if "gather" in todo:
         fishing = tmp / "tools/cache-wowforever/fishing-page.html"
         run(py + ["tools/build-gather.py"] + (["--wowforever-fishing", fishing] if fishing.exists() else []), cwd=tmp)

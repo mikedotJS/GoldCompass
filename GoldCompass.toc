@@ -23,8 +23,10 @@ Data\ForeverReagentSources.lua
 Data\ForeverFixes.lua
 Data\QuestItems.lua
 Data\ForeverSkinning.lua
+Data\ForeverSkinZones.lua
 Data\ForeverGather.lua
 ZoneRank.lua
+SkinRank.lua
 Advice.lua
 Here.lua
 ForeverDB.lua
