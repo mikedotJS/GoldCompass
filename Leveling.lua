@@ -720,7 +720,8 @@ end
 -- Roadmap ("Monter le métier", tab Métier): the next few steps to level a profession, simulated from the current skill and a COPY of the
 -- bag. Pure: no WoW API, the caller gives everything.
 --   prof = { skill, max, recipes = { [id] = rec } } (the known recipes)
---   ctx  = like V.Plan (price, vendor, buy, owned = bag count of an item) plus optional `how(itemID)` -> where to get a missing reagent
+--   ctx  = like V.Plan (price, vendor, buy, owned = what the character owns of an item) plus optional `how(itemID)` -> where to get a missing
+--          reagent and `bagOwned(itemID)` -> the part of `owned` that is in the bags (the rest is in the bank; absent = all of it is in the bags)
 --   opts = { thresholds(id) -> { orange, yellow, green, gray } of a known recipe, learn = the rows of V.Learnable (now + soon; each row has
 --            rec.th), steps = 5 }
 -- Each step is the best recipe by the effort rule (V.EasiestWithin), the ones the simulated bag can craft first. Crafts of one recipe
@@ -728,7 +729,8 @@ end
 -- at the simulated skill), the range is rounded. When the bag cannot feed any useful recipe the step is the best recipe overall with
 -- what is missing; a recipe to learn gets a step of its own when it beats the best known one by more than 15 % ingredients per point.
 -- Returns { steps, stopped = "cap" | "steps" | "none", capped, skill, skillEnd, cap, nextRank, rankAt }; a step is
---   { kind = "craft", rec, d, state = "bag" | "missing", from, to, times, subs = { {item, need} }, missing = { {item, n, how} } } or
+--   { kind = "craft", rec, d, state = "bag" | "missing", from, to, times, subs = { {item, need} }, missing = { {item, n, how} },
+--     used = { [item] = n taken from what is owned }, banked = { {item, n} } (the part of `used` that is in the bank), inBag = crafts the bags alone feed } or
 --   { kind = "learn", rec, row, at }.
 V.ROADMAP_STEPS = 5
 V.MIN_CHANCE = 0.2   -- below this a craft is not worth a step (the chance only falls towards gray, it never reaches 0 by crafting)
@@ -739,10 +741,15 @@ function V.Roadmap(prof, ctx, opts)
   local start = prof.skill or 0
   local skill = start                                -- expected skill, fractional
   local function rounded(x) return math.floor(x + 0.5) end
-  local bag = {}
+  local bag, inBags = {}, {}
   local function owned(id)
     if bag[id] == nil then bag[id] = ctx.owned and ctx.owned(id) or 0 end
     return bag[id]
+  end
+  -- what the bags alone still hold of an item in the simulation (the bank part is taken only after the bags)
+  local function inBagsLeft(id)
+    if inBags[id] == nil then inBags[id] = math.min(owned(id), ctx.bagOwned and ctx.bagOwned(id) or math.huge) end
+    return inBags[id]
   end
   local known, byOut, thOf = {}, {}, {}
   local function adopt(rec, th)
@@ -815,11 +822,12 @@ function V.Roadmap(prof, ctx, opts)
     if not step then return end
     step.to = math.min(rounded(skill), cap)
     step.bagTimes = step.state == "bag" and step.times or 0
+    step.inBag = step.state == "bag" and step.bagCrafts or 0
     steps[#steps + 1] = step
     step = nil
   end
   local function open(e, state)
-    step = { kind = "craft", rec = e.rec, d = e.d, state = state, from = rounded(skill), times = 0, short = {},
+    step = { kind = "craft", rec = e.rec, d = e.d, state = state, from = rounded(skill), times = 0, short = {}, used = {}, bank = {}, bagCrafts = 0,
       learned = learned[e.rec.id] or nil }               -- a recipe learned earlier in the roadmap: not craftable before that
   end
   local loops = 0
@@ -859,12 +867,18 @@ function V.Roadmap(prof, ctx, opts)
     end
     if e then
       -- one craft: the bag gives what it has, the rest is missing
+      local fromBank = false
       for _, m in ipairs(e.rec.mats or {}) do
         local have = owned(m[1])
         local take = math.min(have, m[2])
+        local bagTake = math.min(inBagsLeft(m[1]), take)
         bag[m[1]] = have - take
+        inBags[m[1]] = inBagsLeft(m[1]) - bagTake
+        if take > 0 then step.used[m[1]] = (step.used[m[1]] or 0) + take end
+        if take > bagTake then step.bank[m[1]], fromBank = (step.bank[m[1]] or 0) + take - bagTake, true end
         if take < m[2] then step.short[m[1]] = (step.short[m[1]] or 0) + (m[2] - take) end
       end
+      if not fromBank then step.bagCrafts = step.bagCrafts + 1 end
       step.times = step.times + 1
       skill = math.min(skill + e.chance, cap)
       current = e.rec.id
@@ -880,9 +894,11 @@ function V.Roadmap(prof, ctx, opts)
     for i = 2, #steps do
       local a, b = steps[i - 1], steps[i]
       if isCraft(a) and isCraft(b) and a.rec == b.rec then
-        a.to, a.times, a.bagTimes = b.to, a.times + b.times, a.bagTimes + b.bagTimes
+        a.to, a.times, a.bagTimes, a.inBag = b.to, a.times + b.times, a.bagTimes + b.bagTimes, a.inBag + b.inBag
         a.state = a.bagTimes == a.times and "bag" or "missing"
         for item, n in pairs(b.short) do a.short[item] = (a.short[item] or 0) + n end
+        for item, n in pairs(b.used) do a.used[item] = (a.used[item] or 0) + n end
+        for item, n in pairs(b.bank) do a.bank[item] = (a.bank[item] or 0) + n end
         table.remove(steps, i)
         changed = true
         break
@@ -907,7 +923,10 @@ function V.Roadmap(prof, ctx, opts)
       local function order(p, q) if (p.n or p.need) ~= (q.n or q.need) then return (p.n or p.need) > (q.n or q.need) end return p.item < q.item end
       table.sort(missing, order)
       table.sort(subs, order)
-      x.missing, x.subs, x.short = missing, subs, nil
+      local banked = {}
+      for item, n in pairs(x.bank) do banked[#banked + 1] = { item = item, n = n } end
+      table.sort(banked, order)
+      x.missing, x.subs, x.short, x.banked, x.bank, x.bagCrafts = missing, subs, nil, banked, nil, nil
     end
   end
   result.stopped = result.stopped or (skill >= cap and "cap") or (#steps >= maxSteps and "steps") or "none"

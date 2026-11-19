@@ -36,9 +36,13 @@ Format.lua
 HowTo.lua
 Prices.lua
 Nodes.lua
+Bank.lua
+Shopping.lua
 Core.lua
 Learned.lua
 Trainers.lua
 Spike.lua
 Tooltip.lua
 Window.lua
+ShoppingList.lua
+BankEvents.lua

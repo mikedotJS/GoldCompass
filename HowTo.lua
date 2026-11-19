@@ -4,10 +4,11 @@
 -- and the player's own GatherMate2 counts and Auctionator price.
 -- A tooltip is { title, loading, item, target, lines = { { style, text, right, gap } } }; style is one of
 --   "info" (white), "head" (gold section header), "row" (white left, dim right), "dim", "click" (green last line).
+-- A reagent tooltip also has `source`: the first way to get it in a few words ("marchand · Flakk, Durotar"), for the shopping list.
 -- `target` is what a click pins: { name, zone, mapID, x, y, kind = "pin" | "zone", confirmed, source }, in the shape of W.GoTo.
 -- env = { faction = "A" | "H", mapID = the player's map, level = the player's level,
 --         place(mapID, x, y) -> continent, worldX, worldY | nil (C_Map.GetWorldPosFromMapPos), here = { continent, worldX, worldY } | nil (the player), itemName(id) -> string | nil (nil = not cached),
---         owned(id), price(id) -> copper, age in days, money(copper) -> string (rounded), exact(copper) -> string (a fee, to the copper; optional), zone(mapID) -> string | nil, npcName(id, english),
+--         owned(id) (bags), banked(id) (the bank when last seen; optional), price(id) -> copper, age in days, money(copper) -> string (rounded), exact(copper) -> string (a fee, to the copper; optional), zone(mapID) -> string | nil, npcName(id, english),
 --         creature(english) -> name, mapID | nil, nodeCounts() -> { [mapID] = { [gatherMateNodeID] = spots } }, npc(id) -> { name, mapID, x, y, side, seen } }
 local _, ns = ...
 local S = ns.S
@@ -97,6 +98,9 @@ local function vendors(tip, item, env)
     local v = list[i]
     entry(tip, env.npcName(v.id, v.name), known(v) and coords(v) or nil, zoneName(env, v.mapID), nil, false, not v.forever)
   end
+  local zone = zoneName(env, list[1].mapID)
+  local who = env.npcName(list[1].id, list[1].name)
+  tip.source = tip.source or (zone and S.howto_src_vendor:format(who, zone) or S.howto_src_vendor_nz:format(who))
   return pinOf(env, list[1], env.npcName(list[1].id, list[1].name)), "vendor"
 end
 
@@ -121,6 +125,7 @@ local function skinning(tip, item, env)
     lo, hi = math.min(lo, list[i].lo), math.max(hi, list[i].hi)
   end
   add(tip, "head", lo == hi and S.howto_skin_one:format(lo) or S.howto_skin:format(lo, hi), nil, true)
+  tip.source = tip.source or (lo == hi and S.howto_src_skin_one:format(lo) or S.howto_src_skin:format(lo, hi))
   for _, b in ipairs(shown) do
     entry(tip, env.npcName(b.id, b.name), levels(b.lo, b.hi), zoneName(env, b.mapID), known(b) and coords(b) or nil, not b.forever, known(b) and not b.spot.forever)
   end
@@ -181,6 +186,7 @@ local function gathering(tip, item, env)
   for _, r in ipairs(rows) do add(tip, "row", zoneName(env, r.mapID), r.text .. (r.classic and S.howto_classic or "")) end
   local first = rows[1]
   if not first then return end
+  tip.source = tip.source or (herb and S.howto_src_herb or S.howto_src_ore):format(zoneName(env, first.mapID) or "?")
   local best = first.best
   return { name = nodeName, zone = zoneName(env, first.mapID), mapID = first.mapID, x = best and best[1], y = best and best[2],
     kind = best and "pin" or "zone", confirmed = first.confirmed, source = first.confirmed and "foreverdb" or "fdbclassic" }, "zone"
@@ -196,6 +202,7 @@ local function drops(tip, item, env)
   if #list == 0 then return end
   sortNear(list, env)
   add(tip, "head", S.howto_drops, nil, true)
+  tip.source = tip.source or S.howto_src_drop
   for i = 1, math.min(MAX, #list) do
     local d = list[i]
     local zone = zoneName(env, d.mapID)
@@ -207,6 +214,7 @@ local function quest(tip, item, env)
   local q = ns.ReagentSources and ns.ReagentSources[item] and ns.ReagentSources[item].quest
   if not q or not fits(q[3], env.faction) then return end
   add(tip, "head", S.howto_quest, nil, true)
+  tip.source = tip.source or S.howto_src_quest
   add(tip, "row", (q[2] or 0) > 0 and S.howto_quest_level:format(q[1], q[2]) or q[1], q[4] and "" or S.howto_classic)
 end
 
@@ -223,6 +231,7 @@ local function auction(tip, item, env)
   local price, age = env.price(item)
   if not price or price <= 0 then return end
   add(tip, "head", S.howto_ah, nil, true)
+  tip.source = tip.source or S.howto_src_ah
   add(tip, "row", S.howto_ah_price:format(env.money(price)), scanText(age))
 end
 
@@ -230,7 +239,10 @@ end
 function H.Reagent(item, need, env, make)
   local name = env.itemName(item)
   local tip = { item = item, loading = name == nil, title = name or S.howto_loading, lines = {} }
-  add(tip, "info", S.howto_missing:format(need or 0, env.owned(item) or 0))
+  local bag, bank = env.owned(item) or 0, env.banked and env.banked(item) or 0
+  if bank == 0 then add(tip, "info", S.howto_missing:format(need or 0, bag))
+  elseif (need or 0) > 0 then add(tip, "info", S.howto_missing_bank:format(need, bag, bank))
+  else add(tip, "info", S.howto_bank_only:format(bank, bag)) end
   local before = #tip.lines
   for _, section in ipairs({ vendors, skinning, gathering }) do
     local target, key = section(tip, item, env)

@@ -225,3 +225,24 @@ ns.S = {
   npc_header = "%d PNJ enregistrés en jeu (position confirmée sur Forever). Tape /reload pour les écrire sur le disque.",
   npc_line = "  %s · %s %.1f, %.1f", node_unverified = " (non vérifié sur Forever)",
 }
+
+-- Bank snapshot and shopping list (blue = what waits in the bank; only Latin-1 glyphs: the game font has no arrows or ellipsis)
+do
+  local S = ns.S
+  S.bank_blue = "|cff7fb8ff"
+  S.road_bank, S.road_bank_more = "à prendre à la banque : %s", "+ %d × %s à prendre à la banque"
+  S.bank_unseen, S.bank_age, S.bank_take = "Ta banque n'est pas encore comptée : ouvre-la une fois.", "Banque vue il y a %d j.", "prends %s"
+  S.howto_missing_bank = "Il t'en manque |cffffd100%d|r · %d dans ton sac, %d à la banque"
+  S.howto_bank_only = "%d à la banque · %d dans ton sac"
+  S.howto_src_vendor, S.howto_src_vendor_nz = "marchand · %s, %s", "marchand · %s"
+  S.howto_src_skin, S.howto_src_skin_one = "dépeçage, bêtes niv. %d à %d", "dépeçage, bêtes niv. %d"
+  S.howto_src_herb, S.howto_src_ore = "herboristerie, %s", "minage, %s"
+  S.howto_src_drop, S.howto_src_quest, S.howto_src_ah = "butin", "quête", "hôtel des ventes"
+  S.shop_button, S.shop_button0 = "Liste de courses (%d)", "Liste de courses"
+  S.shop_title, S.shop_until, S.shop_until_prof = "Liste de courses", "jusqu'à %d", "%s %d"
+  S.shop_ok, S.shop_bank_part, S.shop_more = "ok", "dont %d à la banque", "+ %d autres"
+  S.shop_all, S.shop_all_sub, S.shop_fetch = "Tout est réuni.", "Ouvre ton métier pour fabriquer.", "Tout y est : passe à la banque."
+  S.shop_none, S.shop_unseen = "Rien ne manque : tout est dans ton sac.", "Banque non vue : ouvre-la une fois."
+  S.shop_loading, S.shop_retry, S.shop_close = "Calcul de la liste...", "Réessayer", "Fermer"
+  S.shop_until_many, S.shop_timeout = "jusqu'à %s", "Le calcul de la liste prend trop de temps : réessaie."
+end
