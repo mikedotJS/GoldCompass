@@ -2957,3 +2957,97 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
     end
   end)
 end)
+
+describe("roadmap hover tooltips (comment l'obtenir)", function()
+  local alchemy = { skill = 50, max = 75, recipes = {
+    [1] = { id = 1, name = "Potion de soins", d = 0, out = 118, oq = 1, mats = { { 2447, 2 } } },
+  } }
+  local tooltip
+  local function start(opts)
+    setup(opts or { scanned = true, counts = {}, profs = { { 171, 50, "Alchimie", 75 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = { Alchimie = alchemy }, goal = "level" }
+    tooltip = { lines = {} }
+    local T = _G.GameTooltip
+    T.SetOwner = function(_, owner, anchor) tooltip = { owner = owner, anchor = anchor, lines = {} } end
+    T.ClearAllPoints = function() end
+    T.SetPoint = function(_, point, rel, relPoint) tooltip.point = { point, rel, relPoint } end
+    T.SetText = function(_, t) tooltip.title = t end
+    T.AddLine = function(_, t) tooltip.lines[#tooltip.lines + 1] = t end
+    T.AddDoubleLine = function(_, l, r) tooltip.lines[#tooltip.lines + 1] = l .. " | " .. r end
+    T.Show = function() tooltip.shown = true end
+    T.Hide = function() tooltip.shown = false end
+    ns.ReagentSources = { [2447] = { vendors = { { 77, "Marchand Test", 1411, 41.5, 22.5, "AH", 20, forever = true } } } }
+    ns.Window.Toggle(); ns.Window.SetTab("job")
+    return ns
+  end
+  local function rowWith(ns, pattern)
+    for _, l in ipairs(ns.Window.Lines()) do
+      if l.row and l.row.shown and (l.left.text or ""):find(pattern) then return l.row end
+    end
+  end
+
+  it("a missing reagent has its own row with a tooltip button, anchored to the right of the row", function()
+    local ns = start()
+    local row = rowWith(ns, "il te manque %d+ ×")
+    assert.is_not_nil(row)
+    row.scripts.OnEnter(row)
+    assert.are.equal(row, tooltip.owner)
+    assert.are.equal("ANCHOR_NONE", tooltip.anchor)
+    assert.are.same({ "TOPLEFT", row, "TOPRIGHT" }, tooltip.point)      -- right of the row, top aligned
+    assert.are.equal("Item2447", tooltip.title)
+    local text = table.concat(tooltip.lines, "\n")
+    assert.matches("Il t'en manque", text)
+    assert.matches("Chez un marchand", text)
+    assert.matches("Marchand Test", text)
+    assert.matches("Clic : repère sur le marchand le plus proche", text)
+    assert.is_true(tooltip.shown)
+    row.scripts.OnLeave(row)
+    assert.is_false(tooltip.shown)
+  end)
+
+  it("a click on the row pins the best place with the existing pin code", function()
+    local ns = start()
+    local row = rowWith(ns, "il te manque %d+ ×")
+    printed = {}
+    row.scripts.OnEnter(row)
+    row.scripts.OnClick(row)
+    local chat = table.concat(printed, "\n")
+    assert.matches("Marchand Test", chat)
+    assert.matches("41%.5", chat)
+  end)
+
+  it("an item the game has not cached shows 'chargement...' and is redrawn when GET_ITEM_INFO_RECEIVED says it arrived", function()
+    local ns = start()
+    local row = rowWith(ns, "il te manque %d+ ×")
+    _G.GetItemInfo = function() return nil end
+    row.scripts.OnEnter(row)
+    assert.are.equal("chargement...", tooltip.title)
+    local receiver
+    for _, fr in ipairs(frames) do if fr.events and fr.events.GET_ITEM_INFO_RECEIVED then receiver = fr end end
+    assert.is_not_nil(receiver)
+    _G.GetItemInfo = function(id) return "Pâlerette" .. id end
+    receiver.scripts.OnEvent(receiver, "GET_ITEM_INFO_RECEIVED", 999)   -- another item: nothing changes
+    assert.are.equal("chargement...", tooltip.title)
+    receiver.scripts.OnEvent(receiver, "GET_ITEM_INFO_RECEIVED", 2447)
+    assert.are.equal("Pâlerette2447", tooltip.title)
+    row.scripts.OnLeave(row)
+    receiver.scripts.OnEvent(receiver, "GET_ITEM_INFO_RECEIVED", 2447)   -- the mouse left: no tooltip comes back
+    assert.is_false(tooltip.shown)
+  end)
+
+  it("a rank step has a tooltip on both of its rows, and rows without anything to say have no tooltip button", function()
+    local ns = start()
+    local rank = rowWith(ns, "Apprendre le rang")
+    assert.is_not_nil(rank)
+    rank.scripts.OnEnter(rank)
+    assert.matches("Rang Compagnon", tooltip.title)
+    for _, l in ipairs(ns.Window.Lines()) do
+      if l.row and l.row.shown then assert.is_not_nil(l.row.tip) end
+    end
+    local title
+    for _, l in ipairs(ns.Window.Lines()) do if (l.left.text or ""):find("Ton parcours", 1, true) then title = l end end
+    assert.is_false(title.row.shown)
+  end)
+end)

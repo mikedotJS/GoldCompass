@@ -474,7 +474,7 @@ function ns.HowToEnv()
     price = safePrice, money = ns.Money,
     exact = function(copper)
       local coin = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
-      return coin and copper > 0 and coin(copper) or ns.Money(copper)
+      return coin and copper and copper > 0 and coin(copper) or ns.Money(copper)
     end,
     zone = function(mapID) return ns.ZoneLabel({ mapID = mapID }) end,
     npcName = local_,
