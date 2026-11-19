@@ -11,7 +11,7 @@ describe("reagent sources", function()
       assert.is_number(item)
       assert.is_true(e.vendors ~= nil or e.drops ~= nil or e.quest ~= nil)
       if e.vendors then
-        assert.is_true(#e.vendors >= 1 and #e.vendors <= 12)
+        assert.is_true(#e.vendors >= 1 and #e.vendors <= 60)
         local forever = true
         for _, v in ipairs(e.vendors) do
           assert.is_number(v[1]); assert.is_string(v[2]); assert.is_number(v[3]); assert.is_number(v[4]); assert.is_number(v[5])
@@ -45,6 +45,26 @@ describe("reagent sources", function()
     for _, v in ipairs(e.vendors) do a = a or v[6] == "A"; h = h or v[6] == "H" end
     assert.is_true(a and h)                                              -- city vendors kept for each faction
     assert.is_true(e.total > 100)
+  end)
+
+  it("keeps Coarse Thread vendors of both capitals, so a Horde or Alliance player gets a nearby one", function()
+    local function has(side, maps)
+      for _, v in ipairs(R[2320].vendors) do
+        if v[6] == side and maps[v[3]] then return true end
+      end
+      return false
+    end
+    assert.is_true(has("H", { [1454] = true, [1456] = true }))           -- Orgrimmar, Thunder Bluff
+    assert.is_true(has("A", { [1453] = true, [1455] = true }))           -- Stormwind, Ironforge
+  end)
+
+  it("caps every item at 60 vendors, each with a place", function()
+    for item, e in pairs(R) do
+      assert.is_true(#(e.vendors or {}) <= 60, tostring(item))
+      for _, v in ipairs(e.vendors or {}) do
+        assert.is_true(v[3] > 0 and v[4] > 0 and v[5] > 0, item .. " " .. v[2])
+      end
+    end
   end)
 
   it("gives a reagent no vendor sells its Forever drop sources", function()
