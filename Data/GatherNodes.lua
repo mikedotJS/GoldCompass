@@ -47,8 +47,8 @@ ns.GatherNodes = {
   [428] = { type = H, item = 13466, skill = 285, yield = 2 }, -- Plaguebloom
   [429] = { type = H, item = 13467, skill = 290, yield = 2 }, -- Icecap
   [431] = { type = H, item = 13468, skill = 300, yield = 2 }, -- Black Lotus
-  [4401] = { type = H, item = nil, skill = nil, yield = 2 }, -- Demonsage (Forever only)
-  [4402] = { type = H, item = nil, skill = nil, yield = 2 }, -- Marefoil (Forever only)
+  [4401] = { type = H, item = nil, skill = nil, yield = 2 }, -- Demonsage (Forever only; gives item 248821 per wowforever.be/ForeverDB, skill unknown)
+  [4402] = { type = H, item = nil, skill = nil, yield = 2 }, -- Marefoil (Forever only; gives item 248823 per wowforever.be, skill unknown)
   [201] = { type = M, item = 2770, skill = 1, yield = 2 }, -- Copper Vein
   [202] = { type = M, item = 2771, skill = 65, yield = 2 }, -- Tin Vein
   [219] = { type = M, item = 3340, skill = 65, yield = 2 }, -- Incendicite Mineral Vein
@@ -68,7 +68,7 @@ ns.GatherNodes = {
   [213] = { type = M, item = 10620, skill = 245, yield = 2 }, -- Ooze Covered Thorium Vein
   [215] = { type = M, item = 10620, skill = 275, yield = 2 }, -- Rich Thorium Vein
   [212] = { type = M, item = 10620, skill = 275, yield = 2 }, -- Ooze Covered Rich Thorium Vein
-  [4201] = { type = M, item = nil, skill = nil, yield = 2 }, -- Heavy Thorium Vein (Forever only)
+  [4201] = { type = M, item = nil, skill = nil, yield = 2 }, -- Heavy Thorium Vein (Forever only; ore 248815 per wowforever.be, skill unknown)
   -- Fishing pools (GatherMate2 IDs; the Lesser/Sparse/Abundant/Teeming variants share these IDs)
   [101] = { type = F, item = nil, skill = nil, yield = 2 }, -- Floating Wreckage (random loot, no item)
   [103] = { type = F, item = nil, skill = nil, yield = 2 }, -- Floating Debris (random loot, no item)
