@@ -355,7 +355,7 @@ def generate(tmp, todo, v, inputs):
         meta = dict(re.findall(r'(\w+)="([^"]*)"', (REPO / "tools/cache-foreverdb/Meta.lua").read_text(encoding="utf-8")))
         if meta.get("build") and meta.get("version"):
             notice = tmp / "NOTICE"
-            notice.write_text(re.sub(r"game build [\d.]+, data version [\d-]+", f"game build {meta['build']}, data version {meta['version']}",
+            notice.write_text(re.sub(r"game build [\d.]+, data version [\d-]+", f"game build {meta['build']}, data version {meta['version'].split('.')[0]}",
                                      notice.read_text(encoding="utf-8"), count=1), encoding="utf-8")
     if "fixes" in todo:
         run(["lua", "tools/build-forever-fixes.lua", "tools/cache-foreverdb"], cwd=tmp)
