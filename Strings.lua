@@ -253,3 +253,14 @@ do
   S.footer_skin = "~ estimation : 60 bêtes dépecées par heure, rendement de Classic, taxe HV de 5 %. Calculée d'après ton dernier scan, pas une garantie."
   S.tt_skin_assume = "Hypothèses : 60 bêtes dépecées par heure, rendement de Classic (aucun chiffre Forever), taxe HV de 5 %."
 end
+-- "Où monter" and "Itinéraire" (Route.lua, RouteMap.lua): the gathering professions of the Métier tab, and the loop drawn on the world map.
+for k, v in pairs({
+  route_head = "Où monter", route_btn = "Itinéraire", route_rank = "Rang %s",
+  route_sub = "%s · niv. %s · %d spots", route_sub_nolevel = "%s · %d spots",
+  route_nospot = "Pas encore de points connus ici, parcours la zone une fois.",
+  route_none = "Aucune zone connue pour monter ce métier à ce niveau.",
+  route_note_skin = "Bêtes jaunes ou vertes pour toi : chaque dépeçage peut faire monter. Les grises sont ignorées.",
+  route_note_gather = "Points déjà vus (toi ou la base Forever) pour ton niveau de métier. Les grises sont ignorées.",
+  route_bar = "Boucle de %d points · départ au plus proche", route_next = "prochain : %d sur %d",
+  route_clear = "Effacer l'itinéraire", route_cleared = "Itinéraire effacé.",
+}) do ns.S[k] = v end

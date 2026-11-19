@@ -611,6 +611,11 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   end
   local lr = entry.learn
   road.trainer = road.rankTarget or (lr and ((lr.beyond and lr.beyond.target) or (lr.books and lr.books[1] and lr.books[1].target))) or nil
+  if gathering then   -- "Où monter": the zones and the loop of the gathering professions (RouteMap.lua)
+    local ok, where = pcall(ns.RouteMap.Plan, p, road, SKILL_LINES[p.line])
+    road.where = ok and where or nil
+    if not ok then ns.Log("frame", "route plan failed: " .. tostring(where)) end
+  end
   road.recipes = {}
   for _, rec in pairs(data.recipes) do
     local th = thresholds(rec.id)
@@ -655,7 +660,10 @@ function ns.RunLeveling(done, withRoad)
         data = data and ns.SectionData(data, p.line)
         -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
         -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
-        if not data then
+        if ns.RouteMap.LINES[p.line] and ns.Goal() ~= "gold" and (not data or next(data.recipes) == nil) then
+          -- "Où monter": Herbalism and Skinning have no profession window to read, their roadmap is the zones that give skill points
+          entry.status, entry.road = "plan", ns.BuildRoadmap(p, { skill = p.skill, max = p.max, recipes = {} }, ctx, {}, function() end)
+        elseif not data then
           entry.status = "unseen"
         elseif next(data.recipes) == nil then
           entry.status = "norecipes"

@@ -177,8 +177,8 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/ForeverNpcs", "Data/ForeverFixes", "Data/QuestItems", "ZoneRank", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format", "HowTo",
-    "Prices", "Nodes", "Bank", "Shopping", "Core", "Learned", "Trainers", "Spike", "Tooltip", "Window", "ShoppingList", "BankEvents" }) do
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/ForeverNpcs", "Data/ForeverFixes", "Data/QuestItems", "ZoneRank", "Route", "Advice", "Here", "ForeverDB", "Leveling", "Where", "Format", "HowTo",
+    "Prices", "Nodes", "Bank", "Shopping", "Core", "Learned", "Trainers", "Spike", "Tooltip", "RouteMap", "Window", "ShoppingList", "BankEvents" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
   if _G.stubDB then ns.ForeverDB = _G.stubDB end
