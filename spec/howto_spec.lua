@@ -8,11 +8,16 @@ local function fresh()
   return ns
 end
 
--- the game as the module sees it: Horde, standing in map 1411, distances = absolute difference of x
+-- a small world: Kalimdor (K = 1) and the Eastern Kingdoms (E = 0); every map has its own origin, 100 units wide
+local CONT = { [1411] = 1, [1412] = 1, [1413] = 1, [1414] = 1, [1430] = 1, [1438] = 1, [1429] = 0, [1433] = 0, [1434] = 0, [1436] = 0 }
+local ORIGIN = { [1411] = 200, [1413] = 100, [1412] = 100, [1414] = 0, [1430] = 400, [1438] = -500, [1429] = 300, [1433] = 400, [1434] = 300, [1436] = 100 }
+local function world(map, x, y) if CONT[map] then return CONT[map], (ORIGIN[map] or 0) + x, y end end
+
+-- the game as the module sees it: Horde of level 60 standing in Durotar (1411) at x = 50
 local function envOf(over)
   local env = {
-    faction = "H", mapID = 1411, fr = false,
-    dist = function(_, x) return math.abs(x - 50) end,
+    faction = "H", mapID = 1411, fr = false, level = 60,
+    place = world, here = { 1, 250, 50 },
     itemName = function(id) return "Objet" .. id end, owned = function() return 2 end,
     price = function() return nil end,
     money = function(c) return tostring(c) .. "c" end, zone = function(m) return "Zone" .. m end,
@@ -65,7 +70,7 @@ describe("HowTo.Reagent: vendors", function()
     { 2, "Near Forever", 1413, 52, 10, "AH", 10, forever = true },
     { 3, "Near Classic", 1411, 50, 10, "H", 10, forever = false },
     { 4, "Alliance Only", 1411, 50, 10, "A", 10, forever = true },
-    { 5, "Mid Forever", 1429, 30, 10, "H", 10, forever = true },
+    { 5, "Mid Forever", 1412, 30, 10, "H", 10, forever = true },
     { 6, "Fourth Forever", 1430, 90, 10, "H", 10, forever = true },
   }
 
@@ -102,7 +107,7 @@ describe("HowTo.Reagent: vendors", function()
 
   it("same map first when distances are unknown", function()
     local ns = setup({ { 1, "Elsewhere", 1414, 10, 10, "AH", 10, forever = true }, { 2, "Here", 1411, 90, 10, "AH", 10, forever = true } })
-    local tip = ns.HowTo.Reagent(2320, 1, envOf({ dist = false }))
+    local tip = ns.HowTo.Reagent(2320, 1, envOf({ here = false }))
     assert.is_true(lineIndex(tip, "Here") < lineIndex(tip, "Elsewhere"))
   end)
 
@@ -199,13 +204,13 @@ describe("HowTo.Reagent: herbalism and mining", function()
 
   it("'Herboristerie', the node and its skill, then the player's own zones before the Forever ones", function()
     local ns = setup()
-    local tip = ns.HowTo.Reagent(2447, 5, envOf({ nodeCounts = function() return { [1429] = { [401] = 7 }, [1411] = { [401] = 100, [999] = 50 } } end }))
+    local tip = ns.HowTo.Reagent(2447, 5, envOf({ nodeCounts = function() return { [1412] = { [401] = 7 }, [1411] = { [401] = 100, [999] = 50 } } end }))
     local text = texts(tip)
     assert.matches("Herboristerie", text)
     assert.matches("Objet2447 · compétence 1", text)
-    assert.is_true(lineIndex(tip, "Zone1411") < lineIndex(tip, "Zone1429") and lineIndex(tip, "Zone1429") < lineIndex(tip, "Zone1413"))
+    assert.is_true(lineIndex(tip, "Zone1411") < lineIndex(tip, "Zone1412") and lineIndex(tip, "Zone1412") < lineIndex(tip, "Zone1413"))
     assert.matches("Zone1411  |  100 points repérés", text)       -- only the nodes of this herb are counted
-    assert.matches("Zone1429  |  7 points repérés", text)
+    assert.matches("Zone1412  |  7 points repérés", text)
     assert.matches("Zone1413  |  38 points vus sur Forever", text)
     assert.is_nil(text:find("Zone1439", 1, true))                  -- at most 3 zones
     assert.are.equal("Clic : repère sur la zone la plus riche", tip.lines[#tip.lines].text)
@@ -240,10 +245,10 @@ describe("HowTo.Reagent: drops, auction house, craft, nothing", function()
   it("'Butin': up to 3 sources with the chance, a Classic one labelled, the zone when known", function()
     local ns = fresh()
     ns.ReagentSources = { [731] = { drops = { { "Boar A", 50, true, 33 }, { "Boar B", 0, false, 44 }, { "Boar C", 0, true }, { "Boar D", 0, false, 10 } } } }
-    local tip = ns.HowTo.Reagent(731, 2, envOf({ creature = function(en) return en, en == "Boar A" and 1436 or nil end }))
+    local tip = ns.HowTo.Reagent(731, 2, envOf({ creature = function(en) return en, en == "Boar A" and 1411 or nil end }))
     local text = plain(texts(tip))
     assert.matches("Butin", text)
-    assert.matches("Boar A · Zone1436  |  33 %%", text)
+    assert.matches("Boar A · Zone1411  |  33 %%", text)
     assert.matches("Boar C", text)
     assert.is_nil(text:find("Boar D", 1, true))                    -- 3 at most, Forever-seen ones first
     assert.matches("Boar B  |  44 %% %(Classic%)", text)
@@ -296,7 +301,7 @@ describe("HowTo: no nil reaches string.format", function()
     ns.GatherNodes = { [1] = { type = "Herb Gathering", item = 1 } }
     ns.GatherSources = { [1] = { nodes = { { "Weed" } }, zones = { { 1411 } } } }
     local env = envOf({ itemName = function() return nil end, owned = function() return nil end, price = function() return 5 end, zone = function() return nil end,
-      dist = function() return nil end })
+      place = function() return nil end })
     local ok, err = pcall(ns.HowTo.Reagent, 1, nil, env, { name = "R", mats = { { 9, 1 } } })
     assert.is_true(ok, err)
     for _, kind in ipairs({ {}, { vendors = {} }, { nothing = true } }) do
@@ -398,5 +403,81 @@ describe("HowTo.Step: learn and rank steps", function()
     assert.matches("Clamlette Surprise", texts(tip))
     assert.matches("position Classic", texts(tip))
     assert.are.equal(20, tip.target.x)
+  end)
+end)
+
+describe("HowTo: nearest means nearest in the world, continent first", function()
+  -- the real vendored data, and the real continent of every map of Data/Zones.lua (K = Kalimdor, E = Eastern Kingdoms)
+  local function real()
+    local ns = fresh()
+    for _, f in ipairs({ "Data/Zones", "Data/ForeverSkinning", "Data/ForeverReagentSources" }) do assert(loadfile(f .. ".lua"))("GoldCompass", ns) end
+    local cont = { [1414] = 1, [1415] = 0 }
+    for _, m in pairs(ns.MapIDs) do cont[m[1]] = m[2] == "K" and 1 or 0 end
+    return ns, function(map, x, y) if cont[map] then return cont[map], x, y end end, cont
+  end
+  local function at(cont, map, faction, level, place)
+    return envOf({ faction = faction, mapID = map, level = level, place = place, here = { cont[map], 50, 50 } })
+  end
+
+  it("a Durotar player gets the Barrens beasts first for Light Hide (Kalimdor before the Eastern Kingdoms)", function()
+    local ns, place, cont = real()
+    local tip = ns.HowTo.Reagent(783, 6, at(cont, 1411, "H", 16, place))
+    for _, name in ipairs({ "Thunderhead", "Silithid Swarmer", "Zhevra Charger" }) do assert.matches(name, texts(tip)) end
+    for _, name in ipairs({ "Black Dragon Whelp", "Young Goretusk", "Great Goretusk" }) do assert.is_nil(texts(tip):find(name, 1, true), name) end
+    assert.are.equal(1413, tip.target.mapID)
+  end)
+
+  it("an Elwynn player gets Westfall and Redridge first", function()
+    local ns, place, cont = real()
+    local tip = ns.HowTo.Reagent(783, 6, at(cont, 1429, "A", 16, place))
+    assert.are.equal(0, cont[tip.target.mapID])
+    assert.is_true(tip.target.mapID == 1436 or tip.target.mapID == 1433)
+    assert.is_nil(texts(tip):find("Zhevra Charger", 1, true))
+  end)
+
+  it("Forever-seen ranks ahead of Classic only on the player's continent: a Classic Barrens beast beats a Forever-seen Redridge one", function()
+    local ns = fresh()
+    ns.Skinning = { [783] = { { 1, "Redridge Forever", 10, 12, forever = true }, { 2, "Barrens Classic", 10, 12, forever = false } } }
+    ns.SkinSpots = { [1] = { { 1433, 50, 50, forever = true } }, [2] = { { 1413, 50, 50, forever = true } } }
+    local tip = ns.HowTo.Reagent(783, 1, envOf())
+    assert.is_true(lineIndex(tip, "Barrens Classic") < lineIndex(tip, "Redridge Forever"))
+    assert.are.equal("Barrens Classic", tip.target.name)
+    local function around(name) local i = lineIndex(tip, name); return plain(tip.lines[i].text .. (tip.lines[i].right or "")) end
+    assert.matches("%(Classic%)", around("Barrens Classic"))        -- the label stays
+    -- on the same continent Forever-seen still wins
+    ns.SkinSpots[1][1][1] = 1412
+    tip = ns.HowTo.Reagent(783, 1, envOf())
+    assert.is_true(lineIndex(tip, "Redridge Forever") < lineIndex(tip, "Barrens Classic"))
+  end)
+
+  it("a beast above the player's level + 5 goes last on the same continent, whatever its label", function()
+    local ns = fresh()
+    ns.Skinning = { [783] = { { 1, "Too Strong", 40, 41, forever = true }, { 2, "Right Level", 10, 12, forever = false }, { 3, "Slightly High", 17, 18, forever = true } } }
+    ns.SkinSpots = { [1] = { { 1411, 50, 50, forever = true } }, [2] = { { 1411, 90, 50, forever = true } }, [3] = { { 1411, 60, 50, forever = true } } }
+    local tip = ns.HowTo.Reagent(783, 1, envOf({ level = 12 }))
+    assert.is_true(lineIndex(tip, "Slightly High") < lineIndex(tip, "Right Level"))   -- 17 <= 12 + 5: fine, Forever-seen first
+    assert.is_true(lineIndex(tip, "Right Level") < lineIndex(tip, "Too Strong"))
+  end)
+
+  it("Coarse Thread: vendors nearest first, by faction, on the player's continent", function()
+    local ns, place, cont = real()
+    local horde = ns.HowTo.Reagent(2320, 12, at(cont, 1411, "H", 16, place))
+    assert.are.equal(1, cont[horde.target.mapID])
+    assert.is_nil(texts(horde):find("Tharynn Bouden", 1, true))                     -- an Alliance vendor
+    local alliance = ns.HowTo.Reagent(2320, 12, at(cont, 1429, "A", 16, place))
+    assert.are.equal(0, cont[alliance.target.mapID])
+    local first = alliance.lines[lineIndex(alliance, "Chez un marchand") + 1].text
+    assert.are.equal(alliance.target.name, first)
+    -- nearest in the world: two Forever-seen vendors of the same continent, the closer one first
+    ns.ReagentSources = { [2320] = { vendors = { { 1, "Far", 1411, 90, 50, "AH", 10, forever = true }, { 2, "Close", 1411, 55, 50, "AH", 10, forever = true } } } }
+    local tip = ns.HowTo.Reagent(2320, 1, at(cont, 1411, "H", 16, place))
+    assert.is_true(lineIndex(tip, "Close") < lineIndex(tip, "Far"))
+  end)
+
+  it("without the player's position (instance, API missing) the old order is kept", function()
+    local ns = fresh()
+    ns.ReagentSources = { [2320] = { vendors = { { 1, "Classic far", 1429, 50, 50, "AH", 10, forever = false }, { 2, "Forever far", 1433, 50, 50, "AH", 10, forever = true } } } }
+    local tip = ns.HowTo.Reagent(2320, 1, envOf({ here = false, place = false }))
+    assert.is_true(lineIndex(tip, "Forever far") < lineIndex(tip, "Classic far"))
   end)
 end)

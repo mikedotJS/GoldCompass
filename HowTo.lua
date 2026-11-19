@@ -5,7 +5,8 @@
 -- A tooltip is { title, loading, item, target, lines = { { style, text, right, gap } } }; style is one of
 --   "info" (white), "head" (gold section header), "row" (white left, dim right), "dim", "click" (green last line).
 -- `target` is what a click pins: { name, zone, mapID, x, y, kind = "pin" | "zone", confirmed, source }, in the shape of W.GoTo.
--- env = { faction = "A" | "H", mapID = the player's map, dist(mapID, x, y) -> number | nil, itemName(id) -> string | nil (nil = not cached),
+-- env = { faction = "A" | "H", mapID = the player's map, level = the player's level,
+--         place(mapID, x, y) -> continent, worldX, worldY | nil (C_Map.GetWorldPosFromMapPos), here = { continent, worldX, worldY } | nil (the player), itemName(id) -> string | nil (nil = not cached),
 --         owned(id), price(id) -> copper, age in days, money(copper) -> string (rounded), exact(copper) -> string (a fee, to the copper; optional), zone(mapID) -> string | nil, npcName(id, english),
 --         creature(english) -> name, mapID | nil, nodeCounts() -> { [mapID] = { [gatherMateNodeID] = spots } }, npc(id) -> { name, mapID, x, y, side, seen } }
 local _, ns = ...
@@ -30,15 +31,30 @@ local function add(tip, style, text, right, gap)
   tip.lines[#tip.lines + 1] = { style = style, text = text, right = right, gap = gap }
 end
 
--- Forever-seen first, then the ones with a position, then the player's own map, then the nearest (unknown distance last), then the
--- order of the data. Every candidate: { forever, mapID, x, y }.
+-- Where a place is for the player: 0 = on the player's continent, 1 = elsewhere or unknown; and the world distance on the same continent
+-- (math.huge when unknown). Without the player's position (instances, API missing) everything ranks 0 and the data order decides.
+local function locate(env, mapID, x, y)
+  local here = env.here
+  if not here then return 0, math.huge end
+  local cont, wx, wy
+  if mapID and mapID > 0 and env.place then cont, wx, wy = env.place(mapID, x or 50, y or 50) end
+  if cont ~= here[1] then return 1, math.huge end
+  return 0, wx and math.sqrt((wx - here[2]) ^ 2 + (wy - here[3]) ^ 2) or math.huge
+end
+
+-- The player's continent first. On it: a candidate above the level cap (`over`) last, Forever-seen before Classic, the ones with a position,
+-- the player's own map, then the nearest in the world. Elsewhere: the data order. Every candidate: { forever, over, mapID, x, y }.
 local function sortNear(list, env)
   for i, c in ipairs(list) do
-    c.i, c.f, c.nopos = i, c.forever and 0 or 1, known(c) and 0 or 1
+    c.i, c.f, c.nopos, c.over = i, c.forever and 0 or 1, known(c) and 0 or 1, c.over or 0
     c.same = (c.mapID and c.mapID == env.mapID) and 0 or 1
-    c.d = known(c) and env.dist and env.dist(c.mapID, c.x, c.y) or math.huge
+    c.cont, c.d = locate(env, known(c) and c.mapID or nil, c.x, c.y)
+    if c.loose and not c.mapID then c.cont = 0 end   -- a drop with no known zone is not on another continent
+    if c.cont == 1 then c.f, c.over = 0, 0 end
   end
   table.sort(list, function(a, b)
+    if a.cont ~= b.cont then return a.cont < b.cont end
+    if a.over ~= b.over then return a.over < b.over end
     if a.f ~= b.f then return a.f < b.f end
     if a.nopos ~= b.nopos then return a.nopos < b.nopos end
     if a.same ~= b.same then return a.same < b.same end
@@ -93,7 +109,8 @@ local function skinning(tip, item, env)
     for _, s in ipairs(ns.SkinSpots and ns.SkinSpots[b[1]] or {}) do spots[#spots + 1] = { mapID = s[1], x = s[2], y = s[3], forever = s.forever == true } end
     sortNear(spots, env)
     local sp = spots[1] or {}
-    list[#list + 1] = { id = b[1], name = b[2], lo = b[3], hi = b[4], forever = b.forever == true, spot = sp, mapID = sp.mapID, x = sp.x, y = sp.y }
+    list[#list + 1] = { id = b[1], name = b[2], lo = b[3], hi = b[4], forever = b.forever == true, spot = sp, mapID = sp.mapID, x = sp.x, y = sp.y,
+      over = env.level and b[3] > env.level + 5 and 1 or 0 }   -- a beast too strong for the player goes last
   end
   sortNear(list, env)
   local shown, lo, hi = {}, math.huge, 0
@@ -127,41 +144,38 @@ local function gathering(tip, item, env)
   add(tip, "head", herb and S.howto_herb or S.howto_ore, nil, true)
   local nodeName = (herb and env.itemName(item)) or (node and node[1]) or ""
   if node then add(tip, "info", S.howto_node:format(nodeName, node[2] or 0)) end
-  -- the player's own GatherMate2 spots first (richest first), then the zones Forever players saw it in
-  local mine, taken, rows = {}, {}, {}
-  local bestOf = {}
+  -- candidates: the player's own GatherMate2 spots, the zones Forever players saw it in, the zones only Classic knows. The player's continent
+  -- first, then own spots, Forever, Classic, each richest first.
+  local bestOf, cands = {}, {}
   for _, z in ipairs(gs.zones or {}) do bestOf[z[1]] = z end
+  local mine = {}
   if #ids > 0 then
     for mapID, byNode in pairs(env.nodeCounts()) do
       local n = 0
       for _, id in ipairs(ids) do n = n + (byNode[id] or 0) end
-      if n > 0 then mine[#mine + 1] = { mapID = mapID, n = n } end
+      if n > 0 then
+        mine[mapID] = true
+        local z = bestOf[mapID]
+        cands[#cands + 1] = { mapID = mapID, src = 0, n = n, text = S.howto_own:format(n), best = z and z.best, confirmed = z ~= nil and (z[2] or 0) > 0 }
+      end
     end
   end
-  table.sort(mine, function(a, b) if a.n ~= b.n then return a.n > b.n end return a.mapID < b.mapID end)
-  for _, m in ipairs(mine) do
-    if #rows < MAX then
-      local z = bestOf[m.mapID]
-      rows[#rows + 1] = { mapID = m.mapID, text = S.howto_own:format(m.n), best = z and z.best, confirmed = z ~= nil and (z[2] or 0) > 0 }
-    end
-    taken[m.mapID] = true
-  end
-  local rest = {}
   for _, z in ipairs(gs.zones or {}) do
-    if not taken[z[1]] and (z[2] or 0) + (z[3] or 0) > 0 then rest[#rest + 1] = z end
-  end
-  table.sort(rest, function(a, b)
-    if (a[2] or 0) ~= (b[2] or 0) then return (a[2] or 0) > (b[2] or 0) end
-    if (a[3] or 0) ~= (b[3] or 0) then return (a[3] or 0) > (b[3] or 0) end
-    return a[1] < b[1]
-  end)
-  for _, z in ipairs(rest) do
-    if #rows < MAX then
+    if not mine[z[1]] and (z[2] or 0) + (z[3] or 0) > 0 then
       local seen = (z[2] or 0) > 0
-      rows[#rows + 1] = { mapID = z[1], text = (seen and S.howto_forever:format(z[2]) or S.howto_classic_pts:format(z[3] or 0)), best = z.best,
-        confirmed = seen, classic = not seen }
+      cands[#cands + 1] = { mapID = z[1], src = seen and 1 or 2, n = seen and z[2] or z[3], best = z.best, confirmed = seen, classic = not seen,
+        text = seen and S.howto_forever:format(z[2]) or S.howto_classic_pts:format(z[3] or 0) }
     end
   end
+  for _, c in ipairs(cands) do c.cont = locate(env, c.mapID, c.best and c.best[1], c.best and c.best[2]) end
+  table.sort(cands, function(x, y)
+    if x.cont ~= y.cont then return x.cont < y.cont end
+    if x.src ~= y.src then return x.src < y.src end
+    if x.n ~= y.n then return x.n > y.n end
+    return x.mapID < y.mapID
+  end)
+  local rows = {}
+  for i = 1, math.min(MAX, #cands) do rows[i] = cands[i] end
   for _, r in ipairs(rows) do add(tip, "row", zoneName(env, r.mapID), r.text .. (r.classic and S.howto_classic or "")) end
   local first = rows[1]
   if not first then return end
@@ -173,15 +187,17 @@ end
 local function drops(tip, item, env)
   local src = ns.ReagentSources and ns.ReagentSources[item]
   local list = {}
-  for i, d in ipairs(src and src.drops or {}) do list[#list + 1] = { name = d[1], chance = d[4], forever = d[3] == true, i = i } end
+  for _, d in ipairs(src and src.drops or {}) do
+    local name, mapID = env.creature(d[1])
+    list[#list + 1] = { name = name, mapID = mapID, x = mapID and 50, y = mapID and 50, chance = d[4], forever = d[3] == true, loose = true }   -- a zone only: its centre
+  end
   if #list == 0 then return end
-  table.sort(list, function(a, b) if a.forever ~= b.forever then return a.forever end return a.i < b.i end)
+  sortNear(list, env)
   add(tip, "head", S.howto_drops, nil, true)
   for i = 1, math.min(MAX, #list) do
     local d = list[i]
-    local name, mapID = env.creature(d.name)
-    local zone = zoneName(env, mapID)
-    add(tip, "row", zone and (name .. " · " .. zone) or name, (d.chance and S.howto_chance:format(math.floor(d.chance + 0.5)) or "") .. (d.forever and "" or S.howto_classic))
+    local zone = zoneName(env, d.mapID)
+    add(tip, "row", zone and (d.name .. " · " .. zone) or d.name, (d.chance and S.howto_chance:format(math.floor(d.chance + 0.5)) or "") .. (d.forever and "" or S.howto_classic))
   end
 end
 

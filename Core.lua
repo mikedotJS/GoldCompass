@@ -465,10 +465,29 @@ local nodeCache
 function ns.HowToEnv()
   local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
   local fr = GetLocale and GetLocale() == "frFR" or false
-  local w = whereEnv({ faction = faction })
+  local C = C_Map
+  -- continent and world position of a map point (x, y in percent), nil when the game cannot tell (instances, API missing)
+  local function place(mapID, x, y)
+    if not (C and C.GetWorldPosFromMapPos and CreateVector2D) then return end
+    local ok, continent, pos = pcall(C.GetWorldPosFromMapPos, mapID, CreateVector2D(x / 100, y / 100))
+    if ok and continent and pos then
+      local wx, wy = pos:GetXY()
+      return continent, wx, wy
+    end
+  end
+  local here = C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")
+  local at
+  if here and C.GetPlayerMapPosition then
+    local ok, p = pcall(C.GetPlayerMapPosition, here, "player")
+    if ok and p then
+      local px, py = p:GetXY()
+      local continent, wx, wy = place(here, px * 100, py * 100)
+      at = continent and { continent, wx, wy } or nil
+    end
+  end
   local function local_(id, english) local n = ns.Npcs and ns.Npcs[id]; return fr and n and n[4] or english end
   return {
-    faction = faction, fr = fr, dist = w.dist, mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"),
+    faction = faction, fr = fr, mapID = here, place = place, here = at, level = UnitLevel("player"),
     itemName = function(id) return ((C_Item and C_Item.GetItemInfo) or GetItemInfo)(id) end,
     owned = function(id) return C_Item.GetItemCount(id, false, false, false) end,
     price = safePrice, money = ns.Money,
