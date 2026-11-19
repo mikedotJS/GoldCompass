@@ -53,6 +53,10 @@ local gathered, gatherDoubt = {}, {}
 for _, k in pairs(F.gatherData.kinds) do if k.item then gathered[k.item] = true end end
 for _, g in pairs(ns.GatherNodes) do if g.item and not gathered[g.item] then gatherDoubt[g.item] = true end end
 
+-- the reputation a recipe asks (ForeverDB's rp: the faction id, from the Forever client's recipe item); the standing itself is not in it
+local rep = {}
+for id, info in pairs(F.recipeInfo) do if info.rp then rep[id] = info.rp end end
+
 local function keys(t) local k = {}; for id in pairs(t) do k[#k + 1] = id end; table.sort(k); return k end
 local function flat(name, t, fmt)
   local parts = {}
@@ -69,7 +73,8 @@ local out = {
   "-- gray } thresholds; oq: crafted quantity (the average when it is random); fee: ForeverDB's trainer fee where it is the higher of the",
   "-- two observations; feeDoubt: the two sources give fees that are not one price with the 10 % Honored discount (the higher one is",
   "-- shown and said to be unverified); gatherDoubt:",
-  "-- items of Data/GatherNodes.lua that ForeverDB's gathering data gives to no node (what the node gives is not verified on Forever).",
+  "-- items of Data/GatherNodes.lua that ForeverDB's gathering data gives to no node (what the node gives is not verified on Forever);",
+  "-- rep: the faction id whose standing the recipe asks (ForeverDB; the standing rank is not in its data).",
   "local _, ns = ...",
   "ns.ForeverFixes = {",
   flat("gone", gone, function() return "true" end),
@@ -79,10 +84,11 @@ local out = {
   flat("fee", fee, num),
   flat("feeDoubt", feeDoubt, function() return "true" end),
   flat("gatherDoubt", gatherDoubt, function() return "true" end),
+  flat("rep", rep, num),
   "}",
 }
 local h = assert(io.open("Data/ForeverFixes.lua", "w"))
 h:write(table.concat(out, "\n"), "\n")
 h:close()
-print(("fixes written: %d not in the Forever client, %d learn skills, %d threshold sets, %d quantities, %d trainer fees, %d fees in doubt, %d node items in doubt"):format(
-  #keys(gone), #keys(learn), #keys(th), #keys(oq), #keys(fee), #keys(feeDoubt), #keys(gatherDoubt)))
+print(("fixes written: %d not in the Forever client, %d learn skills, %d threshold sets, %d quantities, %d trainer fees, %d fees in doubt, %d node items in doubt, %d reputation recipes"):format(
+  #keys(gone), #keys(learn), #keys(th), #keys(oq), #keys(fee), #keys(feeDoubt), #keys(gatherDoubt), #keys(rep)))
