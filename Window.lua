@@ -612,10 +612,49 @@ function W.UpdateCraft()
   end
 end
 
+-- "Comment l'obtenir": the tooltip of a roadmap row (HowTo.lua), built when the mouse arrives so item names that loaded since are in it,
+-- and placed to the right of the row. An item the game has not cached yet says "chargement..." and is redrawn on GET_ITEM_INFO_RECEIVED.
+local TIP_COLOUR = { info = { 1, 1, 1 }, head = { 1, 0.82, 0 }, dim = { 0.62, 0.62, 0.62 }, click = { 0.12, 1, 0 } }
+function W.tipOf(row) return row.tip and row.tip() end
+function W.ShowTip(row)
+  local ok, tip = pcall(W.tipOf, row)
+  if not ok or not tip then return ns.Log("frame", "tooltip: " .. tostring(tip)) end
+  W.hover, W.hoverItem = row, tip.loading and tip.item or nil
+  GameTooltip:SetOwner(row, "ANCHOR_NONE")
+  GameTooltip:ClearAllPoints()
+  GameTooltip:SetPoint("TOPLEFT", row, "TOPRIGHT", 6, 0)
+  GameTooltip:SetText(tip.title, 1, 1, 1)
+  for _, line in ipairs(tip.lines) do
+    if line.gap then GameTooltip:AddLine(" ") end
+    local c = TIP_COLOUR[line.style] or TIP_COLOUR.info
+    if line.style == "row" or (line.style == "dim" and line.right) then
+      local left = line.style == "row" and TIP_COLOUR.info or c
+      GameTooltip:AddDoubleLine(line.text, line.right or "", left[1], left[2], left[3], TIP_COLOUR.dim[1], TIP_COLOUR.dim[2], TIP_COLOUR.dim[3])
+    else
+      GameTooltip:AddLine(line.text, c[1], c[2], c[3], true)
+    end
+  end
+  GameTooltip:Show()
+  if tip.loading then
+    if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, tip.item) end
+    if not W.itemEvents then
+      W.itemEvents = CreateFrame("Frame")
+      W.itemEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
+      W.itemEvents:SetScript("OnEvent", function(_, _, id) if W.hover and W.hoverItem == id then W.ShowTip(W.hover) end end)
+    end
+  end
+end
+function W.HideTip(row)
+  if W.hover ~= row then return end
+  W.hover, W.hoverItem = nil, nil
+  GameTooltip:Hide()
+end
+
 -- Fills the scrolled lines: every entry then every tail entry, none cut. entries = { { left, right, head, wide }, ... }.
 -- `area` is the slot of the scroll frame (the Métier tab starts lower than the other tabs, under its checkbox).
 -- A recycled line is fully reset (width, font, both texts), so nothing from the previous row leaks.
 local function setLines(entries, tail, area)
+  if W.hover then W.HideTip(W.hover) end   -- the rows are about to change under the mouse
   for _, r in ipairs(rows) do r:Hide() end
   panel:Hide()
   panel.pulse:Stop()
@@ -630,7 +669,7 @@ local function setLines(entries, tail, area)
     body = body or e.left
     local line, first = "", true
     local function flush()
-      local copy = { wide = true, left = (colour or "") .. line .. (colour and "|r" or ""), lv = e.lv and (first and e.lv or "") or nil }
+      local copy = { wide = true, left = (colour or "") .. line .. (colour and "|r" or ""), lv = e.lv and (first and e.lv or "") or nil, tip = e.tip }
       if first then copy.target, copy.recipe = e.target, e.recipe; first = false end
       all[#all + 1] = copy
     end
@@ -652,6 +691,19 @@ local function setLines(entries, tail, area)
       l = { left = text(content, "GameFontHighlightSmall"), right = text(content, "GameFontHighlightSmall", nil, "RIGHT") }
       place(l.left, rect(W.LineParts.left.l, top, W.LineParts.left.r, top + LINE_H), content)
       place(l.right, rect(W.LineParts.right.l, top, W.LineParts.right.r, top + LINE_H), content)
+      -- the whole row: hover shows its "comment l'obtenir" tooltip, a click pins its best place (OnEnter / OnLeave also serve the gamepad cursor)
+      local row = CreateFrame("Button", nil, content)
+      place(row, rect(0, top, W.LineWide.r, top + LINE_H), content)
+      row:EnableMouse(true)
+      row:RegisterForClicks("LeftButtonUp")
+      row:SetScript("OnEnter", function(self) W.ShowTip(self) end)
+      row:SetScript("OnLeave", function(self) W.HideTip(self) end)
+      row:SetScript("OnHide", function(self) W.HideTip(self) end)
+      row:SetScript("OnClick", function(self)
+        local tip = W.tipOf(self)
+        if tip and tip.target then W.GoTo(tip.target, tip.title) end
+      end)
+      l.row = row
       -- small map button, shown only on rows that have a place to go to
       local go = CreateFrame("Button", nil, content)
       place(go, rect(W.LineParts.go.l, top, W.LineParts.go.r, top + W.LineParts.go.b), content)
@@ -701,6 +753,8 @@ local function setLines(entries, tail, area)
       l.craft.entry = e and e.craft or nil
       l.craft:SetShown(l.craft.entry ~= nil)
     end
+    l.row.tip = e and e.tip or nil
+    l.row:SetShown(l.row.tip ~= nil)
     l.go.target = e and e.target or nil
     l.go.recipe = e and e.recipe or nil
     l.go:SetShown(l.go.target ~= nil)
@@ -979,7 +1033,7 @@ local function addRoadmap(entries, p)
   local function zoneOf(target) return target and (ns.ZoneLabel(target) or target.zone) end
   if r.capped then
     entries[#entries + 1] = { wide = true, left = "|cffffd100" .. (rank and S.road_capped:format(rank) or S.road_max) .. "|r",
-      target = rank and r.trainer or nil, recipe = rank }
+      target = rank and r.trainer or nil, recipe = rank, tip = rank and r.rankTip or nil }
     return
   end
   if #r.steps > 0 then entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_title .. "|r" } end
@@ -987,15 +1041,15 @@ local function addRoadmap(entries, p)
   for _, s in ipairs(r.steps) do
     if s.kind == "rank" then       -- the skill already allows the next rank: it comes first, it lifts the cap
       local zone = zoneOf(r.trainer)
-      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_rank:format(rank) }
+      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_rank:format(rank), tip = r.rankTip }
       entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r",
-        target = r.trainer, recipe = rank }
+        target = r.trainer, recipe = rank, tip = r.rankTip }
     elseif s.kind == "learn" then
       local zone = zoneOf(s.target)
       local source = ns.Fmt.Source(s.rec)
-      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_learn:format(s.name) }
+      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_learn:format(s.name), tip = s.tip }
       entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(source, zone) or source) .. "|r",
-        target = s.target, recipe = s.name }
+        target = s.target, recipe = s.name, tip = s.tip }
     else
       local range = s.to > s.from and S.road_range:format(s.from, s.to) or tostring(s.from)
       entries[#entries + 1] = { lv = "|cffa89c80" .. range .. "|r", wide = true,
@@ -1009,23 +1063,24 @@ local function addRoadmap(entries, p)
       elseif full then
         entries[#entries + 1] = { lv = "", wide = true, left = "|cff1eff00" .. S.road_bag .. "|r" }
       end
-      if not full then
-        local line
-        local sub, miss = s.subs[1], s.missing[1]
-        if sub then line = S.road_first:format(sub.need, sub.name)
-        elseif miss then
-          local how = miss.how and S.road_hows[miss.how]
-          line = S.road_missing:format(miss.n, miss.name, how and S.road_how:format(how) or "")
+      if not full then   -- one row per reagent (up to 3): each has its own "comment l'obtenir" tooltip
+        local shown = 0
+        for _, sub in ipairs(s.subs) do
+          shown = shown + 1
+          if shown <= 3 then entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. S.road_first:format(sub.need, sub.name) .. "|r", tip = sub.tip } end
         end
-        if line then entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. line .. "|r" } end
+        for _, miss in ipairs(s.missing) do
+          shown = shown + 1
+          if shown <= 3 then entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. S.road_missing:format(miss.n, miss.name) .. "|r", tip = miss.tip } end
+        end
       end
     end
   end
   if #r.steps == 0 and not r.gathering then
-    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank }
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank, tip = rank and r.rankTip or nil }
   end
   -- the next rank, while the skill does not allow it yet
-  if rank and not r.rankNow then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_next:format(rank, r.rankAt) .. "|r" } end
+  if rank and not r.rankNow then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_next:format(rank, r.rankAt) .. "|r", tip = r.rankTip } end
 end
 
 -- The footer line of the roadmap: the rank that lifts the cap (with its pin once the cap is reached), from the first profession that has one.

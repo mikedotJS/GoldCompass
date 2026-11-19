@@ -459,6 +459,49 @@ local function reagentHow(ctx, id)
   if (ctx.price(id)) then return "ah" end
 end
 
+-- What the "comment l'obtenir" tooltips (HowTo.lua) read from the game, built at hover time: faction, position, names, prices, the player's
+-- own GatherMate2 spots (counted at most once a minute: it asks the addon about every map).
+local nodeCache
+function ns.HowToEnv()
+  local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
+  local fr = GetLocale and GetLocale() == "frFR" or false
+  local w = whereEnv({ faction = faction })
+  local function local_(id, english) local n = ns.Npcs and ns.Npcs[id]; return fr and n and n[4] or english end
+  return {
+    faction = faction, fr = fr, dist = w.dist, mapID = C_Map and C_Map.GetBestMapForUnit and C_Map.GetBestMapForUnit("player"),
+    itemName = function(id) return ((C_Item and C_Item.GetItemInfo) or GetItemInfo)(id) end,
+    owned = function(id) return C_Item.GetItemCount(id, false, false, false) end,
+    price = safePrice, money = ns.Money,
+    exact = function(copper)
+      local coin = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
+      return coin and copper > 0 and coin(copper) or ns.Money(copper)
+    end,
+    zone = function(mapID) return ns.ZoneLabel({ mapID = mapID }) end,
+    npcName = local_,
+    -- a creature by its English name: the client-language name and its zone, when a single NPC has that name and one zone
+    creature = function(english)
+      local ids = ns.NpcByName and ns.NpcByName[english]
+      local npc = ids and #ids == 1 and ns.Npcs[ids[1]]
+      local map = npc and npc[3][1] and npc[3][1][1]
+      for _, s in ipairs(npc and npc[3] or {}) do if s[1] ~= map then map = nil end end
+      return fr and npc and npc[4] or english, map
+    end,
+    npc = function(id)   -- ForeverDB's NPC (seen in Forever or not), else pfQuest's Classic one
+      local f, n = ns.FdbNpcs and ns.FdbNpcs[id], ns.Npcs and ns.Npcs[id]
+      if f then return { name = local_(id, f[1]), mapID = f[2], x = f[3], y = f[4], side = f[5], seen = f[6] } end
+      local spawn = n and n[3][1]
+      if n then return { name = local_(id, n[1]), mapID = spawn and spawn[1], x = spawn and spawn[2], y = spawn and spawn[3], side = n[2], seen = false } end
+    end,
+    nodeCounts = function()
+      if not (nodeCache and time() - nodeCache.at < 60) then
+        local ok, zones = pcall(function() return ns.Nodes.Installed() and (ns.Nodes.Counts()) or {} end)
+        nodeCache = { at = time(), zones = ok and zones or {} }
+      end
+      return nodeCache.zones
+    end,
+  }
+end
+
 -- "Monter le métier": the roadmap of one profession (Leveling.Roadmap) with the names the window shows, the known recipes by colour
 -- (the collapsible list) and the trainer to visit when the cap is reached.
 function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
@@ -478,15 +521,31 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   if road.nextRank then
     road.rankTarget = ns.Where.Target({ id = 0, learn = (data.max or 0) + 1, src = nil, way = { rank = road.nextRank } }, SKILL_LINES[p.line], whereEnv(ctx))
   end
+  -- hover tooltips ("comment l'obtenir"): built when the mouse is over the row, with what the game knows by then
+  local byOut = {}
+  for _, rec in pairs(data.recipes) do if rec.out then byOut[rec.out] = rec end end
+  local function reagentTip(m, need)
+    local made = byOut[m.item]
+    local make = made and { name = ns.Fmt.RecipeName(made), mats = made.mats }
+    m.tip = function() return ns.HowTo.Reagent(m.item, need, ns.HowToEnv(), make) end
+  end
   for _, s in ipairs(road.steps) do
     if s.kind == "craft" then
       s.name = ns.Fmt.RecipeName(s.rec)
       s.craft = { id = s.rec.id, times = s.times, prof = p.name, line = p.line }
-      for _, m in ipairs(s.missing) do m.name = ns.ItemName(m.item) end
-      for _, m in ipairs(s.subs) do m.name = ns.ItemName(m.item) end
+      for _, m in ipairs(s.missing) do m.name = ns.ItemName(m.item); reagentTip(m, m.n) end
+      for _, m in ipairs(s.subs) do m.name = ns.ItemName(m.item); reagentTip(m, m.need) end
     elseif s.kind == "learn" then
       s.name, s.target = s.row.name or ns.Fmt.RecipeName(s.rec), s.row.target
+      local spec = ns.HowTo.LearnSpec(s.rec, s.name, s.target, p.name)
+      s.tip = function() return ns.HowTo.Step(spec, ns.HowToEnv()) end
     end
+  end
+  -- the rank that lifts the cap: its requirements, and for a book the vendor of the player's faction (the pin goes there)
+  if road.nextRank then
+    local spec = ns.HowTo.RankSpec(p.line, road.nextRank, ns.HowToEnv(), road.rankTarget, p.name)
+    road.rankTarget = spec.target
+    road.rankTip = function() return ns.HowTo.Step(spec, ns.HowToEnv()) end
   end
   local lr = entry.learn
   road.trainer = road.rankTarget or (lr and ((lr.beyond and lr.beyond.target) or (lr.books and lr.books[1] and lr.books[1].target))) or nil
