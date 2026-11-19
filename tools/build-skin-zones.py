@@ -24,7 +24,7 @@ CMANGOS_CACHE = TOOLS / "cache-cmangos"
 SKINLOOT = CMANGOS_CACHE / "skinloot.tsv"
 CMANGOS_SHA = "28ef6259c782928b08a8dc9cacf6bc02e64f2b29"
 CMANGOS_URL = f"https://raw.githubusercontent.com/cmangos/classic-db/{CMANGOS_SHA}/Full_DB/ClassicDB_1_12_1_z2815.sql.gz"
-MAX_BEASTS = 16          # per zone, the beasts with the most spawn points first
+MAX_BEASTS = 60          # per zone, the beasts with the most spawn points first (no zone has more today)
 
 
 def load(name, file):
