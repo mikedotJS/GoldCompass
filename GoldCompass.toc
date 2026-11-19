@@ -18,6 +18,7 @@ Data\ForeverTrainers.lua
 Data\ForeverRecipes.lua
 Data\Npcs.lua
 Data\ForeverNpcs.lua
+Data\ForeverRanks.lua
 Data\ForeverFixes.lua
 Data\QuestItems.lua
 Data\ForeverSkinning.lua
