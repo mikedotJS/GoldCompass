@@ -481,3 +481,16 @@ describe("HowTo: nearest means nearest in the world, continent first", function(
     assert.is_true(lineIndex(tip, "Forever far") < lineIndex(tip, "Classic far"))
   end)
 end)
+
+describe("HowTo.Reagent: distance beats the Forever flag", function()
+  it("a Classic vendor in town comes before a Forever-seen vendor more than 500 yards farther (Moonglade case)", function()
+    local ns = fresh()
+    ns.ReagentSources = { [2320] = { vendors = {
+      { 1, "Moonglade Forever", 1414, 10, 10, "AH", 10, forever = true },
+      { 2, "Town Classic", 1411, 52, 50, "H", 10, forever = false } } } }
+    local env = envOf({ place = function(map, x, y) if map == 1411 then return 1, 200 + x, y end return 1, 2000 + x, y end })
+    local tip = ns.HowTo.Reagent(2320, 1, env)
+    assert.is_true(lineIndex(tip, "Town Classic") < lineIndex(tip, "Moonglade Forever"))
+    assert.are.equal("Town Classic", tip.target.name)
+  end)
+end)

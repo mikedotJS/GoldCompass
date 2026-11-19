@@ -42,8 +42,8 @@ local function locate(env, mapID, x, y)
   return 0, wx and math.sqrt((wx - here[2]) ^ 2 + (wy - here[3]) ^ 2) or math.huge
 end
 
--- The player's continent first. On it: a candidate above the level cap (`over`) last, Forever-seen before Classic, the ones with a position,
--- the player's own map, then the nearest in the world. Elsewhere: the data order. Every candidate: { forever, over, mapID, x, y }.
+-- The player's continent first. On it: a candidate above the level cap (`over`) last, the ones with a position, then by 500-yard distance
+-- band; within a band Forever-seen before Classic, the player's own map, then the nearest. Elsewhere: the data order. Every candidate: { forever, over, mapID, x, y }.
 local function sortNear(list, env)
   for i, c in ipairs(list) do
     c.i, c.f, c.nopos, c.over = i, c.forever and 0 or 1, known(c) and 0 or 1, c.over or 0
@@ -51,12 +51,14 @@ local function sortNear(list, env)
     c.cont, c.d = locate(env, known(c) and c.mapID or nil, c.x, c.y)
     if c.loose and not c.mapID then c.cont = 0 end   -- a drop with no known zone is not on another continent
     if c.cont == 1 then c.f, c.over = 0, 0 end
+    c.band = c.d == math.huge and math.huge or math.floor(c.d / 500)   -- world yards
   end
   table.sort(list, function(a, b)
     if a.cont ~= b.cont then return a.cont < b.cont end
     if a.over ~= b.over then return a.over < b.over end
-    if a.f ~= b.f then return a.f < b.f end
     if a.nopos ~= b.nopos then return a.nopos < b.nopos end
+    if a.band ~= b.band then return a.band < b.band end   -- distance first: a Classic trade vendor in town beats a Forever-seen one in Moonglade
+    if a.f ~= b.f then return a.f < b.f end               -- about as near (same 500-yard band): Forever-seen first
     if a.same ~= b.same then return a.same < b.same end
     if a.d ~= b.d then return a.d < b.d end
     return a.i < b.i
