@@ -833,13 +833,14 @@ describe("window layout and drawing", function()
     assertNoOverlap({ L.common, L.map }, L)
     assertNoOverlap({ L.common, L.list }, L)
     assertNoOverlap({ L.common, L.job }, L)             -- Métier tab: checkbox, "Voir sans filtre" and the scroll area
+    assertNoOverlap({ L.common, { tabs = L.job.tabs, goalLevel = L.job.goalLevel, goalGold = L.job.goalGold, goalLabel = L.job.goalLabel }, L.jobGold }, L)
     assertNoOverlap({ L.common, L.panel, controls }, L)
   end)
 
   it("keeps the lines and the scroll bar inside the scroll slot", function()
     setup({})
     local W = loadAddon().Window
-    for _, slot in ipairs({ W.Layout.list.lines, W.Layout.job.lines }) do
+    for _, slot in ipairs({ W.Layout.list.lines, W.Layout.job.lines, W.Layout.jobGold.lines }) do
       assert.is_true(W.LineWide.r + 20 <= slot.r - slot.l)       -- 20 px left for the scroll bar
       assert.is_true(W.LineParts.right.r <= W.LineWide.r)
     end
@@ -2590,6 +2591,22 @@ describe("clients without GetBaseProfessionInfo (GetTradeSkillLine returns sever
   end)
 end)
 
+
+-- The Métier tab shows one profession at a time: the lines (and footers) of every profession tab, in tab order.
+function _G.allJobLines(ns)
+  local out, footers = {}, {}
+  for _, b in ipairs(ns.Window.ProfTabs()) do
+    if b:IsShown() then
+      b.scripts.OnClick(b)
+      for _, l in ipairs(ns.Window.Lines()) do   -- lines are recycled by the next tab: keep a copy of what they show now
+        out[#out + 1] = { left = { text = l.left.text, width = l.left.width }, right = { text = l.right.text },
+          lv = l.lv and { text = l.lv.text } or nil }
+      end
+      footers[#footers + 1] = ns.Window.Footer().text or ""
+    end
+  end
+  return out, table.concat(footers, "\n")
+end
 describe("Métier tab with the owner's professions (real Forever data, Horde)", function()
   local function plain(s) return ((s or ""):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "")) end
   local function render(bag)
@@ -2615,7 +2632,7 @@ describe("Métier tab with the owner's professions (real Forever data, Horde)", 
       local ns = render(bag)
       local P = ns.Window.LineParts
       local n, cut = 0, {}
-      for _, l in ipairs(ns.Window.Lines()) do
+      for _, l in ipairs(allJobLines(ns)) do
         local text = plain(l.left.text)
         if text ~= "" then
           n = n + 1
@@ -2633,7 +2650,7 @@ describe("Métier tab with the owner's professions (real Forever data, Horde)", 
     for _, bag in ipairs({ false, true }) do
       local ns = render(bag)
       local all = {}
-      for _, l in ipairs(ns.Window.Lines()) do all[#all + 1] = plain(l.left.text) end
+      for _, l in ipairs(allJobLines(ns)) do all[#all + 1] = plain(l.left.text) end
       local text = table.concat(all, "\n")
       assert.matches("Au%-delà de 75 : il faut le rang Compagnon", text)
       assert.matches("Pour dépasser 150 : ", text)
@@ -2643,7 +2660,7 @@ describe("Métier tab with the owner's professions (real Forever data, Horde)", 
 
   it("no recipe above the profession cap is listed under 'Bientôt' (Travail du cuir 61/75)", function()
     local ns = render(false)
-    local lines = ns.Window.Lines()
+    local lines = allJobLines(ns)
     local inLeather, soon = false, false
     for i, l in ipairs(lines) do
       local t = plain(l.left.text)
@@ -2891,7 +2908,7 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
   it("no gold wording or coin icon in any line, except the learning price on a dim detail line", function()
     for _, bag in ipairs({ false, true }) do
       local ns = render("level", bag)
-      for _, l in ipairs(ns.Window.Lines()) do
+      for _, l in ipairs(allJobLines(ns)) do
         local left, right = plain(l.left.text), plain(l.right.text)
         for _, word in ipairs({ "rapporte", "coût", "coûte" }) do
           assert.is_nil(left:find(word, 1, true), word .. " in: " .. left)
@@ -2906,7 +2923,7 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
     local ns = render("level", true)
     local function text()
       local out = {}
-      for _, l in ipairs(ns.Window.Lines()) do out[#out + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) .. " " .. plain(l.right.text) end
+      for _, l in ipairs(allJobLines(ns)) do out[#out + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) .. " " .. plain(l.right.text) end
       return table.concat(out, "\n")
     end
     assert.matches("Ton parcours", text())
@@ -2914,7 +2931,7 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
       assert.is_nil(text():find(word, 1, true), word)
     end
     assert.is_false(ns.Window.IsBagBoxShown())
-    assert.matches("rochaine étape : rang", plain(ns.Window.Footer().text))
+    assert.matches("rochaine étape : rang", plain(select(2, allJobLines(ns))))
     assert.is_nil(text():find("Recettes connues", 1, true))                    -- collapsed by default
     ns.Window.recipesOpen = true
     ns.Window.SetTab("job")
@@ -2925,7 +2942,7 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
   it("every profession has its own rank step or rank line", function()
     local ns = render("level", true)
     local all = {}
-    for _, l in ipairs(ns.Window.Lines()) do all[#all + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) end
+    for _, l in ipairs(allJobLines(ns)) do all[#all + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) end
     local text = table.concat(all, "\n")
     assert.matches("Cuisine  124/150\n[^\n]*\n[^\n]*", text)
     assert.matches("Prochaine étape : rang Expert à 125", text)               -- Cooking 124: the rank is still ahead, in its own section
@@ -2934,10 +2951,31 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
     assert.is_true(first < (text:find("Ton parcours", 1, true) or 0) + 60)
   end)
 
+  it("shows one profession at a time, chosen with a tab per profession (like the mockup)", function()
+    local ns = render("level", false)
+    local labels = {}
+    for _, b in ipairs(ns.Window.ProfTabs()) do if b:IsShown() then labels[#labels + 1] = b.label.text end end
+    assert.are.same({ "Cuir 61", "Cuisine 124" }, labels)
+    local function heads()
+      local n, name = 0, nil
+      for _, l in ipairs(ns.Window.Lines()) do
+        local t = plain(l.left.text)
+        if t:match("^%S.-  %d+/%d+$") then n, name = n + 1, t end
+      end
+      return n, name
+    end
+    local n, name = heads()
+    assert.are.equal(1, n); assert.are.equal("Travail du cuir  61/75", name)
+    ns.Window.ProfTabs()[2].scripts.OnClick(ns.Window.ProfTabs()[2])
+    n, name = heads()
+    assert.are.equal(1, n); assert.are.equal("Cuisine  124/150", name)
+    assert.are.equal("Cuisine", ns.char.jobProf)
+  end)
+
   it("gold mode keeps its gold wording", function()
     local ns = render("gold", false)
     local all = {}
-    for _, l in ipairs(ns.Window.Lines()) do all[#all + 1] = plain(l.left.text) .. " " .. plain(l.right.text) end
+    for _, l in ipairs(allJobLines(ns)) do all[#all + 1] = plain(l.left.text) .. " " .. plain(l.right.text) end
     assert.matches("par fabrication", table.concat(all, "\n"))
   end)
 

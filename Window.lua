@@ -31,13 +31,17 @@ W.Layout = {
   list = { lines = rect(PAD, 52, FRAME_W - PAD, 52 + LINES * LINE_H) },
   -- Métier tab: the checkbox and "Voir sans filtre" sit above the scroll area
   -- second row: the objective toggle "Objectif : Monter le métier | Gagner de l'or"
-  job = { bagBox = rect(PAD, 52, 230, 52 + LINE_H - 1), bagOff = rect(296, 50, 446, 68),
-    goalLabel = rect(PAD, 76, 72, 92), goalLevel = rect(74, 72, 254, 94), goalGold = rect(258, 72, 446, 94),
-    lines = rect(PAD, 98, FRAME_W - PAD, 52 + LINES * LINE_H),
+  -- first row: one tab per profession (one profession shown at a time); the gold checkbox sits under the objective
+  job = { tabs = rect(PAD, 50, FRAME_W - PAD, 70),
+    goalLabel = rect(PAD, 78, 72, 94), goalLevel = rect(74, 74, 254, 96), goalGold = rect(258, 74, 446, 96),
+    lines = rect(PAD, 100, FRAME_W - PAD, 52 + LINES * LINE_H),
     -- roadmap: the map pin of "Plafond atteint" (bottom left, under the footer text) and the "Recettes >" link (bottom right, before Actualiser)
     recipes = rect(236, 470, 350, 488), pin = rect(PAD, 470, PAD + 18, 488),
     -- the "Liste de courses (N)" button, left of the "Recettes >" link (ShoppingList.lua)
     shop = rect(PAD + 22, 468, 226, 490) },
+  -- "Gagner de l'or" mode of the Métier tab: the bag checkbox and "Voir sans filtre" under the objective, the lines below them
+  jobGold = { bagBox = rect(PAD, 100, 230, 100 + LINE_H - 1), bagOff = rect(296, 98, 446, 116),
+    lines = rect(PAD, 120, FRAME_W - PAD, 52 + LINES * LINE_H) },
   panel = { panel = rect(PAD, 80, FRAME_W - PAD, 300) },
 }
 
@@ -466,14 +470,14 @@ local function build()
     if lastMap then renderMap(lastMap) end
   end)
   -- Métier tab: "Avec mon sac" (remembered per character) and a way out of the empty state
-  f.bagBox = makeCheck(L.job.bagBox, S.job_bag_box)
+  f.bagBox = makeCheck(L.jobGold.bagBox, S.job_bag_box)
   f.bagBox:SetScript("OnClick", function()
     ns.char.onlyBag = not ns.char.onlyBag
     W.UpdateControls()
     W.Refresh()
   end)
-  f.bagOff = button(f, S.job_bag_off, L.job.bagOff.r - L.job.bagOff.l)
-  place(f.bagOff, L.job.bagOff, f)
+  f.bagOff = button(f, S.job_bag_off, L.jobGold.bagOff.r - L.jobGold.bagOff.l)
+  place(f.bagOff, L.jobGold.bagOff, f)
   f.bagOff:SetScript("OnClick", function()
     ns.char.onlyBag = false
     W.UpdateControls()
@@ -489,6 +493,17 @@ local function build()
     place(b, g[3], f)
     b:SetScript("OnClick", function() W.SetGoal(g[1]) end)
     f.goalBtns[g[1]] = b
+  end
+  -- profession tabs of the Métier tab: labelled and sized by renderJob, up to 6
+  f.profTabs = {}
+  for i = 1, 6 do
+    local b = button(f, "", 60)
+    b:SetScript("OnClick", function(self)
+      ns.char.jobProf = self.prof
+      if lastJob then W.RenderJob(lastJob) end
+    end)
+    b:Hide()
+    f.profTabs[i] = b
   end
   -- roadmap footer: "Recettes >" link (collapsed by default, remembered for the session) and the map pin of "Plafond atteint"
   f.recipesBtn = CreateFrame("Button", nil, f)
@@ -1180,17 +1195,24 @@ local function renderJob(res)
   lastJob = res
   render(res, "job")
   if res.state ~= "ok" then
+    W.LayoutProfTabs({})
     f.bagOff:Hide()
     local title, body = ns.StateText(res)
     return showPanel(title, body, true)
   end
   f.subtitle:SetText("")
   f.banner:SetText("")
+  -- one profession at a time, chosen with the tabs (remembered per character); the first one by default
+  local sel = res.profs[1]
+  for _, p in ipairs(res.profs) do if p.name == ns.char.jobProf then sel = p end end
+  W.LayoutProfTabs(res.profs, sel)
+  local all = res
+  res = { state = res.state, profs = { sel } }
   local filtered = ns.char.onlyBag
   local level = ns.Goal() ~= "gold"
   f.footPin:Hide()
   if level then
-    ns.ShoppingList.Feed(res)
+    ns.ShoppingList.Feed(all)
     local line, target, rank = roadFooter(res)
     f.footer:SetText(line)
     if target then
@@ -1254,7 +1276,7 @@ local function renderJob(res)
   f.bagOff:SetShown(filtered and nothing)
   local bankNote = level and ns.ShoppingList.BankNote()
   if bankNote then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. bankNote .. "|r" } end
-  setLines(entries, {}, W.Layout.job.lines)
+  setLines(entries, {}, level and W.Layout.job.lines or W.Layout.jobGold.lines)
 end
 
 -- Called by Learned.lua when a profession window was read: refresh the leveling tab if it is the one shown.
@@ -1281,6 +1303,32 @@ function W.UpdateControls()
 end
 
 W.RenderJob = renderJob
+
+-- Short tab labels ("Cuir 75"): the full names do not fit six to a row.
+local SHORT = { ["Travail du cuir"] = "Cuir", ["Leatherworking"] = "Cuir", ["Premiers soins"] = "Secours", ["First Aid"] = "Secours",
+  ["Herboristerie"] = "Herbes", ["Herbalism"] = "Herbes", ["Enchantement"] = "Enchant.", ["Enchanting"] = "Enchant." }
+function W.ProfTabs() return f.profTabs end
+function W.LayoutProfTabs(profs, sel)
+  local slot, n, gap = W.Layout.job.tabs, math.min(#profs, #f.profTabs), 4
+  local width = n > 0 and math.floor((slot.r - slot.l - gap * (n - 1)) / n) or 0
+  for i, b in ipairs(f.profTabs) do
+    local p = i <= n and profs[i]
+    if p then
+      b.prof = p.name
+      b:SetSize(width, slot.b - slot.t)
+      b:ClearAllPoints()
+      b:SetPoint("TOPLEFT", f, "TOPLEFT", slot.l + (i - 1) * (width + gap), -slot.t)
+      b.label:SetText(("%s %s"):format(SHORT[p.name] or p.name, tostring(p.skill or "?")))
+      local on = p == sel   -- the shown profession is lit gold, the others dim (same colours as the objective toggle)
+      b.edge:SetColorTexture(on and 0.83 or 0.35, on and 0.69 or 0.15, on and 0.22 or 0.1)
+      b.fill:SetColorTexture(on and 0.55 or 0.16, on and 0.1 or 0.05, on and 0.06 or 0.03)
+      b.label:SetTextColor(on and 1 or 0.6, on and 1 or 0.5, on and 1 or 0.4)
+      b:Show()
+    else
+      b:Hide()
+    end
+  end
+end
 
 -- "Liste de courses (N)": shown on the Métier tab of the roadmap when something is short or waits in the bank (ShoppingList.lua).
 function W.UpdateShopButton()
@@ -1340,6 +1388,7 @@ function W.SetTab(key)
   f.footPin:Hide()
   f.goalLabel:SetShown(key == "job")
   for _, b in pairs(f.goalBtns) do b:SetShown(key == "job") end
+  for _, b in ipairs(f.profTabs) do if key ~= "job" then b:Hide() end end
   f.bagOff:Hide()
   scroll:SetVerticalScroll(0) -- each tab starts at its top
   W.UpdateControls()
