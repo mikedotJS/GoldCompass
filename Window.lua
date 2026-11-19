@@ -292,6 +292,23 @@ function W.RowTooltipLines(row)
   -- a level range no Forever source gives is the Classic one: said as such
   out[#out + 1] = S.tt_spots:format(row.spots, info and info[2] and (S.far_tag:format(info[2], info[3]) .. ns.Fmt.LevelNote(info))
     or S.unknown_level_tag)
+  if row.beasts then
+    -- skinning: the beasts first (Forever-seen spawns or Classic), then what one skin is worth per item (Classic yield)
+    out[#out + 1] = S.tt_beasts
+    for _, b in ipairs(row.beasts) do
+      out[#out + 1] = S.tt_beast:format(b[2], b[3] == b[4] and tostring(b[3]) or (b[3] .. "-" .. b[4]),
+        (b.foreverSpots or 0) > 0 and "" or S.howto_classic)
+    end
+    out[#out + 1] = S.tt_skin_items
+    for _, d in ipairs(row.detail or {}) do out[#out + 1] = S.tt_skin_item:format(ns.ItemName(d.item), ns.Money(d.unit)) end
+    out[#out + 1] = ns.PriceAgeText(row.maxAge)
+    local partial = ns.PartialText({ row })
+    if partial ~= "" then out[#out + 1] = partial end
+    if row.noYield then out[#out + 1] = S.tt_skin_noyield end
+    out[#out + 1] = S.tt_skin_assume
+    out[#out + 1] = S.tt_estimate
+    return out
+  end
   out[#out + 1] = S.tt_nodes
   for _, d in ipairs(row.detail or {}) do
     -- what the node gives is the Classic pairing when ForeverDB's gathering data does not have it: said as such
@@ -501,7 +518,7 @@ local function build()
   f.profBtn = button(f, "", L.map.profBtn.r - L.map.profBtn.l)
   place(f.profBtn, L.map.profBtn, f)
   f.profBtn:SetScript("OnClick", function()
-    local order = { [false] = "Herb Gathering", ["Herb Gathering"] = "Mining", ["Mining"] = "Fishing", ["Fishing"] = false }
+    local order = { [false] = "Herb Gathering", ["Herb Gathering"] = "Mining", ["Mining"] = "Fishing", ["Fishing"] = "Skinning", ["Skinning"] = false }
     ns.db.profession = order[ns.db.profession or false] or nil
     W.UpdateControls()
     W.Refresh()
@@ -807,6 +824,7 @@ function renderMap(res)
   if partial ~= "" then banner[#banner + 1] = partial end
   if hidden > 0 then banner[#banner + 1] = S.unknown_level_hidden:format(hidden) end
   if res.fishing then banner[#banner + 1] = S.fish_note end
+  f.footer:SetText(res.skinning and S.footer_skin or S.footer)
   if res.ageUnknown then banner[#banner + 1] = S.age_unknown end
   f.banner:SetText(table.concat(banner, " "))
   if #shown == 0 then

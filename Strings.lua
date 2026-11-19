@@ -245,4 +245,11 @@ do
   S.shop_none, S.shop_unseen = "Rien ne manque : tout est dans ton sac.", "Banque non vue : ouvre-la une fois."
   S.shop_loading, S.shop_retry, S.shop_close = "Calcul de la liste...", "Réessayer", "Fermer"
   S.shop_until_many, S.shop_timeout = "jusqu'à %s", "Le calcul de la liste prend trop de temps : réessaie."
+  -- Carte tab, Skinning (Data/ForeverSkinZones.lua)
+  S.noskin_t, S.noskin_p = "Aucune bête à dépecer", "Aucune bête connue que ton niveau de Dépeçage permet de dépecer."
+  S.tt_beasts, S.tt_beast = "Bêtes à dépecer", "%s · niv. %s%s"
+  S.tt_skin_items, S.tt_skin_item = "Valeur par objet", "%s : ~%s l'unité"
+  S.tt_skin_noyield = "Certains cuirs n'ont pas de rendement connu : comptés 0."
+  S.footer_skin = "~ estimation : 60 bêtes dépecées par heure, rendement de Classic, taxe HV de 5 %. Calculée d'après ton dernier scan, pas une garantie."
+  S.tt_skin_assume = "Hypothèses : 60 bêtes dépecées par heure, rendement de Classic (aucun chiffre Forever), taxe HV de 5 %."
 end

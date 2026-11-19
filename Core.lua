@@ -34,6 +34,11 @@ local function nodeItems()
   for _, node in pairs(ns.GatherNodes) do
     if node.item then ids[#ids + 1] = node.item end
   end
+  for _, beasts in pairs(ns.SkinZones or {}) do
+    for _, b in ipairs(beasts) do
+      for _, it in ipairs(b.items) do ids[#ids + 1] = it[1] end
+    end
+  end
   return ids
 end
 
@@ -117,7 +122,35 @@ end
 
 -- Runs the whole pipeline. Always returns a table { state = ... }, never raises.
 -- states: ok, nogather, noscan, no_gathermate_addon, no_auctionator_addon, price_error, error
+-- Skinning: zones from Data/ForeverSkinZones.lua (no GatherMate2 needed), the beasts the skill allows, most spawns first.
+local function computeSkinning(price)
+  local skill = ns.Skills()["Skinning"]
+  local supposed = not skill and math.min(300, 5 * UnitLevel("player")) or nil
+  local input = { zones = ns.SkinZones, skill = skill or supposed, price = price, vendor = ns.Prices.Vendor,
+    ageKnown = ns.Prices.HasAge(), constants = { maxRows = math.huge } }
+  local result = ns.SkinRank.Rank(input)
+  if result.status == "no_nodes" then return { state = "noskin" } end
+  if result.status == "no_scan" then return { state = "noscan" } end
+  for _, row in ipairs(result.rows) do
+    row.name = ns.Nodes.ZoneName(row.zone)
+    row.itemNames = {}
+    for i, id in ipairs(row.items) do row.itemNames[i] = ns.ItemName(id) end
+    row.beasts = {}
+    for _, b in ipairs(ns.SkinZones[row.zone]) do
+      if b[5] <= input.skill and #row.beasts < 4 then row.beasts[#row.beasts + 1] = b end
+    end
+  end
+  local top = {}
+  for i = 1, math.min(ns.TOP, #result.rows) do top[i] = result.rows[i] end
+  return { state = "ok", rows = top, all = result.rows, input = input, skinning = true, ageUnknown = not ns.Prices.HasAge(),
+    supposed = supposed, supposedTypes = supposed and { "Skinning" } or nil }
+end
+
 local function compute(opts)
+  if opts and opts.profession == "Skinning" then
+    if not ns.Prices.Installed() then return { state = "no_auctionator_addon" } end
+    return computeSkinning(function(id) return ns.Prices.Get(id) end)
+  end
   if not ns.Nodes.Installed() then return { state = "no_gathermate_addon" } end
   if not ns.Prices.Installed() then return { state = "no_auctionator_addon" } end
   local zones = ns.Nodes.Counts()
@@ -199,7 +232,7 @@ local STATE_TEXT = {
   nogather = { S.nogather_t, S.nogather_p }, noscan = { S.noscan_t, S.noscan_p },
   no_gathermate_addon = { S.nogm_t, S.nogm_p }, no_auctionator_addon = { S.noauc_t, S.noauc_p },
   price_error = { S.error_t, S.error_p }, error = { S.unexpected_t, "" },
-  empty = { S.bags_empty_t, S.bags_empty_p }, nofishing = { S.nofish_t, S.nofish_p }, empty_prof = { S.job_empty_t, S.job_empty_p }, here_nodata = { S.here_nodata_t, S.here_nodata_p },
+  empty = { S.bags_empty_t, S.bags_empty_p }, nofishing = { S.nofish_t, S.nofish_p }, noskin = { S.noskin_t, S.noskin_p }, empty_prof = { S.job_empty_t, S.job_empty_p }, here_nodata = { S.here_nodata_t, S.here_nodata_p },
 }
 ns.StateText = function(res)
   local t = STATE_TEXT[res.state]
