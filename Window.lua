@@ -35,7 +35,9 @@ W.Layout = {
     goalLabel = rect(PAD, 76, 72, 92), goalLevel = rect(74, 72, 254, 94), goalGold = rect(258, 72, 446, 94),
     lines = rect(PAD, 98, FRAME_W - PAD, 52 + LINES * LINE_H),
     -- roadmap: the map pin of "Plafond atteint" (bottom left, under the footer text) and the "Recettes >" link (bottom right, before Actualiser)
-    recipes = rect(236, 470, 350, 488), pin = rect(PAD, 470, PAD + 18, 488) },
+    recipes = rect(236, 470, 350, 488), pin = rect(PAD, 470, PAD + 18, 488),
+    -- the "Liste de courses (N)" button, left of the "Recettes >" link (ShoppingList.lua)
+    shop = rect(PAD + 22, 468, 226, 490) },
   panel = { panel = rect(PAD, 80, FRAME_W - PAD, 300) },
 }
 
@@ -482,6 +484,10 @@ local function build()
     W.UpdateControls()
     if lastJob then W.RenderJob(lastJob) end
   end)
+  f.shopBtn = button(f, S.shop_button0, L.job.shop.r - L.job.shop.l)
+  place(f.shopBtn, L.job.shop, f)
+  f.shopBtn:SetScript("OnClick", function() ns.ShoppingList.Toggle() end)
+  f.shopBtn:Hide()
   f.footPin = CreateFrame("Button", nil, f)
   place(f.footPin, L.job.pin, f)
   f.footPin.icon = f.footPin:CreateTexture(nil, "ARTWORK")
@@ -1055,13 +1061,18 @@ local function addRoadmap(entries, p)
       entries[#entries + 1] = { lv = "|cffa89c80" .. range .. "|r", wide = true,
         left = DIFF_COLOUR[s.d] .. ("%s ×%d"):format(s.name, s.times) .. "|r" }
       local full = s.state == "bag"
-      -- the part the bag feeds: the button covers it (not for a recipe learned earlier in the roadmap)
-      if s.bagTimes > 0 and not s.learned then
-        entries[#entries + 1] = { lv = "", left = "", craft = { id = s.craft.id, times = s.bagTimes, prof = s.craft.prof, line = s.craft.line,
-          sub = "|cff1eff00" .. (full and S.road_bag or S.road_with_bag:format(s.bagTimes)) .. "|r", primary = primary } }
+      local banked = s.banked or {}
+      -- the part the bags feed: the button covers it (not for a recipe learned earlier in the roadmap)
+      if s.inBag > 0 and not s.learned then
+        entries[#entries + 1] = { lv = "", left = "", craft = { id = s.craft.id, times = s.inBag, prof = s.craft.prof, line = s.craft.line,
+          sub = "|cff1eff00" .. (s.inBag == s.times and S.road_bag or S.road_with_bag:format(s.inBag)) .. "|r", primary = primary } }
         primary = false
-      elseif full then
+      elseif full and #banked == 0 then
         entries[#entries + 1] = { lv = "", wide = true, left = "|cff1eff00" .. S.road_bag .. "|r" }
+      end
+      -- complete thanks to the bank: one blue line says what to take there
+      if full and #banked > 0 then
+        entries[#entries + 1] = { lv = "", wide = true, left = S.bank_blue .. S.road_bank:format(ns.Shopping.FetchText(banked)) .. "|r", tip = banked[1].tip }
       end
       if not full then   -- one row per reagent (up to 3): each has its own "comment l'obtenir" tooltip
         local shown = 0
@@ -1072,6 +1083,10 @@ local function addRoadmap(entries, p)
         for _, miss in ipairs(s.missing) do
           shown = shown + 1
           if shown <= 3 then entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. S.road_missing:format(miss.n, miss.name) .. "|r", tip = miss.tip } end
+        end
+        -- what is short but waits in the bank: one blue line per reagent (up to 2)
+        for i = 1, math.min(2, #banked) do
+          entries[#entries + 1] = { lv = "", wide = true, left = S.bank_blue .. S.road_bank_more:format(banked[i].n, banked[i].name) .. "|r", tip = banked[i].tip }
         end
       end
     end
@@ -1115,6 +1130,7 @@ local function renderJob(res)
   local level = ns.Goal() ~= "gold"
   f.footPin:Hide()
   if level then
+    ns.ShoppingList.Feed(res)
     local line, target, rank = roadFooter(res)
     f.footer:SetText(line)
     if target then
@@ -1176,11 +1192,14 @@ local function renderJob(res)
     end
   end
   f.bagOff:SetShown(filtered and nothing)
+  local bankNote = level and ns.ShoppingList.BankNote()
+  if bankNote then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. bankNote .. "|r" } end
   setLines(entries, {}, W.Layout.job.lines)
 end
 
 -- Called by Learned.lua when a profession window was read: refresh the leveling tab if it is the one shown.
 function W.OnData()
+  ns.ShoppingList.Update()
   if f and f:IsShown() and current == "job" then W.Refresh() end
 end
 
@@ -1191,6 +1210,7 @@ function W.UpdateControls()
   f.bagBox:SetShown(current == "job" and ns.Goal() == "gold")
   f.recipesBtn:SetShown(current == "job" and ns.Goal() == "level")
   f.recipesBtn.label:SetText(W.recipesOpen and S.road_recipes_open or S.road_recipes)
+  W.UpdateShopButton()
   for key, b in pairs(f.goalBtns) do        -- the active objective is lit gold, the other dim
     local on = ns.Goal() == key
     b.edge:SetColorTexture(on and 0.83 or 0.35, on and 0.69 or 0.15, on and 0.22 or 0.1)
@@ -1201,6 +1221,14 @@ function W.UpdateControls()
 end
 
 W.RenderJob = renderJob
+
+-- "Liste de courses (N)": shown on the Métier tab of the roadmap when something is short or waits in the bank (ShoppingList.lua).
+function W.UpdateShopButton()
+  if not (f and f.shopBtn) then return end
+  local label, visible = ns.ShoppingList.ButtonInfo()
+  f.shopBtn.label:SetText(label)
+  f.shopBtn:SetShown(visible and current == "job" and ns.Goal() == "level")
+end
 
 -- Objective of the Métier tab ("level" or "gold"), remembered per character.
 function W.SetGoal(goal)
@@ -1286,6 +1314,11 @@ local function refreshJobLater()
     jobRefreshPending = false
     if f and f:IsShown() and current == "job" and not InCombatLockdown() then W.Refresh() end
   end)
+end
+
+-- The bank snapshot changed (BankEvents.lua): the roadmap counts it.
+function W.OnBank()
+  if f and f:IsShown() and current == "job" then refreshJobLater() end
 end
 
 local castToken = 0

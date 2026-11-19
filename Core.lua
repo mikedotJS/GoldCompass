@@ -111,6 +111,7 @@ function ns.Context()
     disenchant = function(id) return skills["Enchanting"] and ns.Prices.Disenchant(id) or nil end,
     index = ns.index,
     owned = function(id) return C_Item.GetItemCount(id, false, false, false) end,   -- what the bags hold (bags only, no bank)
+    bank = ns.Bank.Count,                                                           -- what the bank held when it was last seen
   }
 end
 
@@ -490,6 +491,7 @@ function ns.HowToEnv()
     faction = faction, fr = fr, mapID = here, place = place, here = at, level = UnitLevel("player"),
     itemName = function(id) return ((C_Item and C_Item.GetItemInfo) or GetItemInfo)(id) end,
     owned = function(id) return C_Item.GetItemCount(id, false, false, false) end,
+    banked = ns.Bank.Count,
     price = safePrice, money = ns.Money,
     exact = function(copper)
       local coin = (C_CurrencyInfo and C_CurrencyInfo.GetCoinTextureString) or GetCoinTextureString
@@ -525,7 +527,9 @@ end
 -- (the collapsible list) and the trainer to visit when the cap is reached.
 function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   local L = ns.Leveling
-  local rctx = setmetatable({ how = function(id) return reagentHow(ctx, id) end }, { __index = ctx })
+  -- the roadmap counts the bags and the bank (the bags first); the part in the bags alone feeds the "Fabriquer" buttons
+  local rctx = setmetatable({ how = function(id) return reagentHow(ctx, id) end, bagOwned = ctx.owned,
+    owned = function(id) return ctx.owned(id) + (ctx.bank and ctx.bank(id) or 0) end }, { __index = ctx })
   local learn = {}
   for _, bucket in ipairs({ entry.learn and entry.learn.now or {}, entry.learn and entry.learn.soon or {} }) do
     for _, row in ipairs(bucket) do learn[#learn + 1] = row end
@@ -554,6 +558,12 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
       s.craft = { id = s.rec.id, times = s.times, prof = p.name, line = p.line }
       for _, m in ipairs(s.missing) do m.name = ns.ItemName(m.item); reagentTip(m, m.n) end
       for _, m in ipairs(s.subs) do m.name = ns.ItemName(m.item); reagentTip(m, m.need) end
+      for _, m in ipairs(s.banked) do
+        local short = 0
+        for _, miss in ipairs(s.missing) do if miss.item == m.item then short = miss.n end end
+        m.name = ns.ItemName(m.item)
+        reagentTip(m, short)
+      end
     elseif s.kind == "learn" then
       s.name, s.target = s.row.name or ns.Fmt.RecipeName(s.rec), s.row.target
       local spec = ns.HowTo.LearnSpec(s.rec, s.name, s.target, p.name)
@@ -578,7 +588,8 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
 end
 
 -- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).
-function ns.RunLeveling(done)
+-- `withRoad` builds the roadmap whatever the objective is (the shopping list follows the roadmap even while the tab shows gold).
+function ns.RunLeveling(done, withRoad)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
   local list = ns.ProfessionList()
   if #list == 0 then return done({ state = "empty_prof" }) end
@@ -656,7 +667,11 @@ function ns.RunLeveling(done)
             end
           end
           entry.missingNames = names
-          if entry.goal ~= "gold" then entry.road = ns.BuildRoadmap(p, data, ctx, entry, thresholds) end
+          if entry.goal ~= "gold" then entry.road = ns.BuildRoadmap(p, data, ctx, entry, thresholds)
+          elseif withRoad then
+            local built, road = pcall(ns.BuildRoadmap, p, data, ctx, entry, thresholds)
+            entry.road = built and road or nil
+          end
         end
         profs[#profs + 1] = entry
       end
