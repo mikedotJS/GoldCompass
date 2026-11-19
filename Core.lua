@@ -616,7 +616,10 @@ function ns.RunLeveling(done)
         data = data and ns.SectionData(data, p.line)
         -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
         -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
-        if not data then
+        if ns.RouteMap.LINES[p.line] and ns.Goal() ~= "gold" and (not data or next(data.recipes) == nil) then
+          -- "Où monter": Herbalism and Skinning have no profession window to read, their roadmap is the zones that give skill points
+          entry.status, entry.road = "plan", ns.BuildRoadmap(p, { skill = p.skill, max = p.max, recipes = {} }, ctx, {}, function() end)
+        elseif not data then
           entry.status = "unseen"
         elseif next(data.recipes) == nil then
           entry.status = "norecipes"

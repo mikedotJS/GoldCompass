@@ -1065,7 +1065,7 @@ local function addWhere(entries, p)
     end
   end
   if zones == 0 then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.route_none .. "|r" } end
-  entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (p.line == 393 and S.route_note_skin or S.route_note_gather) .. "|r" }
+  entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (r.where.skin and S.route_note_skin or S.route_note_gather) .. "|r" }
 end
 
 local function addRoadmap(entries, p)

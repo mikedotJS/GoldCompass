@@ -52,8 +52,9 @@ end
 
 -- Zones of Skinning that still give skill points at `skill`: the one place to change when the beast data changes shape.
 -- skinZones = ns.SkinZones: { [zoneID] = { { npcID, name, lvMin, lvMax, skill, spots, foreverSpots }, ... } }; a beast weighs
--- max(spots, foreverSpots). Returns { { zone, spots, beasts = { { id, name, lo, hi, spots } best first, FOCUS at most },
--- lo, hi (levels of those beasts), last } }.
+-- max(spots, foreverSpots). Returns { { zone, spots, beasts = { { id, name, lo, hi, spots } best first, FOCUS at most, the ones named
+-- and counted }, all = every beast that still gives points (the route goes through all their known points), lo, hi (levels of
+-- the beasts), last } }.
 function R.SkinZones(skill, skinZones)
   local out = {}
   for zone, list in pairs(skinZones) do
@@ -65,7 +66,7 @@ function R.SkinZones(skill, skinZones)
     end
     if #beasts > 0 then
       table.sort(beasts, bySpots)
-      local z = { zone = zone, spots = 0, beasts = {}, last = 0 }
+      local z = { zone = zone, spots = 0, beasts = {}, all = beasts, last = 0 }
       for i = 1, math.min(R.FOCUS, #beasts) do
         local b = beasts[i]
         z.beasts[i] = b

@@ -9,7 +9,8 @@ ns.RouteMap = RM
 
 local ARRIVE = 40        -- yards from a point where the next one takes over
 local TICK = 0.5         -- seconds between two checks of the player's position
-local ENGLISH = { ["Herb Gathering"] = true, ["Mining"] = true, ["Skinning"] = true }
+-- the professions that have an "Où monter": skill line ID -> English name (the node type of GatherMate2 for the first two)
+RM.LINES = { [182] = "Herb Gathering", [186] = "Mining", [393] = "Skinning" }
 
 local function french() return GetLocale and GetLocale() == "frFR" end
 
@@ -101,15 +102,27 @@ end
 -- The steps of "Où monter" for a gathering profession p (ns.ProfessionList entry), with the roadmap `road` (Leveling.Roadmap) and the
 -- English profession name; nil for the other professions. A zone step carries { from, to, zone = mapID, spots, names, lo, hi, points }.
 function RM.Plan(p, road, english)
-  if not ENGLISH[english] or not p.skill then return end
+  if not p.skill or RM.LINES[p.line] ~= english then return end
   local ctx = { level = UnitLevel("player"), continent = continent(),
     contOf = function(zone) for _, m in pairs(ns.MapIDs) do if m[1] == zone then return m[2] end end end,
     lowest = function(zone) return ns.Zones[zone] and ns.Zones[zone][2] end }
   local function lookup(skill)
-    if english == "Skinning" then
-      return ns.Route.Order(ns.Route.SkinZones(skill, ns.SkinZones or {}), ctx)
+    local list
+    if english == "Skinning" then   -- the one place that says which zones and beasts to skin: ns.SkinZones (Data/ForeverSkinZones.lua)
+      list = ns.Route.SkinZones(skill, ns.SkinZones or {})
+    else
+      list = ns.Route.GatherZones(english, skill, ns.GatherNodes, counts())
     end
-    return ns.Route.Order(ns.Route.GatherZones(english, skill, ns.GatherNodes, counts()), ctx)
+    -- a zone with no known point to walk through goes after the ones that have some (the loop needs points)
+    local has = {}
+    for _, z in ipairs(list) do
+      if z.all then has[z] = #skinPoints(z.zone, z.all) > 0 end
+    end
+    ns.Route.Order(list, ctx)
+    local kept, rest = {}, {}
+    for _, z in ipairs(list) do table.insert(has[z] == false and rest or kept, z) end
+    for _, z in ipairs(rest) do kept[#kept + 1] = z end
+    return kept
   end
   local plan = ns.Route.Plan({ skill = p.skill, max = p.max, nextRank = road.nextRank, capped = road.capped, rankNow = road.rankNow,
     rankAt = road.rankAt, lookup = lookup })
@@ -126,7 +139,7 @@ function RM.Plan(p, road, english)
           if #step.names < ns.Route.NAMES then step.names[#step.names + 1] = fr and npc and npc[4] or b.name end
         end
         step.lo, step.hi = z.lo, z.hi
-        step.points = skinPoints(z.zone, z.beasts)
+        step.points = skinPoints(z.zone, z.all)
       else               -- herbs, ore: the items of the nodes, the level range of the zone
         local ids, seen = {}, {}
         for _, n in ipairs(z.nodes) do
@@ -145,7 +158,7 @@ function RM.Plan(p, road, english)
     end
     steps[#steps + 1] = step
   end
-  return { steps = steps }
+  return { steps = steps, skin = english == "Skinning" }
 end
 
 -- ---- the route on the map ------------------------------------------------------------------------------------------------------
