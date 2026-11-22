@@ -1108,14 +1108,19 @@ local function addWhere(entries, p)
 end
 
 -- "sert de 80 à 120 : ~2 ingrédients par point, contre ~6 avec Gants en cuir": why the roadmap asks to learn a recipe (Leveling.Roadmap,
--- step.why). A recipe taken along at a trainer visit says when it will serve.
+-- step.why).
 local function units(x)
   if x >= 10 then return ("%d"):format(math.floor(x + 0.5)) end
   return (("%.1f"):format(x):gsub("%.0$", ""):gsub("%.", ","))
 end
+-- "en passant, apprends aussi : Baguette runique (dès 143)": the later trainer recipes of the plan that can be learned at this visit.
+function W.AlsoText(also)
+  local parts = {}
+  for i = 1, math.min(2, #also) do parts[i] = S.road_also_one:format(ns.Fmt.RecipeName(also[i].rec), also[i].from) end
+  return S.road_also:format(table.concat(parts, ", ")) .. (#also > 2 and S.road_also_more:format(#also - 2) or "")
+end
 function W.WhyText(s)
   local w = s.why
-  if s.early then return S.road_why_early:format(w.from, w.to) end
   if not w.alt then return S.road_why_only:format(w.from, w.to) end
   local name = ns.Fmt.RecipeName(w.alt)
   if w.altPerPoint > w.perPoint then return S.road_why_lean:format(w.from, w.to, name, units(w.perPoint), units(w.altPerPoint)) end
@@ -1143,6 +1148,7 @@ local function addRoadmap(entries, p)
       entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r"
         .. (s.needLevel and ("|cffff8000" .. S.road_rank_level:format(s.needLevel) .. "|r") or ""),
         target = next and r.trainer or nil, recipe = name, tip = next and r.rankTip or nil }
+      if s.also then entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. W.AlsoText(s.also) .. "|r" } end
     elseif s.kind == "learn" then
       local zone = zoneOf(s.target)
       local source = ns.Fmt.Source(s.rec)
@@ -1151,6 +1157,7 @@ local function addRoadmap(entries, p)
         target = s.target, recipe = s.name, tip = s.tip }
       -- why this recipe: the skill range it is crafted for, and what it replaces
       entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. W.WhyText(s) .. "|r", tip = s.tip }
+      if s.also then entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. W.AlsoText(s.also) .. "|r" } end
     else
       local range = s.to > s.from and S.road_range:format(s.from, s.to) or tostring(s.from)
       entries[#entries + 1] = { lv = "|cffa89c80" .. range .. "|r", wide = true,

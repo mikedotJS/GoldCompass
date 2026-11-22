@@ -730,14 +730,13 @@ end
 -- nothing here reads a price of a reagent or an item the game may not have loaded yet, so the list is the same from one refresh to the
 -- next. ctx = { known(id), offer(id) (optional), price (for the teaching items) }.
 -- Returns rows { rec (the shape V.Learnable gives), recommend = true, needMax = the profession maximum the recipe's rank asks for,
--- rankGated = the recorded trainer window lists it as not available yet, tier = 1 a sure source (a trainer, a vendor selling for gold),
--- 2 the others (a quest, a pattern with an auction price, a vendor asking a currency or a standing) }.
+-- rankGated = the recorded trainer window lists it as not available yet, effort = V.LEARN_EFFORT of its source }.
 function V.Candidates(crafts, skill, ctx)
   local out = {}
   for _, c in ipairs(crafts) do
     local offer = ctx.offer and ctx.offer(c.id)
     local at = offer and math.max(1, offer.skill or 1) or c.learn
-    if at and c.out and #c.mats > 0 and not (offer and offer.status == "used") and not (c.how and c.how.kind == "unknown" and not offer)
+    if at and #c.mats > 0 and not (offer and offer.status == "used") and not (c.how and c.how.kind == "unknown" and not offer)
       and not ctx.known(c.id) then
       local way, fee, src, recommend, feeAge = obtain(c, offer, ctx)
       if recommend then
@@ -745,9 +744,10 @@ function V.Candidates(crafts, skill, ctx)
           d = V.EstimateColor(math.max(skill, at), at, c.y, c.g, c.gr), trainer = offer, fee = fee, feeAge = feeAge,
           npcNames = way and way.npcs, teachItem = way and way.itemID, th = { at, c.y or at + 30, c.g or at + 45, c.gr or at + 60 } }
         local kind = way and way.kind or "trainer"
+        local gold = kind == "vendor" and way.vendorCost and not way.currency and not way.standing   -- a vendor, for gold, to anyone
         out[#out + 1] = { rec = rec, recommend = true, needMax = way and way.rank and RANK_MAX[way.rank] or nil,
           rankGated = offer and offer.status == "unavailable" and at <= skill or nil,
-          tier = (kind == "trainer" or (kind == "vendor" and not way.currency and not way.standing)) and 1 or 2 }
+          effort = kind == "trainer" and V.LEARN_EFFORT.trainer or (gold and V.LEARN_EFFORT.vendor) or V.LEARN_EFFORT.other }
       end
     end
   end
@@ -769,8 +769,8 @@ end
 -- it never changes it (the plan from a later skill is the end of the plan from an earlier one, and a recipe learned as told becomes a
 -- known one that the plan already counted on).
 -- THE STEPS are the first ones of that plan: a rank where it can be trained (25 points below the cap it lifts), a recipe to learn right
--- before the crafts that use it, with the reason (`why`), and the crafts with what is owned and what is missing. At a trainer (a rank, a
--- trainer recipe) the later trainer recipes of the plan that can already be learned come along (`early`): one visit, not three.
+-- before the crafts that use it, with the reason (`why`), and the crafts with what is owned and what is missing. A visit to a trainer (a
+-- rank, a trainer recipe) notes the later trainer recipes of the plan that can already be learned (`also`): one visit, not three.
 -- Before the plan, up to V.BAG_STEPS steps use up what the bags already hold (`bonus`): a known recipe that still gives points and either
 -- needs nothing the first recipe of the plan needs, or is within 15 % of it.
 -- Returns { steps, path, stopped = "cap" | "steps" | "none", capped, skill, skillEnd, cap, nextRank, rankAt, rankNow, reach, target }.
@@ -779,15 +779,16 @@ end
 --   a step is { kind = "craft", rec, d, state = "bag" | "missing", from, to, times, subs = { {item, need} }, missing = { {item, n, how} },
 --     used = { [item] = n taken from what is owned }, banked = { {item, n} } (the part of `used` that is in the bank),
 --     inBag = crafts the bags alone feed, bagTimes = crafts what is owned feeds, learned = learned earlier in the roadmap, bonus } or
---   { kind = "learn", rec, row, at, d, from, to (the skill range it is crafted for), early, why = { from, to, perPoint, alt (the best
---     recipe known by then, nil when none gives a point), altPerPoint } } or { kind = "rank", rank, at }.
+--   { kind = "learn", rec, row, at, d, from, to (the skill range it is crafted for), why = { from, to, perPoint, alt (the best recipe
+--     known by then, nil when none gives a point), altPerPoint }, also = { { rec, from, to } } } or { kind = "rank", rank, at, also }.
 V.ROADMAP_STEPS = 5
 V.MIN_CHANCE = 0.2   -- below this a craft is not worth a step (the chance only falls towards gray, it never reaches 0 by crafting)
 V.MAX_SKILL = 300
 V.BAG_STEPS = 2
 -- What a recipe to learn must save, in ingredients, to be part of the plan (the trip, the fee). Estimates: a trainer is on the way, a
--- vendor, a pattern to buy or a quest less so.
-V.LEARN_EFFORT = { trainer = 8, vendor = 16, item = 16, quest = 24 }
+-- vendor selling for gold less so, and the rest (a quest, a pattern from the auction house, a vendor asking a currency, a standing or
+-- an unknown price) is taken only when it saves a lot.
+V.LEARN_EFFORT = { trainer = 8, vendor = 16, other = 30 }
 
 -- Chance of a skill point at `s` from the thresholds { orange, yellow, green, gray } (the Classic formula, as V.Chance).
 local function chanceAt(th, s)
@@ -929,29 +930,21 @@ function V.Roadmap(prof, ctx, opts)
     seen[rec.id] = true
     add(rec, planTh(rec, opts.thresholds and opts.thresholds(rec.id), start), start, 0)
   end
-  -- the recipes to learn: the sure ones (row.tier 1: a trainer, a vendor selling for gold); the others (a quest, a pattern from the auction
-  -- house, a vendor asking a currency or a standing: tier 2) join only when the plan cannot reach the maximum without them
-  local function addRows(tier)
-    local added = false
-    for _, row in ipairs(opts.candidates or opts.learn or {}) do
-      local rec = row.rec
-      if (row.tier or 1) == tier and not seen[rec.id] and row.recommend ~= false and not row.unpriced and not row.gray and rec.th and rec.learn then
-        seen[rec.id], added = true, true
-        local lo = math.max(rec.learn, start)
-        if row.needMax and (prof.max or math.huge) < row.needMax then
-          lo = math.max(lo, row.needMax - 100)                       -- the rank that gives this maximum is trained 100 points below it
-        elseif row.rankGated then
-          lo = result.nextRank and math.max(lo, result.rankAt) or math.huge
-        end
-        local kind = rec.way and rec.way.kind or "trainer"
-        add(rec, rec.th, lo, row.effort or V.LEARN_EFFORT[kind] or V.LEARN_EFFORT.vendor, row)
+  for _, row in ipairs(opts.candidates or opts.learn or {}) do
+    local rec = row.rec
+    if not seen[rec.id] and row.recommend ~= false and not row.unpriced and not row.gray and rec.th and rec.learn then
+      seen[rec.id] = true
+      local lo = math.max(rec.learn, start)
+      if row.needMax and (prof.max or math.huge) < row.needMax then
+        lo = math.max(lo, row.needMax - 100)                         -- the rank that gives this maximum is trained 100 points below it
+      elseif row.rankGated then
+        lo = result.nextRank and math.max(lo, result.rankAt) or math.huge
       end
+      local kind = rec.way and rec.way.kind or "trainer"
+      add(rec, rec.th, lo, row.effort or V.LEARN_EFFORT[kind] or V.LEARN_EFFORT.other, row)
     end
-    return added
   end
-  addRows(1)
   local plan = V.Cheapest(list, start, target)
-  if plan.reach < target and addRows(2) then plan = V.Cheapest(list, start, target) end
   result.reach = plan.reach
   local function costAt(r, s)
     local p = chanceAt(r.th, s)
@@ -1014,30 +1007,32 @@ function V.Roadmap(prof, ctx, opts)
     for j = 1, si - 1 do try(segs[j].r) end
     return { from = seg.from, to = seg.to, perPoint = costAt(seg.r, seg.from), alt = alt and alt.rec or nil, altPerPoint = alt and altCost or nil }
   end
-  local function learn(si, skill, early)
-    local seg = segs[si]
-    local r = seg.r
-    learned[r.id] = true
-    events[#events + 1] = { kind = "learn", rec = r.rec, row = r.row, at = skill, d = V.ColorAt(math.max(skill, r.rec.learn or skill), r.th),
-      from = seg.from, to = seg.to, early = early, why = why(si) }
-  end
-  -- at a trainer: the later trainer recipes of the plan that can be learned by now come along
+  -- at a trainer (a rank, a trainer recipe): the later trainer recipes of the plan that can be learned by then, a note on that step
+  -- (`also`). Their own step stays where they are first crafted, so nothing moves once the visit is done.
   local function visit(si, skill)
+    local also = {}
     for j = si, #segs do
       local r = segs[j].r
       local need = r.row and r.row.needMax
       if not r.known and not learned[r.id] and byTrainer(r) and segs[j].from > skill and (r.rec.learn or math.huge) <= skill
         and not (r.row and r.row.rankGated) and (not need or need <= trained) then
-        learn(j, skill, true)
+        also[#also + 1] = { rec = r.rec, from = segs[j].from, to = segs[j].to }
       end
     end
+    return #also > 0 and also or nil
+  end
+  local function learn(si, skill)
+    local seg = segs[si]
+    local r = seg.r
+    learned[r.id] = true
+    events[#events + 1] = { kind = "learn", rec = r.rec, row = r.row, at = skill, d = V.ColorAt(math.max(skill, r.rec.learn or skill), r.th),
+      from = seg.from, to = seg.to, why = why(si), also = byTrainer(r) and visit(si + 1, skill) or nil }
   end
   local function rankEvents(si, skill)                -- the ranks that can be trained by `skill` and are not placed yet
     while ranks[ri] and ranks[ri].at <= skill do
       trained = ranks[ri].cap
-      events[#events + 1] = { kind = "rank", rank = ranks[ri].rank, at = skill }
+      events[#events + 1] = { kind = "rank", rank = ranks[ri].rank, at = skill, also = visit(si, skill) }
       ri = ri + 1
-      visit(si, skill)
     end
   end
 
@@ -1083,10 +1078,7 @@ function V.Roadmap(prof, ctx, opts)
     local r, a = seg.r, seg.from
     while a < seg.to do
       rankEvents(si, a)
-      if not r.known and not learned[r.id] then
-        learn(si, a)
-        if byTrainer(r) then visit(si + 1, a) end
-      end
+      if not r.known and not learned[r.id] then learn(si, a) end
       local b, crafts = seg.to, 0
       if ranks[ri] and ranks[ri].at < b then b = ranks[ri].at end       -- the craft stops where the next rank can be trained
       for k = a, b - 1 do crafts = crafts + 1 / chanceAt(r.th, k) end

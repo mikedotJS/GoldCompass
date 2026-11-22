@@ -500,7 +500,7 @@ function ns.SectionData(data, line, live)
   end
   local skill, max = live and live.skill or data.skill, live and live.max or data.max
   for _, c in ipairs(live and live.crafts or {}) do
-    if not recipes[c.id] and c.out and #c.mats > 0 and live.known(c.id) then
+    if not recipes[c.id] and #c.mats > 0 and live.known(c.id) then
       recipes[c.id] = { id = c.id, name = c.name, out = c.out, oq = c.oq, mats = c.mats, fresh = true,
         d = ns.Leveling.EstimateColor(skill or 0, c.learn or 1, c.y, c.g, c.gr) }
     end

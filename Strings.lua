@@ -162,7 +162,7 @@ ns.S = {
   road_rank_level = " · niveau %d requis",
   road_why_only = "sert de %d à %d : tes autres recettes ne donnent plus de points",
   road_why_fade = "sert de %d à %d : %s ne donne presque plus de points",
-  road_why_early = "servira de %d à %d : à prendre pendant que tu es chez l'entraîneur",
+  road_also = "en passant, apprends aussi : %s", road_also_one = "%s (dès %d)", road_also_more = " et %d autres",
   road_rank = "Apprendre le rang %s", road_trainer = "entraîneur", road_with_bag = "%d avec ton sac",
   road_next_named = "%s : prochaine étape : rang %s à %d",
   road_next = "Prochaine étape : rang %s à %d", road_capped = "Plafond atteint : apprends le rang %s",
