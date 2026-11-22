@@ -90,8 +90,10 @@ describe("Roadmap counts the bank", function()
     assert.are.equal(2, gloves.bagTimes)
     assert.are.equal(0, gloves.inBag)
     assert.are.equal("10", tostring(gloves.missing[1].item))
-    assert.are.equal(114, gloves.missing[1].n)
-    assert.are.equal(70, gloves.missing[2].n)
+    -- gloves from 77 to 95 (their chance is under 0.2 from there): 30 / (100 - s) crafts per point, 44 crafts in all
+    assert.are.equal(44, gloves.times)
+    assert.are.equal(126, gloves.missing[1].n)           -- 3 x 44 leather, 6 owned after the belts
+    assert.are.equal(78, gloves.missing[2].n)            -- 2 x 44 thread, 10 owned after the belts
   end)
 
   it("says nothing about the bank when everything is in the bags: the old behaviour", function()

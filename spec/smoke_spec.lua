@@ -1204,7 +1204,7 @@ describe("profession leveling tab", function()
   end)
 
   it("names the reagents that have no price instead of showing a number", function()
-    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } }, pickupNoAh = true })
+    setup({ scanned = true, profs = { { 171, 50, "Alchimie", 75 } }, pickupNoAh = true, noSpell = true })   -- the game knows no other recipe
     local ns = loadAddon()
     ns.db = { buy = {} }
     -- reagent 9999 has no AH price, no buy price (the stub gives AH prices to everything but pickup items)
@@ -1735,6 +1735,7 @@ describe("Fabriquer (craft button on the recommended recipe)", function()
   local function start(opts, tradeskill)
     opts = opts or {}
     opts.scanned, opts.profs = true, { { 171, 50, "Alchimie", 75 } }
+    if opts.noSpell == nil then opts.noSpell = true end       -- the game knows only the recipe of the window
     setup(opts)
     calls = { craft = {}, open = {} }
     _G.C_TradeSkillUI = {
@@ -2945,7 +2946,7 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
     for _, l in ipairs(allJobLines(ns)) do all[#all + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) end
     local text = table.concat(all, "\n")
     assert.matches("Cuisine  124/150\n[^\n]*\n[^\n]*", text)
-    assert.matches("Prochaine étape : rang Expert à 125", text)               -- Cooking 124: the rank is still ahead, in its own section
+    assert.matches("132 Apprendre le rang Expert", text)                      -- Cooking 124: the rank is a step of its own roadmap, after what the bags give
     assert.matches("Apprendre le rang Compagnon", text)                       -- Leatherworking 61 >= 50: the rank is the first step
     local first = text:find("Apprendre le rang Compagnon", 1, true)
     assert.is_true(first < (text:find("Ton parcours", 1, true) or 0) + 60)

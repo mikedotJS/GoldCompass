@@ -1298,12 +1298,17 @@ describe("Leveling.Roadmap", function()
     assert.is_true(r.steps[#r.steps].to == nil or r.steps[#r.steps].to > 75 or #r.steps >= 2)
   end)
 
-  it("B: below the rank's skill there is no rank step, the next rank is only announced", function()
+  it("B: below the rank's skill the rank is not the first step: it comes in the plan at the skill it can be trained from", function()
     local r = V.Roadmap(setup({ [10] = 12, [20] = 12 }, { skill = 40, max = 75 }))
     assert.is_nil(r.rankNow)
     assert.are.equal("Journeyman", r.nextRank)
     assert.are.equal(50, r.rankAt)
-    for _, st in ipairs(r.steps) do assert.are_not.equal("rank", st.kind) end
+    assert.are_not.equal("rank", r.steps[1].kind)
+    local rank
+    for _, st in ipairs(r.steps) do if st.kind == "rank" then rank = st end end
+    assert.are.equal(50, rank.at)
+    assert.are.equal("Journeyman", rank.rank)
+    for _, st in ipairs(r.steps) do assert.is_true(st.kind ~= "craft" or st.to <= 50 or st.from >= 50) end   -- a craft stops where the rank is trained
   end)
 
   it("the bag is consumed across steps: what the belt took is not there for the gloves", function()

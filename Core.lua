@@ -12,10 +12,11 @@ function ns.Print(msg) ns.Say(S.prefix .. " : " .. msg) end
 
 -- Request item data from the game for these item IDs, then call cb. Gives up after 5 seconds (PLAN.md step 1):
 -- items that did not load show as "objet #id".
+local itemsLoaded = {}   -- items the game has answered for this session: not asked again
 function ns.LoadItems(list, cb)
   local ids, seen = {}, {}
   for _, id in ipairs(list) do
-    if not seen[id] then seen[id] = true; ids[#ids + 1] = id end
+    if not seen[id] and not itemsLoaded[id] then seen[id] = true; ids[#ids + 1] = id end
   end
   local pending, finished = #ids, false
   local function finish() if not finished then finished = true; cb() end end
@@ -23,6 +24,7 @@ function ns.LoadItems(list, cb)
   C_Timer.After(5, finish)
   for _, id in ipairs(ids) do
     Item:CreateFromItemID(id):ContinueOnItemLoad(function()
+      itemsLoaded[id] = true
       pending = pending - 1
       if pending == 0 then finish() end
     end)
@@ -413,6 +415,7 @@ end
 function ns.Goal() return ns.char and ns.char.goal == "gold" and "gold" or "level" end
 
 -- Recipes to learn for a profession of ProfessionList (see Leveling.Learnable); nil when it has no recipe data.
+local wrongSide = {}   -- [faction .. recipeID] = true: a recipe only the other faction can get (found when its place was looked up)
 function ns.LearnFor(p, ctx, count, knownBest)
   local english = SKILL_LINES[p.line]
   local crafts = libCrafts(p, ctx.faction)
@@ -429,12 +432,17 @@ function ns.LearnFor(p, ctx, count, knownBest)
   own.sub = function(item) return byOut[item] end
   own.place = function(rec) return ns.Where.Target(rec, english, env) end
   local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
+  -- every recipe that can be learned on the way to the maximum (the roadmap plans with them), without the ones this faction cannot get
+  result.ahead = {}
+  for _, row in ipairs(ns.Leveling.Candidates(crafts, p.skill or 0, own)) do
+    if not wrongSide[ctx.faction .. row.rec.id] then result.ahead[#result.ahead + 1] = row end
+  end
   if result.beyond and result.beyond.rank then   -- where to train the rank that lifts the cap
     local b = result.beyond
     b.target = ns.Where.Target({ id = 0, learn = b.max + 1, src = nil, way = { rank = b.rank } }, english, env)
   end
-  for _, bucket in ipairs({ result.now, result.soon, result.gray, result.books }) do
-    for _, row in ipairs(bucket) do
+  -- where to go for a recipe, with the text the window shows; also asked by the roadmap for a recipe further ahead (result.place)
+  local function place(row)
       row.target = row.target or ns.Where.Target(row.rec, english, env)
       -- never an empty answer: the source itself ("butin", "conteneur", ...) when no place is known
       local t, way = row.target, row.rec.way
@@ -461,7 +469,15 @@ function ns.LearnFor(p, ctx, count, knownBest)
       t.extra = way and way.kind == "item" and ns.Fmt.SiteSources(way) or nil   -- what the site says: butin, pickpocket, pêche, quête
       t.note = ns.Fmt.PriceNote(row)
       if row.rec.src == "i" and row.rec.teachItem then row.rec.itemName = ns.ItemName(row.rec.teachItem) end
-    end
+      return t
+  end
+  for _, bucket in ipairs({ result.now, result.soon, result.gray, result.books }) do
+    for _, row in ipairs(bucket) do place(row) end
+  end
+  result.place = function(row)
+    local t = place(row)
+    if t.onlyFaction then wrongSide[ctx.faction .. row.rec.id] = true end   -- remembered: it never comes back in the plan
+    return t
   end
   return result
 end
@@ -474,12 +490,22 @@ end
 
 -- The recipes remembered for a profession, without the ones the Forever data places in another skill line (older saved data may
 -- hold leather recipes under Skinning): a copy; the section keeps its own profession name and skill line.
-function ns.SectionData(data, line)
+-- `live` (optional) = { skill, max (what the game says now: the window may be older), crafts (the Forever crafts of the profession),
+-- known(id) }: a craft the game knows that the window never listed was learned since it was read (at a trainer, from a pattern); it
+-- counts as known at once, with the Forever data's reagents (`fresh`), so the roadmap does not ask for another recipe in its place.
+function ns.SectionData(data, line, live)
   local recipes = {}
   for id, rec in pairs(data.recipes or {}) do
     if not (line and ns.ForeverDB:HasProfession(line)) or ns.ForeverDB:BelongsTo(line, id) ~= false then recipes[id] = rec end
   end
-  return { skill = data.skill, max = data.max, updated = data.updated, recipes = recipes }
+  local skill, max = live and live.skill or data.skill, live and live.max or data.max
+  for _, c in ipairs(live and live.crafts or {}) do
+    if not recipes[c.id] and c.out and #c.mats > 0 and live.known(c.id) then
+      recipes[c.id] = { id = c.id, name = c.name, out = c.out, oq = c.oq, mats = c.mats, fresh = true,
+        d = ns.Leveling.EstimateColor(skill or 0, c.learn or 1, c.y, c.g, c.gr) }
+    end
+  end
+  return { skill = skill, max = max, updated = data.updated, recipes = recipes }
 end
 
 -- Where a missing reagent comes from, for the roadmap: "vendor" (a merchant sells it), "skin", "herb", "ore", "ah" (an auction price is
@@ -563,16 +589,39 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   -- the roadmap counts the bags and the bank (the bags first); the part in the bags alone feeds the "Fabriquer" buttons
   local rctx = setmetatable({ how = function(id) return reagentHow(ctx, id) end, bagOwned = ctx.owned,
     owned = function(id) return ctx.owned(id) + (ctx.bank and ctx.bank(id) or 0) end }, { __index = ctx })
-  local learn = {}
-  for _, bucket in ipairs({ entry.learn and entry.learn.now or {}, entry.learn and entry.learn.soon or {} }) do
-    for _, row in ipairs(bucket) do learn[#learn + 1] = row end
+  -- the recipes within reach already have their place (ns.LearnFor); the ones further ahead get theirs when a step shows them
+  local lr = entry.learn
+  local near = {}
+  for _, bucket in ipairs({ lr and lr.now or {}, lr and lr.soon or {} }) do
+    for _, row in ipairs(bucket) do near[row.rec.id] = row end
   end
   -- the gathering professions have nothing to craft the way the roadmap means it: only their rank is followed
   local GATHERING = { [393] = true, [182] = true, [186] = true, [356] = true }
   local gathering = GATHERING[p.line] or false
-  local road = L.Roadmap(gathering and { skill = data.skill, max = data.max, recipes = {} } or data, rctx,
-    { thresholds = thresholds, learn = gathering and {} or learn })
+  local road
+  for _ = 1, 6 do
+    road = L.Roadmap(gathering and { skill = data.skill, max = data.max, recipes = {} } or data, rctx,
+      { thresholds = thresholds, candidates = gathering and {} or (lr and lr.ahead or {}) })
+    local again = false   -- a recipe the place lookup finds to be the other faction's leaves the plan, which is then made again
+    for _, s in ipairs(road.steps) do
+      if s.kind == "learn" then
+        local row = near[s.rec.id] or s.row
+        s.rec, s.name = row.rec, row.name or ns.Fmt.RecipeName(row.rec)
+        s.target = row.target or (lr.place and lr.place(row)) or nil
+        if s.target and s.target.onlyFaction then s.row.recommend, again = false, true end
+      end
+    end
+    if not again then break end
+  end
   road.gathering = gathering
+  -- a rank the character is too low to train (Classic's rule, Data/ForeverRanks.lua): the step says the level it asks for
+  for _, s in ipairs(road.steps) do
+    if s.kind == "rank" then
+      for _, r in ipairs(ns.Ranks and ns.Ranks[p.line] or {}) do
+        if r[1] == s.rank and r[3] and (ctx.level or 0) < r[3] then s.needLevel = r[3] end
+      end
+    end
+  end
   -- where to train the next rank (the rank trainer of the profession)
   if road.nextRank then
     road.rankTarget = ns.Where.Target({ id = 0, learn = (data.max or 0) + 1, src = nil, way = { rank = road.nextRank } }, SKILL_LINES[p.line], whereEnv(ctx))
@@ -598,7 +647,6 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
         reagentTip(m, short)
       end
     elseif s.kind == "learn" then
-      s.name, s.target = s.row.name or ns.Fmt.RecipeName(s.rec), s.row.target
       local spec = ns.HowTo.LearnSpec(s.rec, s.name, s.target, p.name)
       s.tip = function() return ns.HowTo.Step(spec, ns.HowToEnv()) end
     end
@@ -609,7 +657,6 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
     road.rankTarget = spec.target
     road.rankTip = function() return ns.HowTo.Step(spec, ns.HowToEnv()) end
   end
-  local lr = entry.learn
   road.trainer = road.rankTarget or (lr and ((lr.beyond and lr.beyond.target) or (lr.books and lr.books[1] and lr.books[1].target))) or nil
   if gathering then   -- "Où monter": the zones and the loop of the gathering professions (RouteMap.lua)
     local ok, where = pcall(ns.RouteMap.Plan, p, road, SKILL_LINES[p.line])
@@ -643,7 +690,7 @@ function ns.RunLeveling(done, withRoad)
     local offers = data and SKILL_LINES[p.line] and ns.TrainerLog.Offers(ns.db or {}, SKILL_LINES[p.line], faction) or {}
     for _, craft in ipairs(data and libCrafts(p, faction) or {}) do
       local at = offers[craft.id] and math.max(1, offers[craft.id].skill or 1) or craft.learn
-      if at and at <= (p.skill or 0) + ns.Leveling.SOON then
+      if at and (craft.gr or at + 60) > (p.skill or 0) then   -- every recipe that can still give a point: the roadmap may show it
         ids[#ids + 1] = craft.out
         if craft.how and craft.how.itemID then ids[#ids + 1] = craft.how.itemID end
         for _, m in ipairs(craft.mats) do ids[#ids + 1] = m[1] end
@@ -657,7 +704,12 @@ function ns.RunLeveling(done, withRoad)
       for _, p in ipairs(list) do
         local entry = { name = p.name, skill = p.skill, max = p.max }
         local data = ns.char.profs[p.name]
-        data = data and ns.SectionData(data, p.line)
+        if data then
+          local english = SKILL_LINES[p.line]
+          local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}
+          data = ns.SectionData(data, p.line, { skill = p.skill, max = p.max, crafts = libCrafts(p, ctx.faction),
+            known = function(id) return ctx.known(id) or (offers[id] ~= nil and offers[id].status == "used") end })
+        end
         -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
         -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
         if ns.RouteMap.LINES[p.line] and ns.Goal() ~= "gold" and (not data or next(data.recipes) == nil) then

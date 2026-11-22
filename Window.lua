@@ -1107,6 +1107,21 @@ local function addWhere(entries, p)
   entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. (r.where.skin and S.route_note_skin or S.route_note_gather) .. "|r" }
 end
 
+-- "sert de 80 à 120 : ~2 ingrédients par point, contre ~6 avec Gants en cuir": why the roadmap asks to learn a recipe (Leveling.Roadmap,
+-- step.why). A recipe taken along at a trainer visit says when it will serve.
+local function units(x)
+  if x >= 10 then return ("%d"):format(math.floor(x + 0.5)) end
+  return (("%.1f"):format(x):gsub("%.0$", ""):gsub("%.", ","))
+end
+function W.WhyText(s)
+  local w = s.why
+  if s.early then return S.road_why_early:format(w.from, w.to) end
+  if not w.alt then return S.road_why_only:format(w.from, w.to) end
+  local name = ns.Fmt.RecipeName(w.alt)
+  if w.altPerPoint > w.perPoint then return S.road_why_lean:format(w.from, w.to, name, units(w.perPoint), units(w.altPerPoint)) end
+  return S.road_why_fade:format(w.from, w.to, name)
+end
+
 local function addRoadmap(entries, p)
   local r = p.road
   local rank = r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
@@ -1118,19 +1133,24 @@ local function addRoadmap(entries, p)
   end
   if r.gathering and r.where then return addWhere(entries, p) end
   if #r.steps > 0 then entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_title .. "|r" } end
-  local primary = true
+  local primary, rankShown = true, false
   for _, s in ipairs(r.steps) do
-    if s.kind == "rank" then       -- the skill already allows the next rank: it comes first, it lifts the cap
-      local zone = zoneOf(r.trainer)
-      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_rank:format(rank), tip = r.rankTip }
-      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r",
-        target = r.trainer, recipe = rank, tip = r.rankTip }
+    if s.kind == "rank" then       -- a rank where the skill allows it: it lifts the cap. The trainer and the tooltip are the next rank's
+      local name, next = S.rank_names[s.rank] or s.rank, s.rank == r.nextRank
+      local zone = next and zoneOf(r.trainer)
+      rankShown = rankShown or next
+      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_rank:format(name), tip = next and r.rankTip or nil }
+      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r"
+        .. (s.needLevel and ("|cffff8000" .. S.road_rank_level:format(s.needLevel) .. "|r") or ""),
+        target = next and r.trainer or nil, recipe = name, tip = next and r.rankTip or nil }
     elseif s.kind == "learn" then
       local zone = zoneOf(s.target)
       local source = ns.Fmt.Source(s.rec)
       entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.road_learn:format(s.name), tip = s.tip }
       entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(source, zone) or source) .. "|r",
         target = s.target, recipe = s.name, tip = s.tip }
+      -- why this recipe: the skill range it is crafted for, and what it replaces
+      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. W.WhyText(s) .. "|r", tip = s.tip }
     else
       local range = s.to > s.from and S.road_range:format(s.from, s.to) or tostring(s.from)
       entries[#entries + 1] = { lv = "|cffa89c80" .. range .. "|r", wide = true,
@@ -1169,8 +1189,8 @@ local function addRoadmap(entries, p)
   if #r.steps == 0 and not r.gathering then
     entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank, tip = rank and r.rankTip or nil }
   end
-  -- the next rank, while the skill does not allow it yet
-  if rank and not r.rankNow then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_next:format(rank, r.rankAt) .. "|r", tip = r.rankTip } end
+  -- the next rank, while the skill does not allow it yet (unless a step above already says it)
+  if rank and not r.rankNow and not rankShown then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_next:format(rank, r.rankAt) .. "|r", tip = r.rankTip } end
 end
 
 -- The footer line of the roadmap: the rank that lifts the cap (with its pin once the cap is reached), from the first profession that has one.
