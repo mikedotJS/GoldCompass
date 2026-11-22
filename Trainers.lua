@@ -70,10 +70,12 @@ end
 
 -- Saves a record of trainer `npc` (name) standing at map position (mapID, x, y in percent). Replaces that trainer's
 -- previous record entirely.
-function T.Save(db, record, npc, faction, where, now)
+-- `by` = the character who saw the window and `skill` = its skill in the profession then: "already known" and "not available" are
+-- that character's, at that skill (T.Offers); the skill asked and the fee hold for everyone.
+function T.Save(db, record, npc, faction, where, now, by, skill)
   db.trainers = db.trainers or {}
   db.trainers[("%s|%s|%s"):format(faction, npc, record.prof)] = { npc = npc, f = faction, prof = record.prof,
-    mapID = where.mapID, x = where.x, y = where.y, zone = where.zone, seen = now, offers = record.offers }
+    mapID = where.mapID, x = where.x, y = where.y, zone = where.zone, seen = now, offers = record.offers, by = by, skill = skill }
 end
 
 -- NPC id of a creature GUID ("Creature-0-4379-1-76-3497-00001A2B3C"), nil for anything else.
@@ -107,16 +109,21 @@ function T.Recorded(db)
 end
 
 -- What the recorded trainers of this faction offer for a profession (English name): { [craftID] = { skill, cost, status,
--- npc, mapID, x, y, zone } } with the cheapest offer when several trainers teach a recipe; a recipe a trainer lists as
--- already known (status "used") is marked used. Pure.
-function T.Offers(db, prof, faction)
+-- npc, mapID, x, y, zone, mine, seenAt } } with the cheapest offer when several trainers teach a recipe; a recipe a trainer lists as
+-- already known (status "used") is marked used. `me` = the character asking: the status of a window another character saw is read as
+-- "available"; mine = `me` saw it; seenAt = the skill `me` had then (a recipe "unavailable" although that skill was enough needs
+-- something else, a rank). Pure.
+function T.Offers(db, prof, faction, me)
   local best = {}
   for _, t in pairs(db.trainers or {}) do
     if t.prof == prof and t.f == faction then
+      -- a window another character saw says nothing about what `me` knows or may learn (a record without `by` is an older one: kept as is)
+      local mine = t.by == nil or t.by == me
       for id, o in pairs(t.offers) do
         local cur = best[id]
-        local offer = { skill = o.skill, cost = o.cost, status = o.status, npc = t.npc, mapID = t.mapID, x = t.x, y = t.y, zone = t.zone }
-        if not cur or (o.status == "used") or (cur.status ~= "used" and (o.cost < cur.cost or (o.cost == cur.cost and t.npc < cur.npc))) then
+        local offer = { skill = o.skill, cost = o.cost, status = mine and o.status or "available", npc = t.npc, mapID = t.mapID, x = t.x, y = t.y,
+          zone = t.zone, mine = t.by ~= nil and t.by == me or nil, seenAt = mine and t.skill or nil }
+        if not cur or (offer.status == "used") or (cur.status ~= "used" and (o.cost < cur.cost or (o.cost == cur.cost and t.npc < cur.npc))) then
           best[id] = offer
         end
       end
@@ -172,7 +179,7 @@ function T.Scan()
   local npc = (UnitName and UnitName("npc")) or "?"
   local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
   T.SaveNpc(ns.db, T.NpcID(UnitGUID and UnitGUID("npc")), npc, faction, where)
-  T.Save(ns.db, record, npc, faction, where, time())
+  T.Save(ns.db, record, npc, faction, where, time(), ns.charKey, ns.Skills()[record.prof])
   local count = 0
   for _ in pairs(record.offers) do count = count + 1 end
   ns.Log("trainer", ("%s (%s) at %s %.1f,%.1f: %d recipes%s"):format(npc, record.prof, tostring(where.zone), where.x, where.y, count,

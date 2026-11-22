@@ -421,7 +421,7 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local crafts = libCrafts(p, ctx.faction)
   if not crafts then return end
   local data = ns.char and ns.char.profs[p.name]
-  local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}   -- trainer windows recorded in game
+  local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction, ns.charKey) or {}   -- trainer windows recorded in game
   local own = setmetatable({ known = function(id) return ctx.known(id) or (data and data.recipes[id]) and true or false end,
     offer = function(id) return offers[id] end, maxSkill = p.max, goal = ns.Goal() }, { __index = ctx })
   -- where to go to learn each one (a pin, or a text only): recorded trainer, library NPC, Classic coordinates, text
@@ -687,7 +687,7 @@ function ns.RunLeveling(done, withRoad)
     end
     -- reagents, outputs and teaching items of the recipes that may be learned (within reach of the skill)
     local faction = UnitFactionGroup("player") == "Horde" and "H" or "A"
-    local offers = data and SKILL_LINES[p.line] and ns.TrainerLog.Offers(ns.db or {}, SKILL_LINES[p.line], faction) or {}
+    local offers = data and SKILL_LINES[p.line] and ns.TrainerLog.Offers(ns.db or {}, SKILL_LINES[p.line], faction, ns.charKey) or {}
     for _, craft in ipairs(data and libCrafts(p, faction) or {}) do
       local at = offers[craft.id] and math.max(1, offers[craft.id].skill or 1) or craft.learn
       if at and (craft.gr or at + 60) > (p.skill or 0) then   -- every recipe that can still give a point: the roadmap may show it
@@ -706,9 +706,10 @@ function ns.RunLeveling(done, withRoad)
         local data = ns.char.profs[p.name]
         if data then
           local english = SKILL_LINES[p.line]
-          local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction) or {}
+          local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction, ns.charKey) or {}
+          -- known: the game says so, or this character's own trainer window lists it as already known
           data = ns.SectionData(data, p.line, { skill = p.skill, max = p.max, crafts = libCrafts(p, ctx.faction),
-            known = function(id) return ctx.known(id) or (offers[id] ~= nil and offers[id].status == "used") end })
+            known = function(id) return ctx.known(id) or (offers[id] ~= nil and offers[id].mine and offers[id].status == "used") or false end })
         end
         -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
         -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
@@ -858,7 +859,7 @@ frame:SetScript("OnEvent", function(_, _, name)
   ns.db.chars = ns.db.chars or {}
   local key = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
   ns.db.chars[key] = ns.db.chars[key] or { learned = {} }  -- [recipeID] = true, learned from profession windows
-  ns.char = ns.db.chars[key]
+  ns.char, ns.charKey = ns.db.chars[key], key
   ns.char.learned = ns.char.learned or {}
   ns.char.profs = ns.char.profs or {}         -- [professionName] = what its window showed (Learned.lua)
   ns.LogInit(ns.db)

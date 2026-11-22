@@ -2946,7 +2946,7 @@ describe("Monter le métier shows effort everywhere (owner's data, Horde)", func
     for _, l in ipairs(allJobLines(ns)) do all[#all + 1] = plain(l.lv and l.lv.text) .. " " .. plain(l.left.text) end
     local text = table.concat(all, "\n")
     assert.matches("Cuisine  124/150\n[^\n]*\n[^\n]*", text)
-    assert.matches("132 Apprendre le rang Expert", text)                      -- Cooking 124: the rank is a step of its own roadmap, after what the bags give
+    assert.matches("141 Apprendre le rang Expert", text)                      -- Cooking 124: the rank is a step of its own roadmap, with the recipe learned at the same trainer
     assert.matches("Apprendre le rang Compagnon", text)                       -- Leatherworking 61 >= 50: the rank is the first step
     local first = text:find("Apprendre le rang Compagnon", 1, true)
     assert.is_true(first < (text:find("Ton parcours", 1, true) or 0) + 60)

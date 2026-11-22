@@ -984,12 +984,18 @@ describe("Leveling.Learnable: ranks, caps and rank books", function()
     assert.are.equal(2149, r.best.rec.id)       -- the recipe the character can really learn, not the Journeyman tunic
   end)
 
-  it("an offer the trainer window lists as unavailable is gated too", function()
-    local c = lc({ maxSkill = 75, offer = function(id) return id == 7 and offer(50, 100, "unavailable") or nil end })
+  it("an offer the trainer window lists as unavailable although the skill was enough is gated too", function()
+    local function seen(at) local o = offer(50, 100, "unavailable"); o.seenAt = at; return o end
+    local c = lc({ maxSkill = 75, offer = function(id) return id == 7 and seen(61) or nil end })
     local r = V.Learnable({ craft(7, 50) }, 61, c)
     assert.is_true(r.now[1].rankGated)
     r = V.Learnable({ craft(7, 50), craft(8, 52) }, 61, c)
     assert.are.equal(8, r.best.rec.id)
+    -- the window was seen at a lower skill (or by nobody we know): "unavailable" was the skill then, it proves nothing now
+    for _, at in ipairs({ 40, false }) do
+      c = lc({ maxSkill = 75, offer = function(id) return id == 7 and seen(at or nil) or nil end })
+      assert.is_false(V.Learnable({ craft(7, 50) }, 61, c).now[1].rankGated)
+    end
   end)
 
   it("'soon' stops at the profession cap: recipes at 80-85 are not listed at 61/75, one 'beyond' line says which rank is needed", function()

@@ -562,6 +562,12 @@ local SRC_OF_KIND = { vendor = "v", quest = "q", item = "i", container = "c", dr
 
 V.GOLD_CRAFTS = 10
 
+-- A recorded trainer window said "not available" although the character's skill was enough then (offer.seenAt, see TrainerLog.Offers):
+-- something else is missing, a rank. A window seen at a lower skill proves nothing: the recipe was simply out of reach that day.
+function V.WindowGated(offer, at)
+  return offer ~= nil and offer.status == "unavailable" and offer.seenAt ~= nil and offer.seenAt >= at
+end
+
 -- How a craft is obtained and what learning it costs: way (V.Way, or the recorded trainer), fee, src, recommend (a trainer, a vendor, a
 -- quest or a teaching item with an auction price) and the age of that auction price.
 local function obtain(c, offer, ctx)
@@ -635,7 +641,7 @@ function V.Learnable(crafts, skill, ctx, count, limits, knownBest)
       e.useful = math.max(1, (c.gr or at + 60) - math.max(skill, at))      -- skill points it stays useful for from now
       -- a trainer recipe whose rank the character has not trained yet (ctx.maxSkill = profession maximum)
       e.rankGated = ctx.maxSkill and way and way.rank and ctx.maxSkill < (RANK_MAX[way.rank] or 0) or false
-      if offer and offer.status == "unavailable" and isNow then e.rankGated = true end   -- the trainer window itself says it cannot be learned yet
+      if isNow and V.WindowGated(offer, at) then e.rankGated = true end   -- the trainer window itself says it cannot be learned yet
       if e.chance == 0 and not gold then
         e.gray, e.perPoint = true, nil                          -- gives no skill point any more
       elseif #e.missing > 0 or #c.mats == 0 then
@@ -746,7 +752,7 @@ function V.Candidates(crafts, skill, ctx)
         local kind = way and way.kind or "trainer"
         local gold = kind == "vendor" and way.vendorCost and not way.currency and not way.standing   -- a vendor, for gold, to anyone
         out[#out + 1] = { rec = rec, recommend = true, needMax = way and way.rank and RANK_MAX[way.rank] or nil,
-          rankGated = offer and offer.status == "unavailable" and at <= skill or nil,
+          rankGated = at <= skill and V.WindowGated(offer, at) or nil,
           effort = kind == "trainer" and V.LEARN_EFFORT.trainer or (gold and V.LEARN_EFFORT.vendor) or V.LEARN_EFFORT.other }
       end
     end
@@ -768,8 +774,8 @@ end
 -- (V.Cheapest). The plan reads neither the bags, the bank nor the auction prices, and it is solved from the maximum backwards: following
 -- it never changes it (the plan from a later skill is the end of the plan from an earlier one, and a recipe learned as told becomes a
 -- known one that the plan already counted on).
--- THE STEPS are the first ones of that plan: a rank where it can be trained (25 points below the cap it lifts), a recipe to learn right
--- before the crafts that use it, with the reason (`why`), and the crafts with what is owned and what is missing. A visit to a trainer (a
+-- THE STEPS are the first ones of that plan: a rank at the first step that starts where it can be trained (25 points below the cap it
+-- lifts; a craft that would pass the cap is cut there), a recipe to learn right before the crafts that use it, with the reason (`why`), and the crafts with what is owned and what is missing. A visit to a trainer (a
 -- rank, a trainer recipe) notes the later trainer recipes of the plan that can already be learned (`also`): one visit, not three.
 -- Before the plan, up to V.BAG_STEPS steps use up what the bags already hold (`bonus`): a known recipe that still gives points and either
 -- needs nothing the first recipe of the plan needs, or is within 15 % of it.
@@ -788,7 +794,7 @@ V.BAG_STEPS = 2
 -- What a recipe to learn must save, in ingredients, to be part of the plan (the trip, the fee). Estimates: a trainer is on the way, a
 -- vendor selling for gold less so, and the rest (a quest, a pattern from the auction house, a vendor asking a currency, a standing or
 -- an unknown price) is taken only when it saves a lot.
-V.LEARN_EFFORT = { trainer = 8, vendor = 16, other = 30 }
+V.LEARN_EFFORT = { trainer = 12, vendor = 20, other = 30 }
 
 -- Chance of a skill point at `s` from the thresholds { orange, yellow, green, gray } (the Classic formula, as V.Chance).
 local function chanceAt(th, s)
@@ -1080,7 +1086,9 @@ function V.Roadmap(prof, ctx, opts)
       rankEvents(si, a)
       if not r.known and not learned[r.id] then learn(si, a) end
       local b, crafts = seg.to, 0
-      if ranks[ri] and ranks[ri].at < b then b = ranks[ri].at end       -- the craft stops where the next rank can be trained
+      -- a craft that would pass the cap of the rank held stops where the next rank can be trained; otherwise the rank waits for the
+      -- next step that starts at or above that skill (often a recipe to learn at the same trainer)
+      if ranks[ri] and b > ranks[ri].cap - 75 then b = ranks[ri].at end
       for k = a, b - 1 do crafts = crafts + 1 / chanceAt(r.th, k) end
       events[#events + 1] = { kind = "craft", r = r, from = a, to = b, times = math.max(1, math.ceil(crafts - 1e-9)) }
       a = b
