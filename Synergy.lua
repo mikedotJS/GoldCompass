@@ -222,10 +222,10 @@ function SY.Line(h, S, names)
   return S.syn_line[h.kind]:format(h.count, u, zone)
 end
 
--- The short form of a shopping-list row: "ton Dépeçage · Les Tarides · ~35 bêtes", "rare au dépeçage (~7 h)".
+-- The short form of a shopping-list row: "ton Dépeçage · ~35 bêtes · Les Tarides", "rare au dépeçage (~7 h)".
 function SY.Short(h, S, names)
   if h.rare then return S.syn_rare_row[h.kind]:format(duration(h.hours, S)) end
-  return S.syn_row[h.kind]:format(names.zone(h.zone), h.count, unit(h.kind, h.count, S))
+  return S.syn_row[h.kind]:format(h.count, unit(h.kind, h.count, S), names.zone(h.zone))
 end
 
 -- "Sert pour Travail du cuir : 26 × Cuir léger, 14 × Peau légère", or with several professions "Sert pour Travail du cuir (40) et Ingénierie (12)".

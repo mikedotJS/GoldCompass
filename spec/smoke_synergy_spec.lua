@@ -157,7 +157,7 @@ describe("shopping list hints (Synergy.lua)", function()
     local texts = {}
     for _, row in ipairs(ns.ShoppingList.Rows()) do texts[#texts + 1] = plain(row.sub.text) end
     local joined = table.concat(texts, "\n")
-    if hinted then assert.matches("ton Dépeçage · Zone%d+ · ~%d+ bêtes", joined) end
+    if hinted then assert.matches("ton Dépeçage · ~%d+ bêtes? · Zone%d+", joined) end
     assert.are.equal(list.farm ~= nil, plain(ns.ShoppingList.Frame().farm.text or ""):find("À farmer d'abord", 1, true) ~= nil)
   end)
 end)

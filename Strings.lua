@@ -280,8 +280,9 @@ for k, v in pairs({
   syn_rare = { skin = "rare au dépeçage (~%d %s, %s)", herb = "rare à l'herboristerie (~%d %s, %s)",
     ore = "rare au minage (~%d %s, %s)", bar = "rare à la fonte (~%d %s, %s)" },
   syn_ah = " · plutôt à l'HV",
-  syn_row = { skin = "ton Dépeçage · %s · ~%d %s", herb = "ton Herboristerie · %s · ~%d %s", ore = "ton Minage · %s · ~%d %s",
-    bar = "ta Fonte · %s · ~%d %s" },
+  -- the count comes before the zone: the one-line sub row of the 262 px list is cut at its end, and the zone name is the long part
+  syn_row = { skin = "ton Dépeçage · ~%d %s · %s", herb = "ton Herboristerie · ~%d %s · %s", ore = "ton Minage · ~%d %s · %s",
+    bar = "ta Fonte · ~%d %s · %s" },
   syn_rare_row = { skin = "rare au dépeçage (%s)", herb = "rare à l'herboristerie (%s)", ore = "rare au minage (%s)", bar = "rare à la fonte (%s)" },
   syn_hours = "~%d h", syn_minutes = "~%d min",
   syn_feed_item = "%d × %s", syn_feed_prof = "%s (%d)", syn_and = " et ",

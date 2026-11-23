@@ -207,7 +207,7 @@ describe("Synergy texts", function()
   end)
 
   it("short forms of the shopping list and the farm note", function()
-    assert.are.equal("ton Dépeçage · Zone1413 · ~35 bêtes", SY.Short(hint(), S, names))
+    assert.are.equal("ton Dépeçage · ~35 bêtes · Zone1413", SY.Short(hint(), S, names))
     assert.are.equal("rare au dépeçage (~7 h)", SY.Short(hint({ rare = true, hours = 6.7 }), S, names))
     assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~35 min)", SY.FarmText({ zone = BARRENS, prof = "Skinning", hours = 0.58, units = 26 }, S, names))
   end)
@@ -218,9 +218,9 @@ describe("Synergy texts", function()
     assert.are.equal("ton Minage : ~1 filon, Zone1413", SY.Line(hint({ kind = "ore", count = 1, here = false }), S, names))
     assert.are.equal("ta Fonte : 2 × Item2770, ~1 filon, Zone1413", SY.Line(hint({ kind = "bar", count = 1, here = false, ore = { item = COPPER_ORE, n = 2 } }), S, names))
     assert.are.equal("rare au dépeçage (~1 bête, ~7 h)", SY.Line(hint({ rare = true, count = 1, hours = 6.7 }), S, names))
-    assert.are.equal("ton Dépeçage · Zone1413 · ~1 bête", SY.Short(hint({ count = 1 }), S, names))
-    assert.are.equal("ton Dépeçage · Zone1413 · ~2 bêtes", SY.Short(hint({ count = 2 }), S, names))
-    assert.are.equal("ton Dépeçage · Zone1413 · ~0 bêtes", SY.Short(hint({ count = 0 }), S, names))
+    assert.are.equal("ton Dépeçage · ~1 bête · Zone1413", SY.Short(hint({ count = 1 }), S, names))
+    assert.are.equal("ton Dépeçage · ~2 bêtes · Zone1413", SY.Short(hint({ count = 2 }), S, names))
+    assert.are.equal("ton Dépeçage · ~0 bêtes · Zone1413", SY.Short(hint({ count = 0 }), S, names))
   end)
 
   it("shows minutes under an hour and rounded hours above, on the rare lines and the farm note", function()
@@ -245,6 +245,16 @@ describe("Synergy texts", function()
     assert.is_true(h.hours > 2 and h.hours < 2.5)
     assert.is_true(h.rare)
     assert.are.equal("rare au dépeçage (~2 h)", SY.Short(h, S, names))
+  end)
+
+  it("shopping row: the count comes before the zone, so the cut at the end of the 262 px line only ever eats the zone name", function()
+    local long = { zone = function() return "Les Pitons du Tonnerre et de la Désolation" end, item = names.item }
+    for _, kind in ipairs({ "skin", "herb", "ore", "bar" }) do
+      local text = SY.Short(hint({ kind = kind, count = 120 }), S, long)
+      local _, countEnd = text:find("~120 %a+")
+      -- the line holds about 44 characters (ShoppingList lineCount); the count must end within the first 34
+      assert.is_true(countEnd ~= nil and utf8.len(text:sub(1, countEnd)) <= 34, kind .. ": " .. text)
+    end
   end)
 
   it("every new string stays in the Latin-1 font: no check mark, arrow or ellipsis", function()
