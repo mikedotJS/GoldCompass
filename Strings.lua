@@ -268,5 +268,5 @@ for k, v in pairs({
   route_note_gather = "Points déjà vus (toi ou la base Forever) pour ton niveau de métier. Les grises sont ignorées.",
   route_bar = "Boucle de %d points · départ au plus proche", route_next = "prochain : %d sur %d",
   route_clear = "Effacer l'itinéraire", route_cleared = "Itinéraire effacé.",
-  smelt_title = "Fondre", smelt_ore = "Le minerai manquant se mine dans les zones de « Où monter » ci-dessus.",
+  smelt_title = "Fondre", smelt_none = "Rien à fondre à ce niveau : mine dans les zones de « Où monter » ci-dessus.", smelt_ore = "Le minerai manquant se mine dans les zones de « Où monter » ci-dessus.",
 }) do ns.S[k] = v end

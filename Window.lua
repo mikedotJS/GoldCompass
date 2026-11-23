@@ -1200,7 +1200,9 @@ local function addRoadmap(entries, p)
       end
     end
   end
-  if #r.steps == 0 and (smelt or not r.gathering) then
+  if #r.steps == 0 and smelt then   -- a gap between two smelting recipes: the skill comes from the ore of the zones above
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.smelt_none .. "|r" }
+  elseif #r.steps == 0 and not r.gathering then
     entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank, tip = rank and r.rankTip or nil }
   end
   -- the ore a smelting step still lacks is mined in the zones above

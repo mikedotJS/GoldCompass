@@ -3309,7 +3309,8 @@ describe("Mining: the smelting roadmap (Fondre) next to the zones (Où monter)",
     local text = lineTexts(ns)
     assert.matches("Où monter", text)
     assert.matches("Fondre", text)
-    assert.matches("Plus de recette utile", text)
+    assert.matches("Rien à fondre à ce niveau", text)
+    assert.is_nil(text:find("Plus de recette utile", 1, true))
   end)
 
   it("leaves Herb Gathering and Skinning as they were: zones only, no smelting block, whatever the window listed", function()
