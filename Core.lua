@@ -990,12 +990,15 @@ frame:SetScript("OnEvent", function(_, _, name)
   GoldCompassDB = GoldCompassDB or {}
   ns.db = GoldCompassDB
   ns.db.buy = ns.db.buy or {}            -- [itemID] = vendor buy price of one unit, learned at merchants
+  ns.db.buyDay = ns.db.buyDay or {}      -- [itemID] = the day (since 1970) that price was last seen: old ones are dropped (Learned.PruneBuy)
+  ns.Learned.PruneBuy(ns.db.buy, ns.db.buyDay)
   ns.db.chars = ns.db.chars or {}
   local key = (UnitName("player") or "?") .. "-" .. (GetRealmName and GetRealmName() or "?")
   ns.db.chars[key] = ns.db.chars[key] or { learned = {} }  -- [recipeID] = true, learned from profession windows
   ns.char, ns.charKey = ns.db.chars[key], key
   ns.char.learned = ns.char.learned or {}
   ns.char.profs = ns.char.profs or {}         -- [professionName] = what its window showed (Learned.lua)
+  for _, c in pairs(ns.db.chars) do if c.profs then c.profs[""] = nil end end   -- a window read before its name was known: copied at each refresh for nothing
   ns.LogInit(ns.db)
   ns.Print("chargé. Tape /gc.")
 end)

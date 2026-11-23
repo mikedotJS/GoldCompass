@@ -48,7 +48,7 @@ end
 -- the plans that the window brought something new). `quick` (the window's list refreshed on its own: a craft, a filter) skips the reading
 -- of every recipe when the profession's skill, maximum and recipe count are those of the last reading less than QUICK_TTL seconds ago.
 -- `T` is C_TradeSkillUI (a parameter so it can be tested).
-local seen = {}   -- [profession name] = { sig, at, entry } of the last full reading
+local lastRead = {}   -- [profession name] = { sig, at, entry } of the last full reading
 local QUICK_TTL = 60
 function L.Capture(T, learned, profs, quick)
   if not (T and T.GetAllRecipeIDs and T.GetRecipeInfo) then return 0 end
@@ -60,7 +60,7 @@ function L.Capture(T, learned, profs, quick)
   if profs then profName, skill, max, line = readProfession(T) end
   local sig = profName and ("%s:%s:%d"):format(tostring(skill), tostring(max), #ids)
   local now = time()
-  local last = profName and seen[profName]
+  local last = profName and lastRead[profName]
   if quick and last and last.sig == sig and last.entry == profs[profName] and now - last.at < QUICK_TTL then return 0, false end
   local entry = profName and (profs[profName] or { recipes = {} })
   local changed = false
@@ -96,18 +96,36 @@ function L.Capture(T, learned, profs, quick)
   end
   if entry then
     if changed then entry.updated = now end
-    seen[profName] = { sig = sig, at = now, entry = entry }
+    lastRead[profName] = { sig = sig, at = now, entry = entry }
   end
   return added, changed
 end
 
 -- Vendor buy prices: while a merchant window is open, remember what each item costs for one unit.
--- `api` = { count = function() -> n, item = function(i) -> itemID, price, quantity }.
-function L.RecordMerchant(api, buy)
+-- `api` = { count = function() -> n, item = function(i) -> itemID, price, quantity }. `seen` (optional) gets the day of each price
+-- (days since 1970), which L.PruneBuy reads.
+function L.RecordMerchant(api, buy, seen)
+  local today = math.floor(time() / 86400)
   for i = 1, api.count() or 0 do
     local id, price, qty = api.item(i)
-    if id and price and price > 0 then buy[id] = price / math.max(1, qty or 1) end
+    if id and price and price > 0 then
+      buy[id] = price / math.max(1, qty or 1)
+      if seen then seen[id] = today end
+    end
   end
+end
+
+-- A vendor price not seen again for BUY_DAYS days is forgotten (the merchant may have changed it; the list does not grow for ever). A price
+-- written before the days were kept starts its count on the day of the first load.
+local BUY_DAYS = 90
+function L.PruneBuy(buy, seen)
+  local today = math.floor(time() / 86400)
+  for id in pairs(buy) do
+    local day = seen[id]
+    if not day then seen[id] = today
+    elseif today - day > BUY_DAYS then buy[id], seen[id] = nil, nil end
+  end
+  for id in pairs(seen) do if buy[id] == nil then seen[id] = nil end end
 end
 
 local function merchantApi()
@@ -146,7 +164,7 @@ frame:SetScript("OnEvent", function(_, event)
   if not ns.db then return end
   if event:sub(1, 8) == "MERCHANT" then
     local api = merchantApi()
-    if api then later("merchant", function() pcall(L.RecordMerchant, api, ns.db.buy) end) end
+    if api then later("merchant", function() pcall(L.RecordMerchant, api, ns.db.buy, ns.db.buyDay) end) end
   else
     opened = opened or event == "TRADE_SKILL_SHOW"
     later("trade", function()

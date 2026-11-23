@@ -3,7 +3,7 @@
 -- Taint: this file calls no protected function, writes to no Blizzard frame, hooks nothing, and only CHAINS the error handler.
 local addonName, ns = ...
 
-local MAX = 300
+local MAX, SLACK = 300, 50   -- the newest MAX entries are kept; the list may run SLACK over before one pass drops the oldest (no shifting per entry)
 local pending, db = {}, nil   -- entries logged before the SavedVariables are loaded wait in `pending`
 local busy = false            -- true while an entry is being written: stops any recursion
 local seen = {}
@@ -11,6 +11,15 @@ local seen = {}
 local function clock() return date("%H:%M:%S") end
 
 -- Adds one entry { time, kind, text }. Never raises, never recurses. Chat color codes are stripped for readability.
+-- Keeps the newest MAX entries of a chronological list, in one pass.
+local function trim(list)
+  local n = #list
+  if n <= MAX then return end
+  local drop = n - MAX
+  for i = 1, MAX do list[i] = list[i + drop] end
+  for i = MAX + 1, n do list[i] = nil end
+end
+
 function ns.Log(kind, text)
   if busy then return end
   busy = true
@@ -18,7 +27,7 @@ function ns.Log(kind, text)
     local entry = { time = clock(), kind = kind, text = tostring(text):gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", "") }
     local list = db and db.log or pending
     list[#list + 1] = entry
-    while #list > MAX do table.remove(list, 1) end
+    if #list > MAX + SLACK then trim(list) end
   end)
   busy = false
 end
@@ -40,7 +49,7 @@ function ns.LogInit(saved)
   for _, e in ipairs(early) do
     db.log[#db.log + 1] = e
   end
-  while #db.log > MAX do table.remove(db.log, 1) end
+  trim(db.log)
 end
 
 function ns.LogRecent(n)
@@ -88,10 +97,13 @@ local frame = CreateFrame("Frame")
 frame:RegisterEvent("ADDON_ACTION_BLOCKED")
 frame:RegisterEvent("ADDON_ACTION_FORBIDDEN")
 frame:RegisterEvent("PLAYER_LOGIN")
+frame:RegisterEvent("PLAYER_LOGOUT")
 frame:SetScript("OnEvent", function(_, event, a, b)
   if event == "PLAYER_LOGIN" then
     chainErrorHandler()
     header()
+  elseif event == "PLAYER_LOGOUT" then
+    if db and db.log then trim(db.log) end   -- the saved file holds MAX entries, not MAX + SLACK
   else
     ns.Log(event == "ADDON_ACTION_BLOCKED" and "blocked" or "forbidden",
       ("addon %s, function %s | %s"):format(tostring(a), tostring(b), short(debugstack and debugstack(2, 6, 0))))

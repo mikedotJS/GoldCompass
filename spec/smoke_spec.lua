@@ -657,6 +657,46 @@ describe("fishing", function()
   end)
 end)
 
+describe("saved data kept small", function()
+  local function loaded(db)
+    setup({ scanned = true })
+    local ns = loadAddon()
+    _G.GoldCompassDB = db
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.ADDON_LOADED then fr.scripts.OnEvent(fr, "ADDON_LOADED", "GoldCompass") end
+    end
+    return ns
+  end
+
+  it("forgets a vendor price not seen for 90 days, keeps the fresh ones, dates the undated ones from today", function()
+    local today = math.floor(os.time() / 86400)
+    local ns = loaded({ buy = { [1] = 10, [2] = 20, [3] = 30 }, buyDay = { [1] = today - 10, [2] = today - 91, [9] = today } })
+    assert.are.equal(10, ns.db.buy[1])
+    assert.is_nil(ns.db.buy[2])
+    assert.is_nil(ns.db.buyDay[2])
+    assert.are.equal(30, ns.db.buy[3])                                              -- an old save without days: counted from today
+    assert.are.equal(today, ns.db.buyDay[3])
+    assert.is_nil(ns.db.buyDay[9])                                                  -- a day without a price goes too
+  end)
+
+  it("a merchant window dates the prices it records", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    local buy, days = {}, {}
+    ns.Learned.RecordMerchant({ count = function() return 1 end, item = function() return 5, 300, 10 end }, buy, days)
+    assert.are.equal(30, buy[5])
+    assert.are.equal(math.floor(os.time() / 86400), days[5])
+  end)
+
+  it("drops a profession entry with an empty name at load, for every character", function()
+    local ns = loaded({ chars = { ["A-R"] = { learned = {}, profs = { [""] = { recipes = { [1] = {} } }, Cuisine = { recipes = {} } } },
+      ["B-R"] = { learned = {}, profs = { [""] = { recipes = {} } } } } })
+    assert.is_nil(ns.db.chars["A-R"].profs[""])
+    assert.is_not_nil(ns.db.chars["A-R"].profs.Cuisine)
+    assert.is_nil(ns.db.chars["B-R"].profs[""])
+  end)
+end)
+
 describe("diagnostic log", function()
   local function fire(event, ...)
     for _, fr in ipairs(frames) do
@@ -670,12 +710,22 @@ describe("diagnostic log", function()
     return ns
   end
 
-  it("keeps at most 300 entries and drops the oldest", function()
+  it("keeps the newest 300 entries: trimmed in one pass once 50 over, and down to 300 when the game saves", function()
     local ns = start()
     for i = 1, 350 do ns.Log("test", "entry " .. i) end
+    assert.is_true(#ns.db.log <= 350)
+    assert.are.equal("entry 350", ns.db.log[#ns.db.log].text)
+    assert.are.equal("entry 349", ns.db.log[#ns.db.log - 1].text)                   -- chronological
+    local removes, real = 0, table.remove
+    table.remove = function(...) removes = removes + 1; return real(...) end
+    for i = 351, 700 do ns.Log("test", "entry " .. i) end
+    table.remove = real
+    assert.are.equal(0, removes)                                                    -- nothing shifts at each entry
+    assert.is_true(#ns.db.log <= 350)
+    fire("PLAYER_LOGOUT")
     assert.are.equal(300, #ns.db.log)
-    assert.are.equal("entry 51", ns.db.log[1].text)
-    assert.are.equal("entry 350", ns.db.log[300].text)
+    assert.are.equal("entry 401", ns.db.log[1].text)
+    assert.are.equal("entry 700", ns.db.log[300].text)
     assert.matches("^%d%d:%d%d:%d%d$", ns.db.log[1].time)
   end)
 
