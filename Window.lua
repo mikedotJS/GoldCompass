@@ -1091,10 +1091,13 @@ local function addWhere(entries, p)
   local zones = 0
   for _, s in ipairs(r.where.steps) do
     if s.kind == "rank" then
-      local zone = zoneOf(r.trainer)
-      entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.route_rank:format(rank), tip = r.rankTip }
-      entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r",
-        target = r.trainer, recipe = rank, tip = r.rankTip }
+      -- Mining with its smelting roadmap below: the rank is a step of that roadmap, not said twice
+      if r.smelt ~= "seen" then
+        local zone = zoneOf(r.trainer)
+        entries[#entries + 1] = { lv = "|cffa89c80" .. s.at .. "|r", wide = true, left = S.route_rank:format(rank), tip = r.rankTip }
+        entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. (zone and S.road_learn_sub:format(S.road_trainer, zone) or S.road_trainer) .. "|r",
+          target = r.trainer, recipe = rank, tip = r.rankTip }
+      end
     else
       zones = zones + 1
       local named = table.concat(s.names, ", ")
