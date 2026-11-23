@@ -1488,6 +1488,21 @@ describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of th
     assert.are.same({ "craft", "A", 125, 150 }, { r.path[3].kind, r.path[3].rec.name, r.path[3].from, r.path[3].to })
   end)
 
+  it("never offers a recipe only the other faction's vendor teaches (way.onlyFaction), unless a recorded trainer window offers it", function()
+    local crafts = {
+      { id = 5, name = "Both", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },
+      { id = 6, name = "OtherSide", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer", onlyFaction = "A" } },
+    }
+    local ctx = { known = function() return false end, place = function() return { kind = "pin", mapID = 1, x = 0.5, y = 0.5 } end }
+    local names = {}
+    for _, row in ipairs(V.Candidates(crafts, 100, ctx)) do names[#names + 1] = row.rec.name end
+    assert.are.same({ "Both" }, names)
+    ctx.offer = function(id) return id == 6 and { skill = 100, status = "available", cost = 5 } or nil end
+    names = {}
+    for _, row in ipairs(V.Candidates(crafts, 100, ctx)) do names[#names + 1] = row.rec.name end
+    assert.are.same({ "Both", "OtherSide" }, names)
+  end)
+
   it("a learn with no place on the map costs V.LEARN_EFFORT.unknown", function()
     local crafts = {
       { id = 5, name = "Pinned", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },

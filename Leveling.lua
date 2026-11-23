@@ -743,7 +743,7 @@ function V.Candidates(crafts, skill, ctx)
     local offer = ctx.offer and ctx.offer(c.id)
     local at = offer and math.max(1, offer.skill or 1) or c.learn
     if at and #c.mats > 0 and not (offer and offer.status == "used") and not (c.how and c.how.kind == "unknown" and not offer)
-      and not ctx.known(c.id) then
+      and not (c.how and c.how.onlyFaction and not offer) and not ctx.known(c.id) then   -- a recipe only the other faction's vendor teaches is no way to learn it
       local way, fee, src, recommend, feeAge = obtain(c, offer, ctx)
       if recommend then
         local rec = { id = c.id, name = c.name, learn = at, src = src, out = c.out, oq = c.oq, mats = c.mats, way = way,
@@ -797,9 +797,11 @@ V.BAG_STEPS = 2
 -- vendor selling for gold less so, and the rest (a quest, a pattern from the auction house, a vendor asking a currency, a standing or
 -- an unknown price) is taken only when it saves a lot.
 -- `unknown`: no place on the map (a text only): a search, not a trip. A vendor on the map whose price is unknown stays `other`.
-V.LEARN_EFFORT = { trainer = 12, vendor = 20, other = 30, unknown = 60 }
-V.SWITCH = 10            -- what changing recipe costs, in effort: the plan does not go A, B, then A again for a few units
-V.MIN_STINT = 15         -- a recipe the plan takes (to learn or known) is kept that many points at least: no learn for a few points,
+-- These, V.SWITCH and V.MIN_STINT are in the scale of Effort.lua: a craft weighs about twice what it did in plain ingredient units, so they are
+-- twice what they were (measured on the 100-run simulator: fewer learn bursts, same plan from one refresh to the next).
+V.LEARN_EFFORT = { trainer = 24, vendor = 40, other = 60, unknown = 120 }
+V.SWITCH = 20            -- what changing recipe costs, in effort: the plan does not go A, B, then A again for a few units
+V.MIN_STINT = 20         -- a recipe the plan takes (to learn or known) is kept that many points at least: no learn for a few points,
                          -- no A, B, A. Only where it ends sooner (or nothing else gives a point) may it be kept less, at V.SHORT_STINT.
 V.SHORT_STINT = 1e6
 
