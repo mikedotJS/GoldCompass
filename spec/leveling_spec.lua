@@ -1391,3 +1391,69 @@ describe("Leveling.Roadmap", function()
     assert.are.equal(700, sub.subs[1].item)
   end)
 end)
+
+describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of the roadmap", function()
+  local function entry(id, units, lo, eS, entryCost)   -- chance 1 on lo..eS (gray far above)
+    return { id = id, th = { lo, 500, 500, 600 }, units = units, lo = lo, eS = eS, eA = eS, entry = entryCost or 0 }
+  end
+  local function names(plan, from)
+    local out = {}
+    for i, sg in ipairs(plan.path(from)) do out[i] = ("%d:%d>%d"):format(sg.r.id, sg.from, sg.to) end
+    return table.concat(out, " ")
+  end
+
+  it("no A, B, A for a few units: a recipe a little leaner on 5 points is not worth two switches", function()
+    local list = { entry(1, 2, 1, 100), entry(2, 1, 50, 55) }   -- B saves 5 units on 50..55, two switches cost 2 x V.SWITCH
+    assert.are.equal("1:10>100", names(V.Cheapest(list, 10, 100, 1), 10))
+    local save = V.SWITCH
+    V.SWITCH = 0
+    assert.are.equal("1:10>50 2:50>55 1:55>100", names(V.Cheapest(list, 10, 100, 1), 10))
+    V.SWITCH = save
+  end)
+
+  it("a switch that saves more than its cost is made", function()
+    local list = { entry(1, 3, 1, 100), entry(2, 1, 50, 100) }
+    assert.are.equal("1:10>50 2:50>100", names(V.Cheapest(list, 10, 100, 1), 10))
+  end)
+
+  it("one walk: asked from a skill in the middle of a step, the plan is the end of the plan asked from the start", function()
+    -- at 40 a recipe 1 unit leaner appears: from scratch at 41 it would win, but the walk is already on recipe 1 (switch > 1 unit x ...)
+    local list = { entry(1, 2, 1, 60), entry(2, 1.9, 40, 60), entry(3, 1, 60, 100) }
+    local early = V.Cheapest(list, 30, 100, 1)
+    local mid = V.Cheapest(list, 45, 100, 1)
+    assert.are.equal(early.first(45).id, mid.first(45).id)
+    assert.are.equal(names(early, 45), names(mid, 45))
+  end)
+
+  local BASE = { id = 1, name = "Base", d = 1, out = 101, oq = 1, mats = { { 10, 4 } } }
+  local function roadmap(cand)
+    local prof = { skill = 100, max = 300, recipes = { [1] = BASE } }
+    local c = { buy = function() end, owned = function() return 0 end }
+    local o = { thresholds = function() return { 1, 300, 300, 301 } end, candidates = { cand } }
+    return V.Roadmap(prof, c, o)
+  end
+  local function learned(r)
+    for _, st in ipairs(r.path) do if st.kind == "learn" then return st.rec.name end end
+  end
+
+  it("a recipe to learn needs V.LEARN_MIN_POINTS useful points: a lean one useful on 10 points only is not learned", function()
+    local short = { id = 2, name = "Short", learn = 120, mats = { { 10, 1 } }, th = { 120, 125, 128, 130 } }
+    assert.is_nil(learned(roadmap({ rec = short, recommend = true, effort = 12 })))
+    local long = { id = 3, name = "Long", learn = 120, mats = { { 10, 1 } }, th = { 120, 150, 170, 190 } }
+    assert.are.equal("Long", learned(roadmap({ rec = long, recommend = true, effort = 12 })))
+  end)
+
+  it("a learn with no place on the map, or a vendor with an unknown price, costs V.LEARN_EFFORT.unknown", function()
+    local crafts = {
+      { id = 5, name = "Pinned", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },
+      { id = 6, name = "TextOnly", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },
+    }
+    local ctx = { known = function() return false end,
+      place = function(rec) return rec.id == 5 and { kind = "pin", mapID = 1, x = 0.5, y = 0.5 } or { kind = "text" } end }
+    local by = {}
+    for _, row in ipairs(V.Candidates(crafts, 100, ctx)) do by[row.rec.name] = row.effort end
+    assert.are.equal(V.LEARN_EFFORT.trainer, by.Pinned)
+    assert.are.equal(V.LEARN_EFFORT.unknown, by.TextOnly)
+    assert.is_true(V.LEARN_EFFORT.unknown > V.LEARN_EFFORT.other)
+  end)
+end)
