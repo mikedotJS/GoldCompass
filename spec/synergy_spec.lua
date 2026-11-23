@@ -91,6 +91,20 @@ describe("Synergy.Hint", function()
     assert.is_nil(SY.Hint(LIGHT_LEATHER, 26, { Mining = 50 }, data))      -- no Skinning
   end)
 
+  it("a bar is 'plutot a l'HV' when its own auction price is known, else when the ore's is", function()
+    local data = fixture()
+    assert.is_false(SY.Hint(COPPER_BAR, 12, SKILLS, data).ah)              -- no price at all
+    data.price = function(id) return id == COPPER_BAR and 90 or nil end    -- the bar is listed, the ore is not
+    data.now = function() return 5000 end                                  -- past the cache of the first answer
+    assert.is_true(SY.Hint(COPPER_BAR, 12, SKILLS, data).ah)
+    data.price = function(id) return id == COPPER_ORE and 30 or nil end    -- only the ore is listed: the old answer
+    data.now = function() return 9000 end
+    assert.is_true(SY.Hint(COPPER_BAR, 12, SKILLS, data).ah)
+    data.price = function(id) return id == LIGHT_LEATHER and 30 or nil end -- another item: neither
+    data.now = function() return 13000 end
+    assert.is_false(SY.Hint(COPPER_BAR, 12, SKILLS, data).ah)
+  end)
+
   it("a bar made of two ingredients, an item nothing gives, a node below the skill: no hint", function()
     local data = fixture()
     assert.is_nil(SY.Hint(9999, 5, SKILLS, data))

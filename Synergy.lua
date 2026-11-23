@@ -129,7 +129,7 @@ end
 function SY.Hint(item, n, skills, data)
   if not (item and n and n >= 1) then return nil end
   local ix = index(data)
-  local need, ore, bar = n, nil, nil
+  local need, ore, bar, barItem = n, nil, nil, item
   if not ix.skin[item] and not ix.node[item] then
     bar = data.bar and data.bar(item)
     if not (bar and ix.node[bar.ore] == "Mining") then return nil end
@@ -143,8 +143,10 @@ function SY.Hint(item, n, skills, data)
   if not c then return nil end
   local count = math.ceil(need / c.per - 1e-9)
   local hours = count / c.pace
+  local ah = c.ah
+  if bar and data.price and data.price(barItem) ~= nil then ah = true end   -- the bar's own auction price first, the ore's (c.ah) when unknown
   return { kind = bar and "bar" or (KIND[prof] or "skin"), prof = prof, zone = c.zone, count = count, hours = hours, rare = hours > SY.MAX_HOURS,
-    here = c.here, ah = c.ah, ids = c.ids, ore = ore }
+    here = c.here, ah = ah, ids = c.ids, ore = ore }
 end
 
 -- The professions of `profs` (ns.RunLeveling entries) the character's gathering feeds, as { [skill line] = { { prof, units, items =
