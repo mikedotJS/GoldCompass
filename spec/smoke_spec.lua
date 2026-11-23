@@ -3227,3 +3227,71 @@ describe("Où monter keeps the zone the character was sent to", function()
     assert.is_true(zone == others[1] or zone == first.zone)
   end)
 end)
+
+describe("Où monter walks through every known spawn point of the beasts (Data/ForeverSkinPoints.lua)", function()
+  local road = { nextRank = "Artisan", rankAt = 200, capped = false }
+
+  it("gives every zone step of skinning 150 to 299 known points, and a loop of at most MAX_POINTS merged points", function()
+    setup({ scanned = true, profs = { { 393, 200, "Dépeçage", 225 } } })
+    local ns = loadAddon()
+    for _, f in ipairs({ "Data/ForeverSkinZones.lua", "Data/ForeverSkinPoints.lua" }) do assert(loadfile(f))("GoldCompass", ns) end
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    local zoneSteps = 0
+    for skill = 150, 299, 7 do
+      local max = skill < 225 and 225 or 300
+      local steps = ns.RouteMap.Plan({ skill = skill, max = max, line = 393 }, { nextRank = "Artisan", rankAt = max - 25, capped = false }, "Skinning").steps
+      for _, s in ipairs(steps) do
+        if s.kind == "zone" then
+          zoneSteps = zoneSteps + 1
+          assert.is_true(#s.points > 0, ("skill %d zone %d has no point"):format(skill, s.zone))
+          local loop = ns.Route.Loop(s.points, { x = 50, y = 50 })
+          assert.is_true(#loop.points >= 1 and #loop.points <= ns.Route.MAX_POINTS)
+        end
+      end
+    end
+    assert.is_true(zoneSteps >= 20)
+  end)
+
+  it("prefers the points players saw in Forever, and adds the Classic ones only below MIN_FOREVER", function()
+    setup({ scanned = true, profs = { { 393, 200, "Dépeçage", 225 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    local function steps(packed)
+      -- one beast, requirement 200, in zone 1413
+      ns.SkinZones = { [1413] = { { 9001, "Test Beast", 40, 42, 200, spots = 10, foreverSpots = 0 } } }
+      ns.SkinPoints = { [90011413] = packed }
+      for _, s in ipairs(ns.RouteMap.Plan({ skill = 210, max = 225, line = 393 }, road, "Skinning").steps) do
+        if s.kind == "zone" then return s end
+      end
+    end
+    local four = steps("0a0a0b0b0c0c0d0d.5a5a5b5b")                 -- 4 Forever points: the 2 Classic ones stay out
+    assert.equals(4, #four.points)
+    local three = steps("0a0a0b0b0c0c.5a5a5b5b")                    -- 3 Forever points: the Classic ones fill in
+    assert.equals(5, #three.points)
+    assert.equals(1, #steps(".5a5a").points)                        -- Classic only
+  end)
+
+  it("a zone whose beasts have no known point goes after the ones that have, and says so with no points (no hang)", function()
+    setup({ scanned = true, profs = { { 393, 200, "Dépeçage", 225 } } })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    ns.SkinZones = {
+      [1413] = { { 9001, "Bare Beast", 40, 42, 200, spots = 99, foreverSpots = 0 } },
+      [1411] = { { 9002, "Known Beast", 40, 42, 200, spots = 1, foreverSpots = 0 } },
+    }
+    ns.SkinPoints = { [90021411] = "0a0a0b0b" }
+    local first
+    for _, s in ipairs(ns.RouteMap.Plan({ skill = 210, max = 225, line = 393 }, road, "Skinning").steps) do
+      if s.kind == "zone" then first = s; break end
+    end
+    assert.equals(1411, first.zone)
+    assert.equals(2, #first.points)
+    ns.SkinPoints = nil                                              -- no data file at all: still a plan, steps without points
+    for _, s in ipairs(ns.RouteMap.Plan({ skill = 210, max = 225, line = 393 }, road, "Skinning").steps) do
+      if s.kind == "zone" then assert.equals(0, #s.points) end
+    end
+  end)
+end)

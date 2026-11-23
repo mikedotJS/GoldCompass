@@ -24,6 +24,7 @@ Data\ForeverFixes.lua
 Data\QuestItems.lua
 Data\ForeverSkinning.lua
 Data\ForeverSkinZones.lua
+Data\ForeverSkinPoints.lua
 Data\ForeverGather.lua
 ZoneRank.lua
 Route.lua

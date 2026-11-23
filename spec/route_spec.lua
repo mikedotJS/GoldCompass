@@ -178,6 +178,27 @@ describe("Route.Loop", function()
   end)
 end)
 
+describe("Route.Unpack", function()
+  it("reads 4 base-36 characters per point (x then y, tenths of a percent), Forever points before the dot", function()
+    -- "ad" = 10 x 36 + 13 = 373 -> 37.3 ; "0a" = 10 -> 1.0 ; "rs" = 27 x 36 + 28 = 1000 -> 100 ; "00" = 0
+    local f, c = R.Unpack("ad0arsrs.0a00")
+    assert.same({ { x = 37.3, y = 1 }, { x = 100, y = 100 } }, f)
+    assert.same({ { x = 1, y = 0 } }, c)
+  end)
+  it("takes a string without a dot as Forever points, and tolerates an empty side, nil and a cut point", function()
+    local f, c = R.Unpack("0a0b")
+    assert.same({ { x = 1, y = 1.1 } }, f)
+    assert.same({}, c)
+    f, c = R.Unpack(".0a0b")
+    assert.same({}, f)
+    assert.equals(1, #c)
+    f, c = R.Unpack(nil)
+    assert.same({}, f); assert.same({}, c)
+    f = R.Unpack("0a0b0")                            -- a trailing partial point is ignored
+    assert.equals(1, #f)
+  end)
+end)
+
 describe("Route.Plan merge", function()
   it("keeps one zone step when the same zone comes back after the rank", function()
     local ns = {}

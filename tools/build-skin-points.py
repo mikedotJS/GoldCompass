@@ -1,0 +1,119 @@
+#!/usr/bin/env python3
+"""Builds Data/ForeverSkinPoints.lua: every known spawn point of every beast of Data/ForeverSkinZones.lua, thinned, for the skinning
+itinerary ("Où monter" > "Itinéraire", RouteMap.lua).
+
+Run: python3 -I tools/build-skin-points.py     (reads Data/ForeverSkinZones.lua, so run tools/build-skin-zones.py first)
+
+Source: ForeverDB.net (https://foreverdb.net), GPL-3.0 with the attribution term "Data from ForeverDB.net":
+tools/cache-foreverdb/Gather.lua, per zone and beast kind `f` = points players saw in WoW Forever, `c` = Classic (CMaNGOS) points.
+Thinning: the points of one beast on one map are clustered (greedy, radius CLUSTER = 1.5 percent of the map, the cluster stands at the
+mean of its points). Forever-seen points are clustered first; a Classic point within CLUSTER of a Forever cluster is dropped (the
+Forever point stands for it), the other Classic points are clustered the same way. Nothing here is fetched.
+Standard library only; the downloaded files are parsed as text, never executed.
+"""
+import importlib.util, math, pathlib, re
+
+ROOT = pathlib.Path(__file__).resolve().parent.parent
+TOOLS = pathlib.Path(__file__).resolve().parent
+OUT = ROOT / "Data" / "ForeverSkinPoints.lua"
+ZONES = ROOT / "Data" / "ForeverSkinZones.lua"
+CACHE = TOOLS / "cache-foreverdb"
+KEY = 10000             # ns.SkinPoints key = npc ID x KEY + uiMapID (one flat table: much less memory than one table per beast)
+CLUSTER = 15            # tenths of a percent of the map: 1.5 percent
+MAX_PER_MAP = 40        # clusters kept per beast and map and origin (Forever, Classic): the most populated ones
+
+
+def load(name, file):
+    spec = importlib.util.spec_from_file_location(name, TOOLS / file)
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)
+    return mod
+
+
+gather = load("build_gather", "build-gather.py")          # parse_gather
+
+
+def cluster(points):
+    """Greedy clusters of radius CLUSTER over the sorted points: [[x, y, n]] with x, y the mean of the n points."""
+    out = []
+    for x, y in sorted(points):
+        for c in out:
+            if math.hypot(c[0] - x, c[1] - y) <= CLUSTER:
+                c[0], c[1], c[2] = (c[0] * c[2] + x) / (c[2] + 1), (c[1] * c[2] + y) / (c[2] + 1), c[2] + 1
+                break
+        else:
+            out.append([x, y, 1])
+    return out
+
+
+def pack(clusters):
+    """4 base-36 characters per point (x then y, tenths of a percent), the heaviest clusters first, then in a stable order."""
+    best = sorted(clusters, key=lambda c: (-c[2], c[0], c[1]))[:MAX_PER_MAP]
+    best.sort(key=lambda c: (c[0], c[1]))
+    cell = lambda v: (lambda n: "0123456789abcdefghijklmnopqrstuvwxyz"[n // 36] + "0123456789abcdefghijklmnopqrstuvwxyz"[n % 36])(
+        min(1295, max(0, round(v))))
+    return "".join(cell(c[0]) + cell(c[1]) for c in best)
+
+
+def thin(forever, classic):
+    """'<forever points>.<classic points>' (either part may be empty), or None when the beast has no point on this map."""
+    f = cluster(forever)
+    rest = [p for p in classic if all(math.hypot(c[0] - p[0], c[1] - p[1]) > CLUSTER for c in f)]
+    c = cluster(rest)
+    return f"{pack(f)}.{pack(c)}" if f or c else None
+
+
+def main():
+    text = (CACHE / "Gather.lua").read_text(encoding="utf-8")
+    kind_of = {}                                           # first npc ID of the kind -> kind (the key of ns.SkinZones beasts)
+    for k, npcs in re.findall(r'\[(\d+)\] = \{ n = "(?:[^"\\]|\\.)*", p = "skin", sk = \d+, lv = \{ \d+, \d+ \}, npc = \{ ([\d, ]+) \}', text):
+        npc = int(npcs.split(",")[0])
+        if npc in kind_of:
+            raise SystemExit(f"npc {npc} is the first npc of two skinning kinds")
+        kind_of[npc] = int(k)
+    _, zones = gather.parse_gather(text)
+
+    wanted, zone = {}, None                                # npc -> [zone], from the generated skin zones
+    for line in ZONES.read_text(encoding="utf-8").splitlines():
+        m = re.match(r"\s+\[(\d+)\] = \{", line)
+        if m:
+            zone = int(m.group(1))
+            continue
+        m = re.match(r"\s+\{ (\d+), \"", line)
+        if m and zone:
+            wanted.setdefault(int(m.group(1)), []).append(zone)
+    if not wanted:
+        raise SystemExit(f"{ZONES.relative_to(ROOT)}: no beast found")
+
+    rows, n_pairs, n_points, n_forever, longest = [], 0, 0, 0, 0
+    for npc in sorted(wanted):
+        for zid in sorted(wanted[npc]):
+            c, f = zones.get(zid, {"k": {}})["k"].get(kind_of.get(npc), ([], []))
+            packed = thin(f, c)
+            if packed:
+                rows.append(f'  [{npc * KEY + zid}] = "{packed}",  -- {npc} on {zid}')
+                n_pairs += 1
+                fp, cp = packed.split(".")
+                n_forever += len(fp) // 4
+                n_points += (len(fp) + len(cp)) // 4
+                longest = max(longest, (len(fp) + len(cp)) // 4)
+
+    out = [
+        "-- GENERATED by tools/build-skin-points.py. Do not edit by hand.",
+        "-- Data from ForeverDB.net (https://foreverdb.net), game build 1.60.1.70959: Gather.lua (spawn points of the skinnable beasts).",
+        "-- Licence: GPL-3.0 with an attribution term (section 7(b)), see NOTICE and THIRD-PARTY.",
+        "-- ns.SkinPoints[npcID * 10000 + uiMapID] = \"<forever points>.<classic points>\"  for every beast of Data/ForeverSkinZones.lua on each of",
+        "--   its maps (3099 on Durotar 1411: key 30991411).",
+        "--   A point is 4 base-36 characters, x then y, in tenths of a percent of the map (Route.Unpack reads them).",
+        "--   Before the dot: points players saw the beast at in WoW Forever. After it: Classic (CMaNGOS) points that no Forever point",
+        "--   covers, NOT confirmed on Forever. A beast's points on a map are clustered (about 1.5 percent of the map), not the raw spawns.",
+        "local _, ns = ...",
+        "ns.SkinPoints = {",
+    ] + rows + ["}"]
+    OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
+    print(f"wrote {OUT.relative_to(ROOT)}: {len({r.split(']')[0][3:-4] for r in rows})} beasts, {n_pairs} beast-maps, {n_points} points ({n_forever} Forever-seen), "
+          f"at most {longest} per beast and map; {OUT.stat().st_size} bytes")
+
+
+if __name__ == "__main__":
+    main()

@@ -75,15 +75,33 @@ local function gatherPoints(prof, zone, ids)
   return pts
 end
 
--- Points of the beasts of a skinning step: the spawn points of ns.SkinSpots on this zone's map.
+-- The packed points (Data/ForeverSkinPoints.lua) of a beast on a zone's map, nil when it has none there.
+local function packedPoints(beast, zone)
+  return ns.SkinPoints and ns.SkinPoints[beast.id * 10000 + zone]
+end
+
+-- Points of the beasts of a skinning step: their spawn points on this zone's map (ns.SkinPoints). The points players saw in WoW Forever
+-- are enough on their own from R.MIN_FOREVER of them; below that the Classic points (not confirmed on Forever) fill in.
 local function skinPoints(zone, beasts)
-  local pts = {}
+  local seen, classic = {}, {}
   for _, b in ipairs(beasts) do
-    for _, s in ipairs(ns.SkinSpots and ns.SkinSpots[b.id] or {}) do
-      if s[1] == zone then pts[#pts + 1] = { x = s[2], y = s[3] } end
+    local packed = packedPoints(b, zone)
+    if packed then
+      local f, c = ns.Route.Unpack(packed)
+      for _, p in ipairs(f) do seen[#seen + 1] = p end
+      for _, p in ipairs(c) do classic[#classic + 1] = p end
     end
   end
-  return pts
+  if #seen >= ns.Route.MIN_FOREVER then return seen end
+  for _, p in ipairs(classic) do seen[#seen + 1] = p end
+  return seen
+end
+
+local function hasSkinPoints(zone, beasts)
+  for _, b in ipairs(beasts) do
+    if packedPoints(b, zone) then return true end
+  end
+  return false
 end
 
 local function itemName(item, english)
@@ -116,7 +134,7 @@ function RM.Plan(p, road, english)
     -- a zone with no known point to walk through goes after the ones that have some (the loop needs points)
     local has = {}
     for _, z in ipairs(list) do
-      if z.all then has[z] = #skinPoints(z.zone, z.all) > 0 end
+      if z.all then has[z] = hasSkinPoints(z.zone, z.all) end
     end
     ns.Route.Order(list, ctx)
     -- the zone the character was sent to stays first while it still gives points (and is not far above the level): the best zone by
