@@ -387,6 +387,36 @@ describe("review fixes (stubbed WoW API)", function()
     assert.is_true(inVendor[2449]) -- Earthroot, bound: vendor group in the Bags tab as well
   end)
 
+  it("a tooltip scans the bags only for an item the bags hold, once per change of the bags, and keeps the recipe uses for a few seconds", function()
+    setup({ scanned = true, alchemy = true, bound = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {} }
+    local scans, uses, clock = 0, 0, 1000
+    local realScan, realUses = ns.BagItems, ns.Advice.Uses
+    ns.BagItems = function() scans = scans + 1; return realScan() end
+    ns.Advice.Uses = function(...) uses = uses + 1; return realUses(...) end
+    _G.time = function() return clock end
+    local function hover() GameTooltip.lines = {}; handlers.item(GameTooltip, { id = 2449 }) end
+    hover(); hover(); hover()
+    assert.are.equal(1, scans)                                                      -- one scan for three looks at a bag item
+    assert.are.equal(1, uses)                                                       -- and one price walk over its recipes
+    assert.matches("Vendre au marchand", table.concat(GameTooltip.lines, "\n"))     -- still the soulbound verdict
+    clock = clock + 6
+    hover()
+    assert.are.equal(2, uses)                                                       -- the uses expire
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.BAG_UPDATE_DELAYED and fr.events.MODIFIER_STATE_CHANGED then fr.scripts.OnEvent(fr, "BAG_UPDATE_DELAYED") end
+    end
+    hover()
+    assert.are.equal(2, scans)                                                      -- the bags changed: scanned again
+    _G.C_Item.GetItemCount = function() return 0 end                                -- an item the bags do not hold: no scan at all
+    local before = scans
+    handlers.item(GameTooltip, { id = 2449 })
+    assert.are.equal(before, scans)
+    _G.time = os.time
+  end)
+
   it("shows the no-price verdict with the scan hint", function()
     setup({ scanned = false, noVendor = true })
     local ns = loadAddon()
