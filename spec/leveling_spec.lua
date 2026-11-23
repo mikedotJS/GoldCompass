@@ -1465,6 +1465,17 @@ describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of th
     assert.are.equal("Early Later", table.concat(learns, " "))
   end)
 
+  it("a craft that ends exactly at the cap stops where the rank can be trained (the rank is a step, not the cap banner)", function()
+    local a = { id = 1, name = "A", d = 1, out = 101, oq = 1, mats = { { 10, 1 } } }   -- used up to 150 exactly
+    local b = { id = 2, name = "B", d = 1, out = 102, oq = 1, mats = { { 10, 2 } } }
+    local th = { [1] = { 1, 149, 149, 150 }, [2] = { 1, 300, 300, 301 } }
+    local r = V.Roadmap({ skill = 100, max = 150, recipes = { [1] = a, [2] = b } }, { buy = function() end, owned = function() return 0 end },
+      { thresholds = function(id) return th[id] end })
+    assert.are.same({ "craft", 100, 125 }, { r.path[1].kind, r.path[1].from, r.path[1].to })
+    assert.are.same({ "rank", 125 }, { r.path[2].kind, r.path[2].at })
+    assert.are.same({ "craft", "A", 125, 150 }, { r.path[3].kind, r.path[3].rec.name, r.path[3].from, r.path[3].to })
+  end)
+
   it("a learn with no place on the map, or a vendor with an unknown price, costs V.LEARN_EFFORT.unknown", function()
     local crafts = {
       { id = 5, name = "Pinned", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },

@@ -1104,9 +1104,9 @@ function V.Roadmap(prof, ctx, opts)
       rankEvents(si, a)
       if not r.known and not learned[r.id] then learn(si, a) end
       local b, crafts = seg.to, 0
-      -- a craft that would pass the cap of the rank held stops where the next rank can be trained; otherwise the rank waits for the
-      -- next step that starts at or above that skill (often a recipe to learn at the same trainer)
-      if ranks[ri] and b > ranks[ri].cap - 75 then b = ranks[ri].at end
+      -- a craft that would reach the cap of the rank held stops where the next rank can be trained (at the cap the window only shows
+      -- its banner); otherwise the rank waits for the next step that starts at or above that skill (often a recipe to learn there)
+      if ranks[ri] and b >= ranks[ri].cap - 75 then b = ranks[ri].at end
       for k = a, b - 1 do crafts = crafts + 1 / chanceAt(r.th, k) end
       events[#events + 1] = { kind = "craft", r = r, from = a, to = b, times = math.max(1, math.ceil(crafts - 1e-9)) }
       a = b
