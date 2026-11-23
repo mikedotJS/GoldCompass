@@ -1405,10 +1405,22 @@ describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of th
   it("no A, B, A for a few units: a recipe a little leaner on 5 points is not worth two switches", function()
     local list = { entry(1, 2, 1, 100), entry(2, 1, 50, 55) }   -- B saves 5 units on 50..55, two switches cost 2 x V.SWITCH
     assert.are.equal("1:10>100", names(V.Cheapest(list, 10, 100, 1), 10))
-    local save = V.SWITCH
-    V.SWITCH = 0
+    local save, stint = V.SWITCH, V.MIN_STINT
+    V.SWITCH, V.MIN_STINT = 0, 1
     assert.are.equal("1:10>50 2:50>55 1:55>100", names(V.Cheapest(list, 10, 100, 1), 10))
-    V.SWITCH = save
+    V.SWITCH, V.MIN_STINT = save, stint
+  end)
+
+  it("no A, B, A either when B saves a lot on a few points: a recipe taken is kept V.MIN_STINT points", function()
+    local list = { entry(1, 10, 1, 100), entry(2, 1, 50, 55) }   -- B saves 45 units on 50..55, far more than two switches
+    assert.are.equal("1:10>100", names(V.Cheapest(list, 10, 100, 1), 10))
+    local stint = V.MIN_STINT
+    V.MIN_STINT = 1
+    assert.are.equal("1:10>50 2:50>55 1:55>100", names(V.Cheapest(list, 10, 100, 1), 10))
+    V.MIN_STINT = stint
+    -- a recipe that lasts the stint is taken
+    list = { entry(1, 10, 1, 100), entry(2, 1, 50, 100) }
+    assert.are.equal("1:10>50 2:50>100", names(V.Cheapest(list, 10, 100, 1), 10))
   end)
 
   it("a switch that saves more than its cost is made", function()
@@ -1436,7 +1448,7 @@ describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of th
     for _, st in ipairs(r.path) do if st.kind == "learn" then return st.rec.name end end
   end
 
-  it("a recipe to learn needs V.LEARN_MIN_POINTS useful points: a lean one useful on 10 points only is not learned", function()
+  it("a recipe to learn is kept V.MIN_STINT points: a lean one useful on 10 points only is not learned", function()
     local short = { id = 2, name = "Short", learn = 120, mats = { { 10, 1 } }, th = { 120, 125, 128, 130 } }
     assert.is_nil(learned(roadmap({ rec = short, recommend = true, effort = 12 })))
     local long = { id = 3, name = "Long", learn = 120, mats = { { 10, 1 } }, th = { 120, 150, 170, 190 } }
