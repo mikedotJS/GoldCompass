@@ -80,10 +80,8 @@ def copper(price):
 
 
 # Skipped categories (other data sets): leather, hides and scales; herbs; ore and stone; fish
-# Except the fish that vendors sell (Longjaw Mud Snapper, Bristle Whisker Catfish, Spotted Yellowtail, Rockscale Cod, Spinefin Halibut): the shopping list needs those vendors.
-# Held back: Slitherskin Mackerel 6303 (vendors exist). With it the Cooking plan announces 'learn it at 41' from a bag of meat, then drops that
-# step once the player is at 41 (journey detector D2); add it back once the planner keeps a planned learn.
-VENDOR_FISH = {6289, 6308, 4603, 6362, 8959}
+# Except the fish that vendors sell (Longjaw Mud Snapper, Bristle Whisker Catfish, Spotted Yellowtail, Slitherskin Mackerel, Rockscale Cod, Spinefin Halibut): the shopping list needs those vendors.
+VENDOR_FISH = {6289, 6308, 4603, 6303, 6362, 8959}
 FISH = re.compile(r"^Raw |Fish|Eel$|Snapper|Blackmouth|Mightfish|Sagefish|Yellowtail|Grouper|Salmon|Mackerel|Squid|Lobster|Smallfish|Whitescale|Oily ")
 STONE = re.compile(r" Ore$|^(Rough|Coarse|Heavy|Solid|Dense) Stone$")
 

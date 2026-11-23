@@ -74,12 +74,11 @@ describe("reagent sources", function()
   end)
 
   it("keeps the fish that vendors sell (the other fish stay in their own data set)", function()
-    for _, item in ipairs({ 6289, 6308, 4603, 6362, 8959 }) do          -- Longjaw Mud Snapper, Bristle Whisker Catfish, Spotted Yellowtail, Rockscale Cod, Spinefin Halibut
+    for _, item in ipairs({ 6289, 6308, 4603, 6303, 6362, 8959 }) do    -- Longjaw Mud Snapper, Bristle Whisker Catfish, Spotted Yellowtail, Slitherskin Mackerel, Rockscale Cod, Spinefin Halibut
       assert.is_true(#R[item].vendors >= 5)
       assert.is_true(R[item].vendors[1].forever)
     end
     assert.is_nil(R[13760])                                              -- Sunscale Salmon: fished only, no vendor
-    assert.is_nil(R[6303])                                               -- Slitherskin Mackerel: held back, it makes the Cooking plan flicker (see VENDOR_FISH)
   end)
 
   it("reads a decimal drop rate into the chance, not into the creature name", function()
