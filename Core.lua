@@ -628,10 +628,40 @@ end
 
 -- "Monter le métier": the roadmap of one profession (Leveling.Roadmap) with the names the window shows, the known recipes by colour
 -- (the collapsible list) and the trainer to visit when the cap is reached.
+-- Effort of one unit of a reagent (Effort.lua), built once from the static data: vendors, nodes, beasts, drops and the recipes of every
+-- profession of the vendored Forever data (the hidden ones and the ones the Forever client no longer has left out).
+local reagentEffort
+local function staticEffort()
+  if reagentEffort then return reagentEffort end
+  local DB, fixes, recipes = ns.ForeverDB, ns.ForeverFixes or {}, {}
+  local lines = {}
+  for line in pairs(SKILL_LINES) do lines[#lines + 1] = line end
+  table.sort(lines)
+  for _, line in ipairs(DB and DB.GetRecipes and lines or {}) do
+    local all = DB:GetRecipes(line) or {}
+    local ids = {}
+    for id in pairs(all) do ids[#ids + 1] = id end
+    table.sort(ids)
+    for _, id in ipairs(ids) do
+      local e, mats = all[id], {}
+      if e.craftedItemId and not DB:IsHiddenRecipe(id) and not (fixes.gone and fixes.gone[id]) then
+        for item, n in pairs(e.reagents or {}) do mats[#mats + 1] = { item, n } end
+        if #mats > 0 then
+          local list = recipes[e.craftedItemId] or {}
+          recipes[e.craftedItemId] = list
+          list[#list + 1] = { mats = mats, oq = fixes.oq and fixes.oq[id] or 1 }
+        end
+      end
+    end
+  end
+  reagentEffort = ns.Effort.Reagents({ sources = ns.ReagentSources, gather = ns.GatherSources, skin = ns.SkinZones, recipes = recipes })
+  return reagentEffort
+end
+
 function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   local L = ns.Leveling
   -- the roadmap counts the bags and the bank (the bags first); the part in the bags alone feeds the "Fabriquer" buttons
-  local rctx = setmetatable({ how = function(id) return reagentHow(ctx, id) end, bagOwned = ctx.owned,
+  local rctx = setmetatable({ how = function(id) return reagentHow(ctx, id) end, bagOwned = ctx.owned, effort = staticEffort(),
     owned = function(id) return ctx.owned(id) + (ctx.bank and ctx.bank(id) or 0) end }, { __index = ctx })
   -- the recipes within reach already have their place (ns.LearnFor); the ones further ahead get theirs when a step shows them
   local lr = entry.learn

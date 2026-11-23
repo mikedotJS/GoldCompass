@@ -158,7 +158,7 @@ ns.S = {
   howto_price = "Prix", howto_req = "Requiert", howto_req_level = "Niveau requis", howto_req_rep = "Réputation", howto_req_skill = "%s %d",
   howto_confirmed = "position confirmée sur Forever", howto_classic_pos = "position Classic", howto_rank = "Rang %s", howto_book = "Livre : %s",
   road_learn = "Apprendre %s", road_learn_sub = "%s · %s",
-  road_why_lean = "sert de %d à %d : moins d'ingrédients que %s (~%s par point contre ~%s)",
+  road_why_lean = "sert de %d à %d : moins d'effort que %s (~%s par point contre ~%s)",
   road_rank_level = " · niveau %d requis",
   road_why_only = "sert de %d à %d : tes autres recettes ne donnent plus de points",
   road_why_fade = "sert de %d à %d : %s ne donne presque plus de points",

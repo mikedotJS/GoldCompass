@@ -771,7 +771,7 @@ end
 --          of it is in the bags) }
 --   opts = { thresholds(id) -> { orange, yellow, green, gray } of a known recipe, candidates = the rows of V.Candidates (every recipe that
 --            can be learned on the way; `learn`, rows of V.Learnable, is read the same way), steps = 5 }
--- THE PLAN is the cheapest way to the maximum, in ingredients: each skill point costs the ingredients of one craft divided by its chance
+-- THE PLAN is the cheapest way to the maximum, in effort: each skill point costs the effort of the reagents of one craft divided by its chance
 -- of a point (the Classic formula), and a recipe to learn costs V.LEARN_EFFORT once, so it is learned only when it saves more than that
 -- (V.Cheapest). The plan reads neither the bags, the bank nor the auction prices, and it is solved from the maximum backwards: following
 -- it never changes it (the plan from a later skill is the end of the plan from an earlier one, and a recipe learned as told becomes a
@@ -793,12 +793,12 @@ V.ROADMAP_STEPS = 5
 V.MIN_CHANCE = 0.2   -- below this a craft is not worth a step (the chance only falls towards gray, it never reaches 0 by crafting)
 V.MAX_SKILL = 300
 V.BAG_STEPS = 2
--- What a recipe to learn must save, in ingredients, to be part of the plan (the trip, the fee). Estimates: a trainer is on the way, a
+-- What a recipe to learn must save, in effort, to be part of the plan (the trip, the fee). Estimates: a trainer is on the way, a
 -- vendor selling for gold less so, and the rest (a quest, a pattern from the auction house, a vendor asking a currency, a standing or
 -- an unknown price) is taken only when it saves a lot.
 -- `unknown`: no place on the map (a text only): a search, not a trip. A vendor on the map whose price is unknown stays `other`.
 V.LEARN_EFFORT = { trainer = 12, vendor = 20, other = 30, unknown = 60 }
-V.SWITCH = 10            -- what changing recipe costs, in ingredients: the plan does not go A, B, then A again for a few units
+V.SWITCH = 10            -- what changing recipe costs, in effort: the plan does not go A, B, then A again for a few units
 V.MIN_STINT = 15         -- a recipe the plan takes (to learn or known) is kept that many points at least: no learn for a few points,
                          -- no A, B, A. Only where it ends sooner (or nothing else gives a point) may it be kept less, at V.SHORT_STINT.
 V.SHORT_STINT = 1e6
@@ -821,24 +821,16 @@ local function planTh(rec, th, skill)
   return { 0, skill + g[1], skill + g[2], skill + g[3] }
 end
 
--- Ingredients one craft takes, whatever the bags hold: a reagent a vendor sells counts half, one a known recipe makes (and that is neither
--- sold nor gathered) counts as its own reagents.
+-- Effort of one craft, whatever the bags, the bank or the prices say: the reagents it takes, each weighed by ctx.effort(item) (Effort.lua:
+-- a thread from a vendor is a fraction, a skinned leather about 1.5, a cloth that only drops more). Without ctx.effort a reagent counts 1.
 local GATHERED = { skin = true, herb = true, ore = true }
-local function planUnits(rec, ctx, byOut)
-  local function weight(id) return (ctx.buy and ctx.buy(id)) and 0.5 or 1 end
+local function planUnits(rec, ctx)
   local n = 0
-  for _, m in ipairs(rec.mats or {}) do
-    local sub, made = byOut[m[1]], 0
-    if sub and sub ~= rec and weight(m[1]) == 1 and not GATHERED[ctx.how and ctx.how(m[1]) or ""] then
-      for _, sm in ipairs(sub.mats or {}) do made = made + sm[2] * weight(sm[1]) end
-      made = made / math.max(sub.oq or 1, 1)
-    end
-    n = n + m[2] * (made > 0 and made or weight(m[1]))
-  end
+  for _, m in ipairs(rec.mats or {}) do n = n + m[2] * (ctx.effort and ctx.effort(m[1]) or 1) end
   return n
 end
 
--- The cheapest way from `start` to `target`. list = { { id, th, units (ingredients per craft), lo (the skill it can be used from),
+-- The cheapest way from `start` to `target`. list = { { id, th, units (effort per craft), lo (the skill it can be used from),
 -- entry (what learning it costs, 0 for a known recipe) } }. A recipe is usable at a skill when it can be learned by then and its chance of
 -- a point is at least V.MIN_CHANCE; where no recipe reaches that chance, the ones with any chance bridge the hole, if it ends on a usable
 -- recipe or on the target. Where nothing gives a point the plan stops (`reach`).
@@ -963,7 +955,7 @@ function V.Roadmap(prof, ctx, opts)
   for _, rec in pairs(prof.recipes or {}) do if rec.out then byOut[rec.out] = rec end end
   local list, seen = {}, {}
   local function add(rec, th, lo, entry, row)
-    local units = planUnits(rec, ctx, byOut)
+    local units = planUnits(rec, ctx)
     if units <= 0 or lo >= th[4] then return end
     local eS = th[4]
     if th[4] > th[2] then eS = math.min(th[4], math.floor(th[4] - V.MIN_CHANCE * (th[4] - th[2]) + 1e-9) + 1) end

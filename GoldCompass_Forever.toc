@@ -33,6 +33,7 @@ SkinRank.lua
 Advice.lua
 Here.lua
 ForeverDB.lua
+Effort.lua
 Leveling.lua
 Where.lua
 Format.lua

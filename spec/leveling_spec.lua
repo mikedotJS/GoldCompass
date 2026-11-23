@@ -1504,3 +1504,57 @@ describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of th
     assert.is_true(V.LEARN_EFFORT.unknown > V.LEARN_EFFORT.other)
   end)
 end)
+
+describe("Leveling.Roadmap: the effort of the reagents (ctx.effort), and nothing else, decides the plan", function()
+  -- items: 20 thread (effort 0.25), 30 a rare drop (effort 4), 40 and 41 plain ones (no effort known: 1)
+  local EFFORT = { [20] = 0.25, [30] = 4 }
+  local THREAD = { id = 1, name = "Thread", d = 0, out = 101, oq = 1, mats = { { 20, 3 } } }   -- 3 x 0.25 = 0.75 per craft
+  local RARE = { id = 2, name = "Rare", d = 0, out = 102, oq = 1, mats = { { 30, 3 } } }       -- 3 x 4 = 12 per craft: same units, 16 times the effort
+  local TH = { [1] = { 50, 100, 110, 120 }, [2] = { 50, 100, 110, 120 } }
+  local function plan(ctx, recipes)
+    if ctx.effort == nil then ctx.effort = function(id) return EFFORT[id] end elseif ctx.effort == false then ctx.effort = nil end
+    local r = V.Roadmap({ skill = 100, max = 150, recipes = recipes or { [1] = THREAD, [2] = RARE } }, ctx,
+      { thresholds = function(id) return TH[id] end })
+    local out = {}
+    for i, p in ipairs(r.path) do out[i] = (p.rec and p.rec.name or p.kind) .. " " .. (p.from or p.at) .. ">" .. (p.to or "") end
+    return table.concat(out, ","), r
+  end
+
+  it("a recipe with the same number of units but easy reagents beats a rare-drop one", function()
+    local sig = plan({ owned = function() return 0 end })
+    assert.matches("^Thread ", sig)
+    assert.is_nil(sig:find("Rare", 1, true))
+  end)
+
+  it("weighs a reagent by its effort: the other way round when the thread is the hard one", function()
+    local sig = plan({ owned = function() return 0 end, effort = function(id) return ({ [20] = 9, [30] = 1 })[id] end })
+    assert.matches("^Rare ", sig)
+  end)
+
+  it("counts every unit 1 without ctx.effort: fewer units win", function()
+    local FEW = { id = 3, name = "Few", d = 0, out = 103, oq = 1, mats = { { 20, 2 } } }
+    local sig = plan({ owned = function() return 0 end, effort = false }, { [1] = THREAD, [3] = FEW })
+    assert.matches("^Few ", sig)
+  end)
+
+  it("is the same plan whatever the prices, the bags and the bank hold (a pure function of the static data)", function()
+    local empty = plan({ owned = function() return 0 end, buy = function() end, price = function() end })
+    local rich = plan({ owned = function(id) return id == 30 and 2 or 1 end, bagOwned = function() return 1 end,
+      buy = function(id) return id == 30 and 10 or 100000 end, price = function() return 1, 0 end,
+      how = function() return "skin" end })
+    assert.are.equal(empty, rich)
+  end)
+
+  it("says the effort per point in `why`: the units of the learned recipe against the best known one", function()
+    local LEARN = { id = 5, name = "Learn", d = 0, out = 105, oq = 1, mats = { { 20, 2 } }, learn = 100, th = { 100, 125, 140, 160 }, way = { kind = "trainer" } }
+    local KNOWN = { id = 1, name = "Known", d = 0, out = 101, oq = 1, mats = { { 30, 1 } } }   -- 4 per craft
+    local r = V.Roadmap({ skill = 100, max = 300, recipes = { [1] = KNOWN } }, { owned = function() return 0 end, effort = function(id) return EFFORT[id] end },
+      { thresholds = function() return { 50, 100, 110, 120 } end, learn = { { rec = LEARN, recommend = true } } })
+    local why
+    for _, s in ipairs(r.steps) do if s.kind == "learn" then why = s.why end end
+    assert.is_truthy(why)
+    assert.are.equal("Known", why.alt.name)
+    assert.is_near(2 * 0.25, why.perPoint, 1e-9)                      -- 0.5 per craft, chance 1 until its yellow at 125
+    assert.is_near(4, why.altPerPoint, 1e-9)                          -- one drop at 4, chance 1 (orange) at 100
+  end)
+end)
