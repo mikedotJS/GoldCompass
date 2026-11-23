@@ -941,12 +941,12 @@ function V.Roadmap(prof, ctx, opts)
   local byOut = {}
   for _, rec in pairs(prof.recipes or {}) do if rec.out then byOut[rec.out] = rec end end
   local list, seen = {}, {}
-  local function add(rec, th, lo, entry, row)
+  local function add(rec, th, lo, entry, row, from)
     local units = planUnits(rec, ctx, byOut)
     if units <= 0 or lo >= th[4] then return end
     local eS = th[4]
     if th[4] > th[2] then eS = math.min(th[4], math.floor(th[4] - V.MIN_CHANCE * (th[4] - th[2]) + 1e-9) + 1) end
-    if entry > 0 and eS - lo < V.LEARN_MIN_POINTS then return end    -- too few useful points to be worth the trip
+    if entry > 0 and eS - (from or lo) < V.LEARN_MIN_POINTS then return end    -- too few useful points to be worth the trip
     list[#list + 1] = { rec = rec, id = rec.id, th = th, units = units, lo = lo, eS = eS, eA = th[4], entry = entry, known = entry == 0, row = row }
   end
   for _, rec in pairs(prof.recipes or {}) do
@@ -964,7 +964,8 @@ function V.Roadmap(prof, ctx, opts)
         lo = result.nextRank and math.max(lo, result.rankAt) or math.huge
       end
       local kind = rec.way and rec.way.kind or "trainer"
-      add(rec, rec.th, lo, row.effort or V.LEARN_EFFORT[kind] or V.LEARN_EFFORT.other, row)
+      -- not learned yet: nothing to walk on below the skill (its cost is paid from `start`); the useful points count from `lo`
+      add(rec, rec.th, math.max(lo, start), row.effort or V.LEARN_EFFORT[kind] or V.LEARN_EFFORT.other, row, lo)
     end
   end
   local plan = V.Cheapest(list, start, target, 1)

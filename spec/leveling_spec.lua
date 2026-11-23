@@ -1443,6 +1443,28 @@ describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of th
     assert.are.equal("Long", learned(roadmap({ rec = long, recommend = true, effort = 12 })))
   end)
 
+  it("mid-profession: a recipe to learn that was best below the skill only is not kept on (its cost is paid from the skill)", function()
+    -- at 140, Early (1 unit, until 152) saves 12 units on Later (2 units, to 300): less than its learn and the switch after it.
+    -- Below 140 Early would win by far; the character never learned it there, so the plan from 140 goes to Later directly.
+    local early = { id = 2, name = "Early", learn = 95, mats = { { 10, 1 } }, th = { 95, 150, 151, 152 } }
+    local later = { id = 3, name = "Later", learn = 135, mats = { { 10, 2 } }, th = { 135, 300, 300, 301 } }
+    local prof = { skill = 140, max = 300, recipes = { [1] = BASE } }
+    local c = { buy = function() end, owned = function() return 0 end }
+    local o = { thresholds = function() return { 1, 300, 300, 301 } end,
+      candidates = { { rec = early, recommend = true, effort = 12 }, { rec = later, recommend = true, effort = 12 } } }
+    local r = V.Roadmap(prof, c, o)
+    local learns = {}
+    for _, st in ipairs(r.path) do if st.kind == "learn" then learns[#learns + 1] = st.rec.name end end
+    assert.are.equal("Later", table.concat(learns, " "))
+    assert.are.equal("learn", r.steps[1].kind)
+    assert.are.equal("Later", r.steps[1].rec.name)
+    -- the same plan asked from 100 does learn Early (it saves 50 points of 3 units there)
+    prof.skill = 100
+    learns = {}
+    for _, st in ipairs(V.Roadmap(prof, c, o).path) do if st.kind == "learn" then learns[#learns + 1] = st.rec.name end end
+    assert.are.equal("Early Later", table.concat(learns, " "))
+  end)
+
   it("a learn with no place on the map, or a vendor with an unknown price, costs V.LEARN_EFFORT.unknown", function()
     local crafts = {
       { id = 5, name = "Pinned", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },
