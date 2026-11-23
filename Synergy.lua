@@ -204,19 +204,23 @@ end
 
 local function hoursOf(h) return math.max(1, math.floor(h.hours + 0.5)) end
 
+-- "bête" for one, "bêtes" otherwise.
+local function unit(kind, count, S) return S.syn_unit[kind][count == 1 and 1 or 2] end
+
 -- The dim line under a missing reagent: "ton Dépeçage : ~35 bêtes, Les Tarides (ta zone)", or "rare au dépeçage (~400 bêtes, ~7 h) · plutôt à l'HV".
 -- names = { zone = function(zoneID) -> text, item = function(itemID) -> text }
 function SY.Line(h, S, names)
-  if h.rare then return S.syn_rare[h.kind]:format(h.count, hoursOf(h)) .. (h.ah and S.syn_ah or "") end
+  local u = unit(h.kind, h.count, S)
+  if h.rare then return S.syn_rare[h.kind]:format(h.count, u, hoursOf(h)) .. (h.ah and S.syn_ah or "") end
   local zone = names.zone(h.zone) .. (h.here and S.syn_here or "")
-  if h.kind == "bar" then return S.syn_line.bar:format(h.ore.n, names.item(h.ore.item), h.count, zone) end
-  return S.syn_line[h.kind]:format(h.count, zone)
+  if h.kind == "bar" then return S.syn_line.bar:format(h.ore.n, names.item(h.ore.item), h.count, u, zone) end
+  return S.syn_line[h.kind]:format(h.count, u, zone)
 end
 
 -- The short form of a shopping-list row: "ton Dépeçage · Les Tarides · ~35 bêtes", "rare au dépeçage (~7 h)".
 function SY.Short(h, S, names)
   if h.rare then return S.syn_rare_row[h.kind]:format(hoursOf(h)) end
-  return S.syn_row[h.kind]:format(names.zone(h.zone), h.count)
+  return S.syn_row[h.kind]:format(names.zone(h.zone), h.count, unit(h.kind, h.count, S))
 end
 
 -- "Sert pour Travail du cuir : 26 × Cuir léger, 14 × Peau légère", or with several professions "Sert pour Travail du cuir (40) et Ingénierie (12)".

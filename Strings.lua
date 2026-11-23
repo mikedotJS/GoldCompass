@@ -273,14 +273,15 @@ for k, v in pairs({
 }) do ns.S[k] = v end
 -- Hints of Synergy.lua: what the character's own gathering professions give to the roadmaps. Estimates (Classic yields): always with "~".
 for k, v in pairs({
-  syn_line = { skin = "ton Dépeçage : ~%d bêtes, %s", herb = "ton Herboristerie : ~%d plantes, %s", ore = "ton Minage : ~%d filons, %s",
-    bar = "ta Fonte : %d × %s, ~%d filons, %s" },
+  syn_line = { skin = "ton Dépeçage : ~%d %s, %s", herb = "ton Herboristerie : ~%d %s, %s", ore = "ton Minage : ~%d %s, %s",
+    bar = "ta Fonte : %d × %s, ~%d %s, %s" },
+  syn_unit = { skin = { "bête", "bêtes" }, herb = { "plante", "plantes" }, ore = { "filon", "filons" }, bar = { "filon", "filons" } },
   syn_here = " (ta zone)",
-  syn_rare = { skin = "rare au dépeçage (~%d bêtes, ~%d h)", herb = "rare à l'herboristerie (~%d plantes, ~%d h)",
-    ore = "rare au minage (~%d filons, ~%d h)", bar = "rare à la fonte (~%d filons, ~%d h)" },
+  syn_rare = { skin = "rare au dépeçage (~%d %s, ~%d h)", herb = "rare à l'herboristerie (~%d %s, ~%d h)",
+    ore = "rare au minage (~%d %s, ~%d h)", bar = "rare à la fonte (~%d %s, ~%d h)" },
   syn_ah = " · plutôt à l'HV",
-  syn_row = { skin = "ton Dépeçage · %s · ~%d bêtes", herb = "ton Herboristerie · %s · ~%d plantes", ore = "ton Minage · %s · ~%d filons",
-    bar = "ta Fonte · %s · ~%d filons" },
+  syn_row = { skin = "ton Dépeçage · %s · ~%d %s", herb = "ton Herboristerie · %s · ~%d %s", ore = "ton Minage · %s · ~%d %s",
+    bar = "ta Fonte · %s · ~%d %s" },
   syn_rare_row = { skin = "rare au dépeçage (~%d h)", herb = "rare à l'herboristerie (~%d h)", ore = "rare au minage (~%d h)", bar = "rare à la fonte (~%d h)" },
   syn_feed_item = "%d × %s", syn_feed_prof = "%s (%d)", syn_and = " et ",
   syn_feeds_one = "Sert pour %s : %s", syn_feeds_many = "Sert pour %s",

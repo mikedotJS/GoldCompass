@@ -212,6 +212,17 @@ describe("Synergy texts", function()
     assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~1 h)", SY.FarmText({ zone = BARRENS, prof = "Skinning", hours = 0.58, units = 26 }, S, names))
   end)
 
+  it("is singular for one beast, plant or vein (and plural otherwise)", function()
+    assert.are.equal("ton Dépeçage : ~1 bête, Zone1413", SY.Line(hint({ count = 1, here = false }), S, names))
+    assert.are.equal("ton Herboristerie : ~1 plante, Zone1413", SY.Line(hint({ kind = "herb", count = 1, here = false }), S, names))
+    assert.are.equal("ton Minage : ~1 filon, Zone1413", SY.Line(hint({ kind = "ore", count = 1, here = false }), S, names))
+    assert.are.equal("ta Fonte : 2 × Item2770, ~1 filon, Zone1413", SY.Line(hint({ kind = "bar", count = 1, here = false, ore = { item = COPPER_ORE, n = 2 } }), S, names))
+    assert.are.equal("rare au dépeçage (~1 bête, ~7 h)", SY.Line(hint({ rare = true, count = 1, hours = 6.7 }), S, names))
+    assert.are.equal("ton Dépeçage · Zone1413 · ~1 bête", SY.Short(hint({ count = 1 }), S, names))
+    assert.are.equal("ton Dépeçage · Zone1413 · ~2 bêtes", SY.Short(hint({ count = 2 }), S, names))
+    assert.are.equal("ton Dépeçage · Zone1413 · ~0 bêtes", SY.Short(hint({ count = 0 }), S, names))
+  end)
+
   it("every new string stays in the Latin-1 font: no check mark, arrow or ellipsis", function()
     local function check(key, v)
       if type(v) == "table" then for k, x in pairs(v) do check(key .. "." .. k, x) end return end
