@@ -73,11 +73,20 @@ describe("reagent sources", function()
     assert.are.equal("Young Goretusk", e.drops[1][1]); assert.is_true(e.drops[1][3]); assert.is_true(e.drops[1][2] > 100)
   end)
 
-  it("keeps the three fish that vendors sell (the other fish stay in their own data set)", function()
-    for _, item in ipairs({ 6289, 6308, 4603 }) do                       -- Longjaw Mud Snapper, Bristle Whisker Catfish, Spotted Yellowtail
+  it("keeps the fish that vendors sell (the other fish stay in their own data set)", function()
+    for _, item in ipairs({ 6289, 6308, 4603, 6362, 8959 }) do          -- Longjaw Mud Snapper, Bristle Whisker Catfish, Spotted Yellowtail, Rockscale Cod, Spinefin Halibut
       assert.is_true(#R[item].vendors >= 5)
       assert.is_true(R[item].vendors[1].forever)
     end
     assert.is_nil(R[13760])                                              -- Sunscale Salmon: fished only, no vendor
+    assert.is_nil(R[6303])                                               -- Slitherskin Mackerel: held back, it makes the Cooking plan flicker (see VENDOR_FISH)
+  end)
+
+  it("reads a decimal drop rate into the chance, not into the creature name", function()
+    for _, e in pairs(R) do
+      for _, d in ipairs(e.drops or {}) do assert.is_nil(d[1]:find("drop rate", 1, true)) end
+    end
+    local d = R[7080].drops[1]                                           -- Toxic Horror, 7.2 % (Classic)
+    assert.are.equal("Toxic Horror", d[1]); assert.are.equal(7.2, d[4])
   end)
 end)
