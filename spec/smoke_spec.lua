@@ -16,6 +16,7 @@ local function proxy()
         return child
       end
       if k == "RegisterEvent" or k == "RegisterUnitEvent" then self.events = self.events or {}; self.events[a] = true end
+      if k == "UnregisterEvent" and self.events then self.events[a] = nil end
       if k == "SetText" then self.text = a end
       if k == "SetWidth" then self.width = a end
       if k == "Show" then self.shown = true end
@@ -1369,6 +1370,29 @@ describe("Learned.Capture stays quiet when the window did not change", function(
     fire("TRADE_SKILL_LIST_UPDATE")
     assert.are.equal(2, #timers)
     _G.C_TradeSkillUI, _G.GetMerchantNumItems, _G.GetMerchantItemLink = nil, nil, nil
+  end)
+end)
+
+describe("BankEvents listens to the bags only while the bank is open", function()
+  local function bankFrame()
+    for _, fr in ipairs(frames) do if fr.events and fr.events.BANKFRAME_OPENED then return fr end end
+  end
+
+  it("registers the bag and bank slot events at the opening and drops them at the closing", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {}, bank = nil }
+    local fr = bankFrame()
+    for _, e in ipairs({ "BAG_UPDATE", "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED" }) do assert.is_nil(fr.events[e]) end
+    assert.is_true(fr.events.BANKFRAME_CLOSED)                                      -- the window events stay
+    fr.scripts.OnEvent(fr, "BANKFRAME_OPENED")
+    for _, e in ipairs({ "BAG_UPDATE", "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED" }) do assert.is_true(fr.events[e]) end
+    local before = #timers
+    fr.scripts.OnEvent(fr, "BAG_UPDATE")                                            -- a change while open is scanned (debounced)
+    assert.are.equal(before + 1, #timers)
+    fr.scripts.OnEvent(fr, "BANKFRAME_CLOSED")
+    for _, e in ipairs({ "BAG_UPDATE", "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED" }) do assert.is_nil(fr.events[e]) end
   end)
 end)
 

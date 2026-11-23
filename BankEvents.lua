@@ -63,6 +63,11 @@ local function later()
   pending = true
   C_Timer.After(0.2, function() pending = false; scan() end)
 end
+-- The bag and bank slot events are listened to only while the bank is open (they fire at every loot and every sale otherwise).
+local WHILE_OPEN = { "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED", "BAG_UPDATE", "BAG_UPDATE_DELAYED" }
+local function watch(on)
+  for _, e in ipairs(WHILE_OPEN) do pcall(on and frame.RegisterEvent or frame.UnregisterEvent, frame, e) end
+end
 frame:SetScript("OnEvent", function(_, event, kind)
   -- newer clients tell a banker window by the interaction manager instead of BANKFRAME_*
   if event == "PLAYER_INTERACTION_MANAGER_FRAME_SHOW" or event == "PLAYER_INTERACTION_MANAGER_FRAME_HIDE" then
@@ -73,15 +78,17 @@ frame:SetScript("OnEvent", function(_, event, kind)
   if event == "BANKFRAME_OPENED" then
     if not open then announced = false end
     open = true
+    watch(true)
     scan(true)
     C_Timer.After(0.5, function() scan() end)   -- the contents may settle a moment after the window opens
   elseif event == "BANKFRAME_CLOSED" then
     open = false
+    watch(false)
   elseif open then
     later()
   end
 end)
 -- in a pcall: an event this client does not know must never break the addon
-for _, e in ipairs({ "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "PLAYER_INTERACTION_MANAGER_FRAME_HIDE", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED", "BAG_UPDATE", "BAG_UPDATE_DELAYED" }) do
+for _, e in ipairs({ "BANKFRAME_OPENED", "BANKFRAME_CLOSED", "PLAYER_INTERACTION_MANAGER_FRAME_SHOW", "PLAYER_INTERACTION_MANAGER_FRAME_HIDE" }) do
   pcall(frame.RegisterEvent, frame, e)
 end
