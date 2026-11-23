@@ -1295,6 +1295,83 @@ describe("profession leveling tab", function()
   end)
 end)
 
+describe("Learned.Capture stays quiet when the window did not change", function()
+  local function window(skill, ids, counter)
+    return {
+      GetBaseProfessionInfo = function() return { professionName = "Alchimie", skillLevel = skill(), maxSkillLevel = 75 } end,
+      GetAllRecipeIDs = function() return ids() end,
+      GetRecipeInfo = function(id) counter.n = counter.n + 1; return { learned = true, name = "Recette " .. id, relativeDifficulty = 1 } end,
+      GetRecipeSchematic = function() return { outputItemID = 30, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = { { reagents = { { itemID = 10 } }, quantityRequired = 2 } } } end,
+    }
+  end
+
+  it("a quick read with the same skill and recipe count reads no recipe and reports no change", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    local skill, list, counter, clock = 50, { 1, 2 }, { n = 0 }, 5000
+    _G.time = function() return clock end
+    local T = window(function() return skill end, function() return list end, counter)
+    local learned, profs = {}, {}
+    local added, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.are.equal(2, added); assert.is_true(changed)                              -- the first reading is a full one
+    local updated, reads = profs.Alchimie.updated, counter.n
+    clock = clock + 5
+    added, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.are.equal(0, added); assert.is_false(changed)
+    assert.are.equal(reads, counter.n)                                              -- no GetRecipeInfo at all
+    assert.are.equal(updated, profs.Alchimie.updated)                               -- the plans are not told to start again
+    added, changed = ns.Learned.Capture(T, learned, profs)                          -- a full read finds nothing new either
+    assert.is_false(changed)
+    assert.are.equal(updated, profs.Alchimie.updated)
+    skill = 51                                                                      -- a skill-up: read again
+    _G.time = function() return clock + 1 end
+    _, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.is_true(changed)
+    assert.are.equal(51, profs.Alchimie.skill)
+    list = { 1, 2, 3 }                                                              -- a recipe more
+    added, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.are.equal(1, added); assert.is_true(changed)
+    clock = clock + 100                                                             -- a minute later the quick read looks again
+    _G.time = function() return clock end
+    local before = counter.n
+    ns.Learned.Capture(T, learned, profs, true)
+    assert.is_true(counter.n > before)
+    _G.time = os.time
+  end)
+
+  it("the window events: a refresh only when something changed, the opening always read in full, merchant bursts apart", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    local counter = { n = 0 }
+    _G.C_TradeSkillUI = window(function() return 50 end, function() return { 1, 2 } end, counter)
+    local onData = 0
+    ns.Window.OnData = function() onData = onData + 1 end
+    local function fire(event)
+      for _, fr in ipairs(frames) do
+        if fr.events and fr.events.TRADE_SKILL_SHOW and fr.scripts.OnEvent then fr.scripts.OnEvent(fr, event) end
+      end
+    end
+    local function drain() local t = timers; timers = {}; for _, fn in ipairs(t) do pcall(fn) end end
+    timers = {}
+    fire("TRADE_SKILL_SHOW"); drain()
+    assert.are.equal(1, onData)                                                     -- first reading: new
+    fire("TRADE_SKILL_LIST_UPDATE"); drain()
+    fire("TRADE_SKILL_LIST_UPDATE"); drain()
+    assert.are.equal(1, onData)                                                     -- the list refreshed, nothing changed: no redraw
+    local reads = counter.n
+    fire("TRADE_SKILL_SHOW"); drain()
+    assert.is_true(counter.n > reads)                                               -- opening the window reads every recipe again
+    assert.are.equal(1, onData)
+    _G.GetMerchantNumItems, _G.GetMerchantItemLink = function() return 0 end, function() end
+    fire("MERCHANT_UPDATE")                                                         -- a merchant burst does not swallow the window event
+    fire("TRADE_SKILL_LIST_UPDATE")
+    assert.are.equal(2, #timers)
+    _G.C_TradeSkillUI, _G.GetMerchantNumItems, _G.GetMerchantItemLink = nil, nil, nil
+  end)
+end)
+
 describe("Avec mon sac (bag filter on the leveling tab)", function()
   local function lineTexts(ns)
     local out = {}
