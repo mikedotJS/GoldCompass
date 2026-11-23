@@ -219,7 +219,7 @@ function SY.Short(h, S, names)
   return S.syn_row[h.kind]:format(names.zone(h.zone), h.count)
 end
 
--- "Sert à ton Travail du cuir : 26 × Cuir léger, 14 × Peau légère", or with several professions "Sert à ton Travail du cuir (40) et ton Ingénierie (12)".
+-- "Sert pour Travail du cuir : 26 × Cuir léger, 14 × Peau légère", or with several professions "Sert pour Travail du cuir (40) et Ingénierie (12)".
 function SY.FeedsText(list, S)
   if not list or #list == 0 then return nil end
   if #list == 1 then

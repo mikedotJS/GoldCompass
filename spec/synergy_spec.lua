@@ -162,8 +162,8 @@ describe("Synergy.Build", function()
     assert.are.equal("Ingénierie", f[2].prof); assert.are.equal(12, f[2].units)
     assert.are.same({ LIGHT_LEATHER, LIGHT_HIDE }, { f[1].items[1].item, f[1].items[2].item })   -- 26 before 14
     assert.is_nil(syn.feeds[186])                                                                 -- Mining's own ore: not a feed
-    assert.are.equal("Sert à ton Travail du cuir (40) et ton Ingénierie (12)", SY.FeedsText(f, S))
-    assert.are.equal("Sert à ton Travail du cuir : 26 × Cuir léger, 14 × Peau légère", SY.FeedsText({ f[1] }, S))
+    assert.are.equal("Sert pour Travail du cuir (40) et Ingénierie (12)", SY.FeedsText(f, S))
+    assert.are.equal("Sert pour Travail du cuir : 26 × Cuir léger, 14 × Peau légère", SY.FeedsText({ f[1] }, S))
   end)
 
   it("nothing needs the profession: no feeds line", function()

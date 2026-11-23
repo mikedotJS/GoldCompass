@@ -97,7 +97,7 @@ describe("Métier tab hints (Synergy.lua)", function()
     open(ns)
     local list = lines(ns)
     local head = find(list, "^Où monter")
-    local feeds = find(list, "^Sert à ton Travail du cuir : %d+ × Item%d+, %d+ × Item%d+")
+    local feeds = find(list, "^Sert pour Travail du cuir : %d+ × Item%d+, %d+ × Item%d+")
     assert.is_not_nil(feeds)
     assert.are.equal(head + 1, feeds)                                 -- under the route head
   end)

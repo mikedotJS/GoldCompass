@@ -282,7 +282,7 @@ for k, v in pairs({
   syn_row = { skin = "ton Dépeçage · %s · ~%d bêtes", herb = "ton Herboristerie · %s · ~%d plantes", ore = "ton Minage · %s · ~%d filons",
     bar = "ta Fonte · %s · ~%d filons" },
   syn_rare_row = { skin = "rare au dépeçage (~%d h)", herb = "rare à l'herboristerie (~%d h)", ore = "rare au minage (~%d h)", bar = "rare à la fonte (~%d h)" },
-  syn_feed_item = "%d × %s", syn_feed_prof = "ton %s (%d)", syn_and = " et ",
-  syn_feeds_one = "Sert à ton %s : %s", syn_feeds_many = "Sert à %s",
+  syn_feed_item = "%d × %s", syn_feed_prof = "%s (%d)", syn_and = " et ",
+  syn_feeds_one = "Sert pour %s : %s", syn_feeds_many = "Sert pour %s",
   shop_farm = "À farmer d'abord : %s (%s, ~%d h)",
 }) do ns.S[k] = v end
