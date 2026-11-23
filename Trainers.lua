@@ -72,7 +72,12 @@ end
 -- previous record entirely.
 -- `by` = the character who saw the window and `skill` = its skill in the profession then: "already known" and "not available" are
 -- that character's, at that skill (T.Offers); the skill asked and the fee hold for everyone.
+local stamp = 0
+-- Counts the trainer and NPC records written this session: a result computed from them (Core.lua) is stale once it changes.
+function T.Stamp() return stamp end
+
 function T.Save(db, record, npc, faction, where, now, by, skill)
+  stamp = stamp + 1
   db.trainers = db.trainers or {}
   db.trainers[("%s|%s|%s"):format(faction, npc, record.prof)] = { npc = npc, f = faction, prof = record.prof,
     mapID = where.mapID, x = where.x, y = where.y, zone = where.zone, seen = now, offers = record.offers, by = by, skill = skill }
@@ -88,6 +93,7 @@ end
 -- player who saw it }. A recorded position beats the pfQuest one (Where.Target), which covers the NPCs new to Forever.
 function T.SaveNpc(db, id, name, faction, where)
   if not (id and where) then return end
+  stamp = stamp + 1
   db.npcs = db.npcs or {}
   db.npcs[id] = { name = name, mapID = where.mapID, x = where.x, y = where.y, f = faction }
 end

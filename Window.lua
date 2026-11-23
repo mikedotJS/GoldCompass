@@ -289,6 +289,7 @@ function W.ContentHeight() return contentHeight end -- height of the scrolled co
 function W.ScrollKind() return scrollKind end
 function W.Footer() return f.footer end
 function W.IsBagBoxShown() return f.bagBox:IsShown() and true or false end
+function W.IsPanelShown() return panel ~= nil and panel:IsShown() == true end
 
 -- Lines of the row tooltip: full name, level range, nodes with their value, price freshness, assumptions.
 function W.RowTooltipLines(row)
@@ -597,7 +598,7 @@ local function build()
   f.note:SetMaxLines(2)
   f.refresh = button(f, S.refresh, L.common.refresh.r - L.common.refresh.l)
   place(f.refresh, L.common.refresh, f)
-  f.refresh:SetScript("OnClick", function() W.Refresh() end)
+  f.refresh:SetScript("OnClick", function() ns.ForgetProfessions(); W.Refresh() end)
 
   -- tabs hang below the frame, side by side, touching neither the body nor the border
   f.tabs = {}
@@ -1307,9 +1308,16 @@ local function renderJob(res)
 end
 
 -- Called by Learned.lua when a profession window was read: refresh the leveling tab if it is the one shown.
+-- The Métier tab on the "Monter le métier" objective computes the roadmap of every profession and hands it to the shopping list
+-- (renderJob), so while it is on screen the list needs no calculation of its own: one calculation per event, not two.
+function W.JobFeeds()
+  return f ~= nil and f:IsShown() and current == "job" and ns.Goal() ~= "gold"
+end
+
+local refreshJobLater
 function W.OnData()
   ns.ShoppingList.Update()
-  if f and f:IsShown() and current == "job" then W.Refresh() end
+  if f and f:IsShown() and current == "job" then refreshJobLater() end
 end
 
 function W.UpdateControls()
@@ -1374,15 +1382,23 @@ function W.SetGoal(goal)
   W.Refresh()
 end
 
-function W.Refresh()
+-- `quiet` (an automatic refresh: the bags changed, a craft ended): what is on screen stays until the new result replaces it, no
+-- "loading" panel in between (it blanked the roadmap and the Fabriquer button at every craft). Only the Métier tab does it, and only
+-- when it already shows something.
+function W.Refresh(quiet)
   if not f then return end
   token = token + 1
   local mine = token
+  quiet = quiet and current == "job" and lastJob ~= nil and lastJob.state == "ok"
   f.refresh:SetBusy(true)
-  mapState = "loading"
-  updateMapButton()
+  if not quiet then
+    mapState = "loading"
+    updateMapButton()
+  end
   local function guard(fn) return function(res) if mine == token then fn(res) end end end
-  if current == "map" then
+  if quiet then
+    ns.RunLeveling(guard(renderJob))
+  elseif current == "map" then
     showPanel(S.loading_t, S.loading_p, false, true)
     ns.Run(guard(renderMap), { profession = ns.db.profession })
   elseif current == "bags" then
@@ -1436,19 +1452,25 @@ for _, e in ipairs({ "BAG_UPDATE_DELAYED", "ZONE_CHANGED_NEW_AREA", "PLAYER_REGE
 end
 -- Craft button: the profession window opening or closing, and the player's own casts. Registered in a pcall, so an
 -- event this client does not know can never break the addon.
-for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE", "TRADE_SKILL_LIST_UPDATE" }) do pcall(watcher.RegisterEvent, watcher, e) end
+for _, e in ipairs({ "TRADE_SKILL_SHOW", "TRADE_SKILL_CLOSE", "TRADE_SKILL_LIST_UPDATE", "SKILL_LINES_CHANGED", "CHAT_MSG_SKILL" }) do
+  pcall(watcher.RegisterEvent, watcher, e)
+end
 for _, e in ipairs({ "UNIT_SPELLCAST_START", "UNIT_SPELLCAST_STOP", "UNIT_SPELLCAST_INTERRUPTED", "UNIT_SPELLCAST_FAILED",
   "UNIT_SPELLCAST_SUCCEEDED" }) do
   pcall(watcher.RegisterUnitEvent or watcher.RegisterEvent, watcher, e, "player")
 end
 
 -- One redraw of the Métier tab per second at most, never in combat.
-local function refreshJobLater()
-  if InCombatLockdown() or jobRefreshPending then return end
+-- In combat nothing is computed: the redraw is kept (jobDirty) and done when the fight ends.
+local jobDirty = false
+function refreshJobLater()
+  if InCombatLockdown() then jobDirty = true; return end
+  if jobRefreshPending then return end
   jobRefreshPending = true
   C_Timer.After(1, function()
     jobRefreshPending = false
-    if f and f:IsShown() and current == "job" and not InCombatLockdown() then W.Refresh() end
+    if InCombatLockdown() then jobDirty = true; return end
+    if f and f:IsShown() and current == "job" then W.Refresh(true) end
   end)
 end
 
@@ -1462,7 +1484,12 @@ watcher:SetScript("OnEvent", function(_, event, unit, _, spellID)
   if not (f and f:IsShown()) then return end
   if event:sub(1, 13) == "PLAYER_REGEN_" then
     if current == "job" then W.UpdateCraft() end
+    if event == "PLAYER_REGEN_ENABLED" and jobDirty then jobDirty = false; refreshJobLater() end
     return updateMapButton()
+  end
+  if event == "SKILL_LINES_CHANGED" or event == "CHAT_MSG_SKILL" then   -- a skill point: the roadmap moves on
+    if current == "job" then refreshJobLater() end
+    return
   end
   if event:sub(1, 14) == "UNIT_SPELLCAST" then
     if unit ~= "player" or current ~= "job" then return end

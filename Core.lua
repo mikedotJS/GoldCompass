@@ -12,26 +12,33 @@ function ns.Print(msg) ns.Say(S.prefix .. " : " .. msg) end
 
 -- Request item data from the game for these item IDs, then call cb. Gives up after 5 seconds (PLAN.md step 1):
 -- items that did not load show as "objet #id".
-local itemsLoaded = {}   -- items the game has answered for this session: not asked again
+local itemsLoaded, itemsCount = {}, 0   -- items the game has answered for this session: not asked again
+function ns.ItemsLoaded() return itemsCount end
+local itemsGaveUp = {}   -- items that did not answer within 5 seconds: not waited for again (a late answer still lands in itemsLoaded)
 function ns.LoadItems(list, cb)
   local ids, seen = {}, {}
   for _, id in ipairs(list) do
-    if not seen[id] and not itemsLoaded[id] then seen[id] = true; ids[#ids + 1] = id end
+    if not seen[id] and not itemsLoaded[id] and not itemsGaveUp[id] then seen[id] = true; ids[#ids + 1] = id end
   end
   local pending, finished = #ids, false
   local function finish() if not finished then finished = true; cb() end end
   if not (Item and C_Timer) or pending == 0 then return finish() end
-  C_Timer.After(5, finish)
+  C_Timer.After(5, function()
+    if not finished then for _, id in ipairs(ids) do if not itemsLoaded[id] then itemsGaveUp[id] = true end end end
+    finish()
+  end)
   for _, id in ipairs(ids) do
     Item:CreateFromItemID(id):ContinueOnItemLoad(function()
-      itemsLoaded[id] = true
+      if not itemsLoaded[id] then itemsLoaded[id] = true; itemsCount = itemsCount + 1 end
       pending = pending - 1
       if pending == 0 then finish() end
     end)
   end
 end
 
+local nodeItemList
 local function nodeItems()
+  if nodeItemList then return nodeItemList end
   local ids = {}
   for _, node in pairs(ns.GatherNodes) do
     if node.item then ids[#ids + 1] = node.item end
@@ -41,6 +48,7 @@ local function nodeItems()
       for _, it in ipairs(b.items) do ids[#ids + 1] = it[1] end
     end
   end
+  nodeItemList = ids
   return ids
 end
 
@@ -104,20 +112,30 @@ local function safePrice(id)
   local ok, price, age = pcall(ns.Prices.Get, id)
   if ok then return price, age end
 end
+-- One answer per item for the life of a context (one refresh): the same few hundred items are priced thousands of times by the plan,
+-- and every call goes through Auctionator and the game's item data. nil answers are kept too.
+local function memo(fn)
+  local seen = {}
+  return function(id)
+    local v = seen[id]
+    if v == nil then v = { fn(id) }; seen[id] = v end
+    return v[1], v[2]
+  end
+end
 function ns.Context()
   local skills = ns.Skills()
   ns.index = ns.index or ns.Advice.NewIndex(ns.RecipeRows)
   local faction = UnitFactionGroup and UnitFactionGroup("player") == "Horde" and "H" or "A"
   return {
-    price = safePrice, vendor = ns.Prices.Vendor, ageKnown = ns.Prices.HasAge(), skills = skills,
-    known = function(id)
+    price = memo(safePrice), vendor = memo(ns.Prices.Vendor), ageKnown = ns.Prices.HasAge(), skills = skills,
+    known = memo(function(id)
       return (ns.char and ns.char.learned[id]) or (IsPlayerSpell ~= nil and IsPlayerSpell(id)) or false
-    end,
-    buy = function(id) return (ns.db and ns.db.buy and ns.db.buy[id]) or ns.Prices.VendorBuy(id) end,
+    end),
+    buy = memo(function(id) return (ns.db and ns.db.buy and ns.db.buy[id]) or ns.Prices.VendorBuy(id) end),
     quests = function(id) return ns.QuestItems[id] end, level = UnitLevel("player"), faction = faction,
     disenchant = function(id) return skills["Enchanting"] and ns.Prices.Disenchant(id) or nil end,
     index = ns.index,
-    owned = function(id) return C_Item.GetItemCount(id, false, false, false) end,   -- what the bags hold (bags only, no bank)
+    owned = memo(function(id) return C_Item.GetItemCount(id, false, false, false) end),   -- what the bags hold (bags only, no bank)
     bank = ns.Bank.Count,                                                           -- what the bank held when it was last seen
   }
 end
@@ -674,6 +692,36 @@ end
 
 -- "Monter un métier" data: for each profession, a plan from what its window showed (remembered by Learned.lua).
 -- `withRoad` builds the roadmap whatever the objective is (the shopping list follows the roadmap even while the tab shows gold).
+-- A profession's entry (plan, recipes to learn, roadmap) is rebuilt only when what it is made of changed: its skill and maximum, the
+-- recipes the character knows, what is owned (bags, bank) of every reagent of its recipes, the trainer records, the zone (distances),
+-- the items the game has loaded since (names). The key is a hash of those numbers; an entry also expires after CACHE_TTL seconds
+-- (the auction prices). A loot of something no recipe uses, a fight, a tab change: no work.
+local profCache, CACHE_TTL = {}, 120
+function ns.ForgetProfessions() profCache = {} end
+-- Names (items, spells) the game delivers late: the next calculation starts again so it picks them up.
+local dataEpoch = 0
+local epochFrame = CreateFrame("Frame")
+for _, e in ipairs({ "GET_ITEM_INFO_RECEIVED", "SPELL_DATA_LOAD_RESULT" }) do pcall(epochFrame.RegisterEvent, epochFrame, e) end
+epochFrame:SetScript("OnEvent", function() dataEpoch = dataEpoch + 1 end)
+local function profSignature(p, ctx, withRoad)
+  local h = 7
+  local function mix(n) h = (h * 31 + (n or 0)) % 2147483647 end
+  local bank, data = ns.char.bank, ns.char.profs[p.name]
+  local C = C_Map
+  mix(p.skill); mix(p.max); mix(p.line); mix(bank and bank.time); mix(data and data.updated); mix(ns.TrainerLog.Stamp()); mix(ctx.level)
+  mix(C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")); mix(ns.Goal() == "gold" and 1 or 2); mix(ns.char.onlyBag and 1 or 0)
+  mix(withRoad and 1 or 0); mix(ns.ItemsLoaded()); mix(dataEpoch)
+  local function mats(list)
+    for _, m in ipairs(list or {}) do
+      local id = m[1]
+      mix(id); mix(ctx.owned(id)); mix(ctx.bank and ctx.bank(id)); mix(ctx.buy(id) and 1 or 0)
+    end
+  end
+  for _, rec in pairs(data and data.recipes or {}) do mix(rec.id); mats(rec.mats) end
+  for _, c in ipairs(libCrafts(p, ctx.faction) or {}) do mix(c.id); mix(ctx.known(c.id) and 1 or 0); mats(c.mats) end
+  return h
+end
+
 function ns.RunLeveling(done, withRoad)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
   local list = ns.ProfessionList()
@@ -701,7 +749,7 @@ function ns.RunLeveling(done, withRoad)
     local ok, res = pcall(function()
       local ctx = ns.Context()
       local profs = {}
-      for _, p in ipairs(list) do
+      local function build(p)
         local entry = { name = p.name, skill = p.skill, max = p.max }
         local data = ns.char.profs[p.name]
         if data then
@@ -767,7 +815,17 @@ function ns.RunLeveling(done, withRoad)
             entry.road = built and road or nil
           end
         end
-        profs[#profs + 1] = entry
+        return entry
+      end
+      local now = time()
+      for _, p in ipairs(list) do
+        local sig = profSignature(p, ctx, withRoad)
+        local hit = profCache[p.name]
+        if not (hit and hit.sig == sig and now - hit.at < CACHE_TTL) then
+          hit = { sig = sig, at = now, entry = build(p) }
+          profCache[p.name] = hit
+        end
+        profs[#profs + 1] = hit.entry
       end
       return { state = "ok", profs = profs }
     end)

@@ -241,6 +241,7 @@ end
 -- Recomputes (at most once per 0.5 s) when the list is on screen.
 function SL.Update()
   if pending or not (f and f:IsShown()) then return end
+  if ns.Window.JobFeeds() then return end          -- the Métier tab is on screen: it computes the roadmaps and feeds the list
   pending = true
   C_Timer.After(0.5, function()
     pending = false
