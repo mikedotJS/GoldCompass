@@ -9,6 +9,7 @@ tools/cache-foreverdb/Gather.lua, per zone and beast kind `f` = points players s
 Thinning: the points of one beast on one map are clustered (greedy, radius CLUSTER = 1.5 percent of the map, the cluster stands at the
 mean of its points). Forever-seen points are clustered first; a Classic point within CLUSTER of a Forever cluster is dropped (the
 Forever point stands for it), the other Classic points are clustered the same way. Nothing here is fetched.
+Border strays: the Classic points of a kind on a map are dropped when build-gather.border_stray says so (see there).
 Standard library only; the downloaded files are parsed as text, never executed.
 """
 import importlib.util, math, pathlib, re
@@ -55,10 +56,10 @@ def pack(clusters):
     return "".join(cell(c[0]) + cell(c[1]) for c in best)
 
 
-def thin(forever, classic):
+def thin(forever, classic, drop_classic=False):
     """'<forever points>.<classic points>' (either part may be empty), or None when the beast has no point on this map."""
     f = cluster(forever)
-    rest = [p for p in classic if all(math.hypot(c[0] - p[0], c[1] - p[1]) > CLUSTER for c in f)]
+    rest = [] if drop_classic else [p for p in classic if all(math.hypot(c[0] - p[0], c[1] - p[1]) > CLUSTER for c in f)]
     c = cluster(rest)
     return f"{pack(f)}.{pack(c)}" if f or c else None
 
@@ -85,11 +86,14 @@ def main():
     if not wanted:
         raise SystemExit(f"{ZONES.relative_to(ROOT)}: no beast found")
 
-    rows, n_pairs, n_points, n_forever, longest = [], 0, 0, 0, 0
+    rows, n_pairs, n_points, n_forever, longest, dropped = [], 0, 0, 0, 0, []
     for npc in sorted(wanted):
         for zid in sorted(wanted[npc]):
             c, f = zones.get(zid, {"k": {}})["k"].get(kind_of.get(npc), ([], []))
-            packed = thin(f, c)
+            drop = gather.border_stray(zones, kind_of.get(npc), zid)
+            packed = thin(f, c, drop)
+            if drop:
+                dropped.append((npc, zid, packed is None))
             if packed:
                 rows.append(f'  [{npc * KEY + zid}] = "{packed}",  -- {npc} on {zid}')
                 n_pairs += 1
@@ -113,6 +117,9 @@ def main():
     OUT.write_text("\n".join(out) + "\n", encoding="utf-8")
     print(f"wrote {OUT.relative_to(ROOT)}: {len({r.split(']')[0][3:-4] for r in rows})} beasts, {n_pairs} beast-maps, {n_points} points ({n_forever} Forever-seen), "
           f"at most {longest} per beast and map; {OUT.stat().st_size} bytes")
+    print(f"border strays: Classic points dropped on {len(dropped)} beast-maps, {sum(d[2] for d in dropped)} of them leave no point on the map")
+    for npc, zid, gone in dropped:
+        print(f"  {npc} on {zid}{' (no point left)' if gone else ''}")
 
 
 if __name__ == "__main__":

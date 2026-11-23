@@ -181,6 +181,10 @@ def main():
             items = [(i, round(per[i], 3), i in seen.get(name, ())) for i in sorted(per, key=lambda i: (-per[i], i))
                      if per[i] >= 0.0005]
             items += [(i, None, True) for i in sorted(seen.get(name, ())) if i not in per]
+            if gather.border_stray(zones, k, zid):         # Classic points next to the border of the map the beast really lives on
+                c = []
+                if not f:
+                    continue
             beasts.append((len(f), len(c), npcs[0], name, lo, hi, sk, items))
         beasts.sort(key=lambda b: (-max(b[0], b[1]), -b[0], b[2]))
         if beasts:
@@ -194,7 +198,8 @@ def main():
         "-- ns.SkinZones[uiMapID] = { { npcID, English name, lvMin, lvMax, skill, spots = n, foreverSpots = n, skillForever = bool,",
         "--                             items = { { itemID, perSkin, forever = bool }, ... } }, ... }",
         "--   uiMapID: the Classic numbering of Data/Zones.lua (1411 = Durotar). Up to " + str(MAX_BEASTS) + " beasts per zone, most spawn points first.",
-        "--   spots: Classic spawn points of the beast in the zone (CMaNGOS via ForeverDB), NOT confirmed on Forever.",
+        "--   spots: Classic spawn points of the beast in the zone (CMaNGOS via ForeverDB), NOT confirmed on Forever. Not counted (0) when they",
+        "--     are border strays (tools/build-gather.py border_stray): a beast of the next zone whose spawns fall inside this map's rectangle.",
         "--   foreverSpots: points players saw the beast at in WoW Forever (ForeverDB Companion); a sample, not a full count.",
         "--   skill: skinning skill needed for the highest level, ForeverDB's assumption of Classic's rule (1 up to level 10,",
         "--     (level - 10) x 10 up to 20, then level x 5). skillForever = true when skill > 100: the Forever client's own Skinning",
