@@ -26,6 +26,7 @@ local env = {
   bag = function(id) return C_Item.GetItemCount(id, false, false, false) end,
   bank = function(id) return ns.Bank.Count(id) end,
   name = function(id) return ns.ItemName(id) end,
+  vendor = function(id) return ((ns.db and ns.db.buy and ns.db.buy[id]) or ns.Prices.VendorBuy(id)) and true or false end,
 }
 
 -- A font string on `parent`, one line unless `wrap`.
@@ -138,6 +139,9 @@ local function build()
 
   f.note = label(f, "GameFontHighlightSmall", DIM, "LEFT", true)
   f.note:SetWidth(WIDTH - 2 * PAD)
+  f.farm = label(f, "GameFontHighlightSmall", DIM, "LEFT", true)   -- "À farmer d'abord : ..." (Synergy.lua), above the rows
+  f.farm:SetWidth(WIDTH - 2 * PAD)
+  f.farm:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, -(TITLE_H + 2))
   f.retry = CreateFrame("Button", nil, f)
   f.retry:SetSize(90, 18)
   f.retry.label = label(f.retry, "GameFontNormalSmall", GOLD, "LEFT")
@@ -145,6 +149,11 @@ local function build()
   f.retry.label:SetText("[ " .. S.shop_retry .. " ]")
   f.retry:SetScript("OnClick", function() SL.Compute() end)
   f.retry:Hide()
+end
+
+-- Lines a note takes in the frame (about 44 characters a line, the colour codes and the second byte of an accent do not count).
+local function lineCount(text)
+  return math.ceil(#(text:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[\128-\191]", "")) / 44)
 end
 
 -- Draws `state`: one row per item (name left, have / need right, a dim line under it), then a note for the states without rows.
@@ -155,6 +164,7 @@ function SL.Render()
   local rows = {}
   f.upTo:SetText("")
   f.retry:Hide()
+  f.farm:SetText("")
   if st == nil then
     notes[1] = colour("9d9d9d", S.shop_loading)
   elseif st.error then
@@ -176,6 +186,13 @@ function SL.Render()
       end
     else
       rows = st.rows
+      -- where to farm first (Synergy.lua): one dim line above the rows, nothing when the hint cannot be written
+      local ok, farm = false, nil
+      if st.farm then ok, farm = pcall(ns.Synergy.FarmText, st.farm, S, ns.SynergyNames) end
+      if ok and farm then
+        f.farm:SetText(colour("9d9d9d", farm))
+        y = y + 2 + lineCount(farm) * NOTE_LINE_H
+      end
       if st.missing == 0 then notes[1] = colour("7fb8ff", S.shop_fetch) end
       if ns.Bank.AgeDays(ns.char, time()) == nil and st.missing > 0 then notes[#notes + 1] = colour("9d9d9d", S.shop_unseen) end
     end
@@ -185,8 +202,15 @@ function SL.Render()
     local row = rowFrames[i]
     if not row then row = makeRow(); rowFrames[i] = row end
     local bankPart = (r.bank > 0 and (r.fetch > 0 or not r.ok)) and colour("7fb8ff", S.shop_bank_part:format(math.min(r.bank, r.have))) or nil
-    local source = not r.ok and sourceOf(r) or nil
-    local sub = bankPart and source and (bankPart .. colour("9d9d9d", " · " .. source)) or bankPart or (source and colour("9d9d9d", source)) or nil
+    -- the character's own gathering gives it (Synergy.lua): says where, and replaces the source unless it is rare there
+    local hint
+    if not r.ok and r.hint then
+      local ok, text = pcall(ns.Synergy.Short, r.hint, S, ns.SynergyNames)
+      hint = ok and text or nil
+    end
+    local source = not (r.ok or (hint and not r.hint.rare)) and sourceOf(r) or nil
+    local dim = hint and source and (hint .. " · " .. source) or hint or source
+    local sub = bankPart and dim and (bankPart .. colour("9d9d9d", " · " .. dim)) or bankPart or (dim and colour("9d9d9d", dim)) or nil
     row.tip = r.tip or function() return ns.HowTo.Reagent(r.item, 0, ns.HowToEnv()) end
     row.name:SetText(r.name)
     row.count:SetText(r.ok and colour("7fd36a", ("%d / %d %s"):format(r.have, r.need, S.shop_ok)) or ("%d / %d"):format(r.have, r.need))
@@ -205,7 +229,7 @@ function SL.Render()
   f.note:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, -(y + 2))
   f.note:SetText(text)
   local noteLines = 0
-  for _, n in ipairs(notes) do noteLines = noteLines + math.ceil(#(n:gsub("|c%x%x%x%x%x%x%x%x", ""):gsub("|r", ""):gsub("[\128-\191]", "")) / 44) end
+  for _, n in ipairs(notes) do noteLines = noteLines + lineCount(n) end
   f.retry:ClearAllPoints()
   f.retry:SetPoint("TOPLEFT", f, "TOPLEFT", PAD, -(y + 2 + noteLines * NOTE_LINE_H))
   y = y + 2 + noteLines * NOTE_LINE_H + (f.retry:IsShown() and 20 or 0)
@@ -222,6 +246,7 @@ function SL.State() return state end
 
 -- A result of ns.RunLeveling (from the Métier tab or from here).
 function SL.Feed(res)
+  env.hint = res.synergy and res.synergy.hint or nil   -- the hints of this calculation (Synergy.lua), none when it failed
   state = res.state == "ok" and ns.Shopping.Build(res.profs, env) or { error = res }
   SL.Render()
   ns.Window.UpdateShopButton()

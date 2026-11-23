@@ -531,6 +531,11 @@ function ns.ZoneLabel(target)
   local info = C_Map and C_Map.GetMapInfo and target.mapID and C_Map.GetMapInfo(target.mapID)
   return info and info.name or target.zone
 end
+-- The names the hints of Synergy.lua print: a zone by its map ID, an item by its ID.
+ns.SynergyNames = {
+  zone = function(zone) return ns.ZoneLabel({ mapID = zone, zone = ns.Zones[zone] and ns.Zones[zone][1] }) or ("#" .. zone) end,
+  item = function(item) return ns.ItemName(item) end,
+}
 
 -- The recipes remembered for a profession, without the ones the Forever data places in another skill line (older saved data may
 -- hold leather recipes under Skinning): a copy; the section keeps its own profession name and skill line.
@@ -867,6 +872,40 @@ local function buildStages(p, ctx, withRoad)
   return entry, stages, 0
 end
 
+-- What Synergy.lua reads: a table kept for the session (it caches the zone chosen per item), every field reads the live state when asked.
+-- The bar recipes of Mining (a bar and the single ore that makes it) come from the Forever recipes, built on first use once they are there.
+local barRecipes
+local function barRecipe(item)
+  if not barRecipes then
+    local DB, fixes, found = ns.ForeverDB, ns.ForeverFixes or {}, {}
+    for id, e in pairs(DB and DB.GetRecipes and DB:GetRecipes(186) or {}) do
+      local ore, per, kinds = nil, 0, 0
+      for reagent, n in pairs(e.reagents or {}) do ore, per, kinds = reagent, n, kinds + 1 end
+      if e.craftedItemId and kinds == 1 and not DB:IsHiddenRecipe(id) and not (fixes.gone and fixes.gone[id]) then
+        found[e.craftedItemId] = { ore = ore, per = per, out = fixes.oq and fixes.oq[id] or 1 }
+      end
+    end
+    if next(found) then barRecipes = found else return nil end
+  end
+  return barRecipes[item]
+end
+local synergyData = {
+  yields = function(beast) return ns.SkinLoot.Yields(ns.db and ns.db.skinLoot, beast) or beast.items end,
+  counts = function() return ns.RouteMap.Counts() end,
+  bar = barRecipe,
+  routeZone = function(english) return ns.char and ns.char.routeZone and ns.char.routeZone[english] or nil end,
+  order = function() return ns.RouteMap.OrderCtx() end,
+  price = function(id) return (safePrice(id)) end,
+  log = function(text) ns.LogOnce("synergy", "frame", "synergy hint failed: " .. text) end,
+}
+-- The hints of the professions' roadmaps (view only, see Synergy.lua): nil when it fails, and then the screens are what they were.
+local function synergyFor(entries)
+  synergyData.skinZones, synergyData.nodes = ns.SkinZones, ns.GatherNodes
+  local ok, res = pcall(ns.Synergy.Build, entries, ns.Skills(), synergyData)
+  if ok then return res end
+  ns.LogOnce("synergy-build", "frame", "synergy build failed: " .. tostring(res))
+end
+
 function ns.RunLeveling(done, withRoad)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
   local list = ns.ProfessionList()
@@ -936,7 +975,7 @@ function ns.RunLeveling(done, withRoad)
         if #jobs > 0 then
           return C_Timer.After(0, function() started = clockMs(); frame() end)
         end
-        done({ state = "ok", profs = entries })
+        done({ state = "ok", profs = entries, synergy = synergyFor(entries) })
       end
       return frame
     end)

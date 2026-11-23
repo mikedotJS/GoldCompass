@@ -38,6 +38,7 @@ local function counts()
   cache = { at = time(), zones = zones }
   return zones
 end
+RM.Counts = counts
 
 -- GatherMate2's coordinate of a spot -> x, y in percent of the map. Its own decoder when it has one, else its packed format.
 local function decode(coord)
@@ -119,11 +120,16 @@ end
 
 -- The steps of "Où monter" for a gathering profession p (ns.ProfessionList entry), with the roadmap `road` (Leveling.Roadmap) and the
 -- English profession name; nil for the other professions. A zone step carries { from, to, zone = mapID, spots, names, lo, hi, points }.
-function RM.Plan(p, road, english)
-  if not p.skill or RM.LINES[p.line] ~= english then return end
-  local ctx = { level = UnitLevel("player"), continent = continent(),
+-- What Route.Order needs to rank zones: the player's level and continent, the continent and lowest level of a zone.
+function RM.OrderCtx()
+  return { level = UnitLevel("player"), continent = continent(),
     contOf = function(zone) for _, m in pairs(ns.MapIDs) do if m[1] == zone then return m[2] end end end,
     lowest = function(zone) return ns.Zones[zone] and ns.Zones[zone][2] end }
+end
+
+function RM.Plan(p, road, english)
+  if not p.skill or RM.LINES[p.line] ~= english then return end
+  local ctx = RM.OrderCtx()
   local function lookup(skill)
     local list
     if english == "Skinning" then   -- the one place that says which zones and beasts to skin: ns.SkinZones (Data/ForeverSkinZones.lua)
@@ -196,6 +202,25 @@ function RM.Plan(p, road, english)
     end
   end
   return { steps = steps, skin = english == "Skinning" }
+end
+
+-- The itinerary of a Synergy hint (the beasts or nodes of its zone that give the item): { zone, points }, the points built when the step is
+-- first read (the click on "Itinéraire"), nothing at all is computed for a line that is only displayed. nil when a skinning zone has no
+-- known spawn point. It never touches ns.char.routeZone: the plan of the profession is not changed by a hint.
+function RM.HintStep(h)
+  if h.prof == "Skinning" and not hasSkinPoints(h.zone, h.ids) then return nil end
+  local function points()
+    if h.prof == "Skinning" then return skinPoints(h.zone, h.ids) end
+    local nodes = {}
+    for i, n in ipairs(h.ids) do nodes[i] = n.id end
+    return gatherPoints(h.prof, h.zone, nodes)
+  end
+  return setmetatable({ zone = h.zone }, { __index = function(step, key)
+    if key ~= "points" then return nil end
+    local list = points()
+    rawset(step, "points", list)
+    return list
+  end })
 end
 
 -- ---- the route on the map ------------------------------------------------------------------------------------------------------

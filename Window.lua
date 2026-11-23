@@ -1086,11 +1086,16 @@ local DIFF_COLOUR = { [0] = "|cffff8040", [1] = "|cffffff00", [2] = "|cff40c040"
 -- learn it; a "Fabriquer" button on a step the bag can feed (the first one is the primary button), the map pin on a recipe to learn.
 -- "Où monter" (Route.lua): the gathering professions have no recipe to craft, their roadmap is the zones that still give skill points, with an
 -- "Itinéraire" button on each, and the rank step with its map pin. Two lines per step: range and zone, then names, levels and spots.
-local function addWhere(entries, p)
+local function addWhere(entries, p, syn)
   local r = p.road
   local rank = r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
   local function zoneOf(target) return target and (ns.ZoneLabel(target) or target.zone) end
   entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.route_head .. "|r" }
+  -- what this profession's gathering is for in the other roadmaps (Synergy.lua), nothing when no roadmap needs it
+  local okFeeds, feeds = false, nil
+  if syn then okFeeds, feeds = pcall(ns.Synergy.FeedsText, syn.feeds[p.line], S) end
+  if not okFeeds then feeds = nil end
+  if feeds then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. feeds .. "|r" } end
   local zones = 0
   for _, s in ipairs(r.where.steps) do
     if s.kind == "rank" then
@@ -1135,7 +1140,17 @@ function W.WhyText(s)
   return S.road_why_fade:format(w.from, w.to, name)
 end
 
-local function addRoadmap(entries, p)
+-- The dim line under a missing reagent (Synergy.lua): which of the character's gathering professions gives it, where, and how long it takes,
+-- with the "Itinéraire" button unless it is rare. Nothing when no hint exists, so the screen is the one without hints.
+local function addHint(entries, syn, m, n)
+  local h = syn and syn.hint(m.item, n)
+  if not h then return end
+  local ok, line, step = pcall(function() return ns.Synergy.Line(h, S, ns.SynergyNames), not h.rare and ns.RouteMap.HintStep(h) or nil end)
+  if not ok then return ns.LogOnce("synergy-line", "frame", "synergy line failed: " .. tostring(line)) end
+  entries[#entries + 1] = { lv = "", wide = true, left = "|cff9d9d9d" .. line .. "|r", tip = m.tip, route = step }
+end
+
+local function addRoadmap(entries, p, syn)
   local r = p.road
   local rank = r.nextRank and (S.rank_names[r.nextRank] or r.nextRank)
   local function zoneOf(target) return target and (ns.ZoneLabel(target) or target.zone) end
@@ -1145,7 +1160,7 @@ local function addRoadmap(entries, p)
     return
   end
   if r.gathering and r.where then
-    addWhere(entries, p)
+    addWhere(entries, p, syn)
     -- Mining: the smelting roadmap "Fondre" follows the zones (the ore of its steps is mined there); a window never opened asks to open it
     if r.smelt == "unseen" then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_unseen:format(p.name) .. "|r" } end
     if r.smelt ~= "seen" then return end
@@ -1194,11 +1209,17 @@ local function addRoadmap(entries, p)
         local shown = 0
         for _, sub in ipairs(s.subs) do
           shown = shown + 1
-          if shown <= 3 then entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. S.road_first:format(sub.need, sub.name) .. "|r", tip = sub.tip } end
+          if shown <= 3 then
+            entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. S.road_first:format(sub.need, sub.name) .. "|r", tip = sub.tip }
+            if not r.gathering then addHint(entries, syn, sub, sub.need) end
+          end
         end
         for _, miss in ipairs(s.missing) do
           shown = shown + 1
-          if shown <= 3 then entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. S.road_missing:format(miss.n, miss.name) .. "|r", tip = miss.tip } end
+          if shown <= 3 then
+            entries[#entries + 1] = { lv = "", wide = true, left = "|cffff8000" .. S.road_missing:format(miss.n, miss.name) .. "|r", tip = miss.tip }
+            if not r.gathering then addHint(entries, syn, miss, miss.n) end
+          end
         end
         -- what is short but waits in the bank: one blue line per reagent (up to 2)
         for i = 1, math.min(2, #banked) do
@@ -1281,7 +1302,7 @@ local function renderJob(res)
     else
       local plan, gold = p.plan, p.goal == "gold"
       if not gold then
-        addRoadmap(entries, p)
+        addRoadmap(entries, p, all.synergy)
         if W.recipesOpen then
           entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_recipes_title .. "|r" }
           for _, o in ipairs(p.road.recipes) do
