@@ -11,6 +11,7 @@ R.STEPS = 3        -- steps shown at most (zones and the rank together)
 R.FOCUS = 5        -- beasts of a zone the skinning route is built on (the most numerous ones)
 R.NAMES = 2        -- names written on the dim line of a step
 R.MAX_POINTS = 12  -- points of a loop at most
+R.MIN_FOREVER = 4  -- points players saw in Forever from which a skinning step leaves its Classic points out
 R.FAR = 4          -- a zone whose lowest level is more than this above the player's goes last (as the map tab does)
 
 -- 0 orange, 1 yellow, 2 green, 3 gray, nil = the skill is below the requirement.
@@ -156,6 +157,22 @@ function R.Plan(input)
     end
   end
   return steps
+end
+
+-- The points of one beast on one map, from ns.SkinPoints[npc][map] ("<forever points>.<classic points>", 4 base-36 characters per
+-- point: x then y in tenths of a percent). Returns two lists of { x, y } in percent of the map: seen in WoW Forever, Classic only.
+function R.Unpack(packed)
+  packed = tostring(packed or "")
+  local dot = packed:find(".", 1, true)
+  local function decode(s)
+    local pts = {}
+    for i = 1, #s - 3, 4 do
+      local x, y = tonumber(s:sub(i, i + 1), 36), tonumber(s:sub(i + 2, i + 3), 36)
+      if x and y then pts[#pts + 1] = { x = x / 10, y = y / 10 } end
+    end
+    return pts
+  end
+  return decode(dot and packed:sub(1, dot - 1) or packed), decode(dot and packed:sub(dot + 1) or "")
 end
 
 -- Loop through map points ({ x, y } in percent of the map): points closer than a radius are merged (the radius grows until at most

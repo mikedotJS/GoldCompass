@@ -7,7 +7,7 @@ copies the result into the repo, commits, deploys to the gaming PC (scripts/depl
 exactly as it was (the build never touches it) and sends a notification.
 
 Sources (last seen state in ~/.cache/goldcompass/state.json):
-  foreverdb       foreverdb.net/downloads/addon-manifest.json (data version)   -> foreverdb, skinning, skinzones, gather, reagents, fixes
+  foreverdb       foreverdb.net/downloads/addon-manifest.json (data version)   -> foreverdb, skinning, skinzones, skinpoints, gather, reagents, fixes
   wowforever      wowforever.be recipe pages + fishing page (hash of each)      -> trainers, gather
   lpdb            LibProfessionDB release on CurseForge (via api.cfwidget.com)  -> lpdb, trainers
   forever_ledger  latest commit of github.com/ivellos/forever-ledger            -> data
@@ -55,6 +55,7 @@ GENERATORS = {
     "fixes": ({"foreverdb"}, {"data", "lpdb", "trainers", "npcs", "foreverdb"}),
     "skinning": ({"foreverdb"}, set()),
     "skinzones": ({"foreverdb"}, set()),
+    "skinpoints": ({"foreverdb"}, {"skinzones"}),
     "gather": ({"foreverdb", "wowforever"}, set()),
     "reagents": ({"foreverdb", "pfquest"}, {"data", "lpdb"}),
 }
@@ -365,6 +366,8 @@ def generate(tmp, todo, v, inputs):
         run(py + ["tools/build-skinning.py"], cwd=tmp)
     if "skinzones" in todo:
         run(py + ["tools/build-skin-zones.py"], cwd=tmp)
+    if "skinpoints" in todo:
+        run(py + ["tools/build-skin-points.py"], cwd=tmp)
     if "gather" in todo:
         fishing = tmp / "tools/cache-wowforever/fishing-page.html"
         run(py + ["tools/build-gather.py"] + (["--wowforever-fishing", fishing] if fishing.exists() else []), cwd=tmp)
