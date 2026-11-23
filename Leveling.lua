@@ -751,9 +751,11 @@ function V.Candidates(crafts, skill, ctx)
           npcNames = way and way.npcs, teachItem = way and way.itemID, th = { at, c.y or at + 30, c.g or at + 45, c.gr or at + 60 } }
         local kind = way and way.kind or "trainer"
         local gold = kind == "vendor" and way.vendorCost and not way.currency and not way.standing   -- a vendor, for gold, to anyone
+        local place = ctx.place and ctx.place(rec)                   -- no place on the map (a text only): a search, not a trip
         out[#out + 1] = { rec = rec, recommend = true, needMax = way and way.rank and RANK_MAX[way.rank] or nil,
           rankGated = at <= skill and V.WindowGated(offer, at) or nil,
-          effort = kind == "trainer" and V.LEARN_EFFORT.trainer or (gold and V.LEARN_EFFORT.vendor) or V.LEARN_EFFORT.other }
+          effort = (place and not place.mapID or (kind == "vendor" and not way.vendorCost)) and V.LEARN_EFFORT.unknown
+            or kind == "trainer" and V.LEARN_EFFORT.trainer or (gold and V.LEARN_EFFORT.vendor) or V.LEARN_EFFORT.other }
       end
     end
   end
@@ -794,7 +796,10 @@ V.BAG_STEPS = 2
 -- What a recipe to learn must save, in ingredients, to be part of the plan (the trip, the fee). Estimates: a trainer is on the way, a
 -- vendor selling for gold less so, and the rest (a quest, a pattern from the auction house, a vendor asking a currency, a standing or
 -- an unknown price) is taken only when it saves a lot.
-V.LEARN_EFFORT = { trainer = 12, vendor = 20, other = 30 }
+-- `unknown`: no place on the map (a text only) or a vendor whose price is unknown: a search, not a trip.
+V.LEARN_EFFORT = { trainer = 12, vendor = 20, other = 30, unknown = 60 }
+V.SWITCH = 10            -- what changing recipe costs, in ingredients: the plan does not go A, B, then A again for a few units
+V.LEARN_MIN_POINTS = 20  -- a recipe to learn that gives points (chance >= V.MIN_CHANCE) on fewer skill points is not worth the trip
 
 -- Chance of a skill point at `s` from the thresholds { orange, yellow, green, gray } (the Classic formula, as V.Chance).
 local function chanceAt(th, s)
@@ -836,9 +841,11 @@ end
 -- a point is at least V.MIN_CHANCE; where no recipe reaches that chance, the ones with any chance bridge the hole, if it ends on a usable
 -- recipe or on the target. Where nothing gives a point the plan stops (`reach`).
 -- Solved backwards: cost[s][i] = what recipe i costs for the point s -> s + 1, plus the cheaper of staying on it and switching to the best
--- recipe at s + 1 (its `entry` included). Ties go to the lowest id, so the answer is the same whatever skill it is asked from.
+-- recipe at s + 1 (its `entry` and V.SWITCH included). Ties go to the lowest id. The recipe in use at each skill comes from ONE walk that
+-- starts at `origin` (default `start`; below `start` only the recipes with a real chance count): asked from any skill of that walk, the
+-- answer is its end, so a switching cost never flips the plan in the middle of a step.
 -- Returns { reach, first(s) -> the entry of `list` the plan uses at s, path(s) -> { { r = entry, from, to, crafts } } from s on }.
-function V.Cheapest(list, start, target)
+function V.Cheapest(list, start, target, origin)
   local strict, any = {}, {}
   for s = start, target do strict[s], any[s] = 0, 0 end
   local function mark(t, a, b)
@@ -864,16 +871,19 @@ function V.Cheapest(list, start, target)
       s = h
     end
   end
-  local act = {}
-  for k = start, reach - 1 do act[k] = {} end
+  -- below `start` (from `origin`) only the recipes with a real chance count, and the walk starts at the lowest skill joined to `start`
+  local act, o = {}, math.min(origin or start, start)
+  for k = o, reach - 1 do act[k] = {} end
   for i, r in ipairs(list) do
-    for k = math.max(r.lo, start), math.min(r.eA, reach) - 1 do
-      if k < r.eS or low[k] then local t = act[k]; t[#t + 1] = i end
+    for k = math.max(r.lo, o), math.min(r.eA, reach) - 1 do
+      if k < r.eS or (k >= start and low[k]) then local t = act[k]; t[#t + 1] = i end
     end
   end
+  while o < start and #act[o] == 0 do o = o + 1 end
+  for k = start - 1, o, -1 do if #act[k] == 0 then o = k + 1; break end end
   local cost, bestV, bestI = {}, { [reach] = 0 }, {}
-  for k = reach - 1, start, -1 do
-    local row, nextRow, nextBest = {}, cost[k + 1], bestV[k + 1]
+  for k = reach - 1, o, -1 do
+    local row, nextRow, nextBest = {}, cost[k + 1], bestV[k + 1] + V.SWITCH
     local bv, bi = math.huge, nil
     for _, i in ipairs(act[k]) do
       local r = list[i]
@@ -885,22 +895,28 @@ function V.Cheapest(list, start, target)
     end
     cost[k], bestV[k], bestI[k] = row, bv, bi
   end
+  -- the one walk from `o`: the recipe in use at each skill (staying on it unless another is cheaper by more than V.SWITCH)
+  local on, i = {}, bestI[o]
+  for k = o, reach - 1 do
+    on[k] = i
+    if k + 1 < reach then
+      local stay, nv, ni = cost[k + 1][i], bestV[k + 1] + V.SWITCH, bestI[k + 1]
+      if not stay or nv < stay or (nv == stay and list[ni].id < list[i].id) then i = ni end
+    end
+  end
   local function path(from)
-    local segs, seg, i = {}, nil, bestI[from]
+    local segs, seg = {}, nil
     for k = from, reach - 1 do
-      if not seg or seg.r ~= list[i] then
-        seg = { r = list[i], from = k, crafts = 0 }
+      local r = list[on[k]]
+      if not seg or seg.r ~= r then
+        seg = { r = r, from = k, crafts = 0 }
         segs[#segs + 1] = seg
       end
-      seg.to, seg.crafts = k + 1, seg.crafts + 1 / chanceAt(list[i].th, k)
-      if k + 1 < reach then
-        local stay, nv, ni = cost[k + 1][i], bestV[k + 1], bestI[k + 1]
-        if not stay or nv < stay or (nv == stay and list[ni].id < list[i].id) then i = ni end
-      end
+      seg.to, seg.crafts = k + 1, seg.crafts + 1 / chanceAt(r.th, k)
     end
     return segs
   end
-  return { reach = reach, path = path, first = function(k) return bestI[k] and list[bestI[k]] or nil end }
+  return { reach = reach, path = path, first = function(k) return on[k] and list[on[k]] or nil end }
 end
 
 function V.Roadmap(prof, ctx, opts)
@@ -930,17 +946,18 @@ function V.Roadmap(prof, ctx, opts)
     if units <= 0 or lo >= th[4] then return end
     local eS = th[4]
     if th[4] > th[2] then eS = math.min(th[4], math.floor(th[4] - V.MIN_CHANCE * (th[4] - th[2]) + 1e-9) + 1) end
+    if entry > 0 and eS - lo < V.LEARN_MIN_POINTS then return end    -- too few useful points to be worth the trip
     list[#list + 1] = { rec = rec, id = rec.id, th = th, units = units, lo = lo, eS = eS, eA = th[4], entry = entry, known = entry == 0, row = row }
   end
   for _, rec in pairs(prof.recipes or {}) do
     seen[rec.id] = true
-    add(rec, planTh(rec, opts.thresholds and opts.thresholds(rec.id), start), start, 0)
+    add(rec, planTh(rec, opts.thresholds and opts.thresholds(rec.id), start), 1, 0)
   end
   for _, row in ipairs(opts.candidates or opts.learn or {}) do
     local rec = row.rec
     if not seen[rec.id] and row.recommend ~= false and not row.unpriced and not row.gray and rec.th and rec.learn then
       seen[rec.id] = true
-      local lo = math.max(rec.learn, start)
+      local lo = rec.learn
       if row.needMax and (prof.max or math.huge) < row.needMax then
         lo = math.max(lo, row.needMax - 100)                         -- the rank that gives this maximum is trained 100 points below it
       elseif row.rankGated then
@@ -950,7 +967,7 @@ function V.Roadmap(prof, ctx, opts)
       add(rec, rec.th, lo, row.effort or V.LEARN_EFFORT[kind] or V.LEARN_EFFORT.other, row)
     end
   end
-  local plan = V.Cheapest(list, start, target)
+  local plan = V.Cheapest(list, start, target, 1)
   result.reach = plan.reach
   local function costAt(r, s)
     local p = chanceAt(r.th, s)
