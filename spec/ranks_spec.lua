@@ -64,7 +64,8 @@ describe("Forever fixes of this pass", function()
   it("places an NPC where ForeverDB's quest data saw it in Forever, not at its Classic place", function()
     local pratt = ns.FdbNpcs[7852]                      -- Pratt McGrubben, Feralas: Classic place until the quest data saw him
     assert.is_true(pratt[6]); assert.are.same({ 1444, 30.6, 42.7 }, { pratt[2], pratt[3], pratt[4] })
-    assert.is_true(ns.FdbNpcs[7854][6]); assert.are.equal(74.5, ns.FdbNpcs[7854][3])   -- Jangdor Swiftstrider: Forever's 74.5, not Classic's 74.4
+    assert.is_true(ns.FdbNpcs[7854][6]); assert.are.equal(74.4, ns.FdbNpcs[7854][3])   -- Jangdor Swiftstrider: seen in Forever at 74.4, 43 (ForeverDB build 71037; it was 74.5, 42.9 before)
+    assert.is_true(ns.FdbNpcs[1304][6]); assert.is_true(ns.FdbNpcs[2684][6])   -- Darian Singh, Rizz Loosebolt: Classic places in the 11-18 snapshot, seen in Forever since
     assert.is_false(ns.FdbNpcs[989][6])                 -- Banalash: nothing from Forever, stays a Classic place
   end)
 
