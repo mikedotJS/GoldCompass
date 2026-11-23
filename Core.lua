@@ -794,7 +794,7 @@ local clock = debugprofilestop or function() return os.clock() * 1000 end
 local function clockMs() return clock() end
 ns.FrameBudget = 2   -- ms of work after which a frame starts no further stage: the rest of the refresh waits for the next frame
 local function buildStages(p, ctx, withRoad)
-  local entry = { name = p.name, skill = p.skill, max = p.max }
+  local entry = { name = p.name, skill = p.skill, max = p.max, line = p.line }
   local data = ns.char.profs[p.name]
   local count, thresholds, best
   local function learnStage()

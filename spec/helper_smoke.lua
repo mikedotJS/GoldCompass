@@ -179,7 +179,7 @@ end
 
 local function loadAddon()
   local ns = {}
-  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/ForeverNpcs", "Data/ForeverFixes", "Data/QuestItems", "ZoneRank", "Route", "Synergy", "Advice", "Here", "ForeverDB", "Effort", "Leveling", "Where", "Format", "HowTo",
+  for _, f in ipairs({ "Strings", "Log", "Data/GatherNodes", "Data/Zones", "Data/Recipes", "Data/Locations", "Data/ForeverTrainers", "Data/ForeverRecipes", "Data/Npcs", "Data/ForeverNpcs", "Data/ForeverFixes", "Data/QuestItems", "ZoneRank", "Route", "Synergy", "SkinLoot", "Advice", "Here", "ForeverDB", "Effort", "Leveling", "Where", "Format", "HowTo",
     "Prices", "Nodes", "Bank", "Shopping", "Core", "Learned", "Trainers", "Spike", "Tooltip", "RouteMap", "Window", "ShoppingList", "BankEvents" }) do
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
