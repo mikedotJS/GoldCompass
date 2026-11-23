@@ -202,7 +202,12 @@ end
 -- ---------------------------------------------------------------------------------------------------------------------
 -- Text (French strings come in as S, the zone and item names through `names`): never an arrow, check mark or ellipsis (Latin-1 font).
 
-local function hoursOf(h) return math.max(1, math.floor(h.hours + 0.5)) end
+-- "~40 min" under an hour (never "~60 min"), else "~2 h". Only the text is rounded: `rare` is decided on the raw hours.
+local function duration(hours, S)
+  local minutes = math.max(1, math.floor(hours * 60 + 0.5))
+  if minutes < 60 then return S.syn_minutes:format(minutes) end
+  return S.syn_hours:format(math.floor(hours + 0.5))
+end
 
 -- "bête" for one, "bêtes" otherwise.
 local function unit(kind, count, S) return S.syn_unit[kind][count == 1 and 1 or 2] end
@@ -211,7 +216,7 @@ local function unit(kind, count, S) return S.syn_unit[kind][count == 1 and 1 or 
 -- names = { zone = function(zoneID) -> text, item = function(itemID) -> text }
 function SY.Line(h, S, names)
   local u = unit(h.kind, h.count, S)
-  if h.rare then return S.syn_rare[h.kind]:format(h.count, u, hoursOf(h)) .. (h.ah and S.syn_ah or "") end
+  if h.rare then return S.syn_rare[h.kind]:format(h.count, u, duration(h.hours, S)) .. (h.ah and S.syn_ah or "") end
   local zone = names.zone(h.zone) .. (h.here and S.syn_here or "")
   if h.kind == "bar" then return S.syn_line.bar:format(h.ore.n, names.item(h.ore.item), h.count, u, zone) end
   return S.syn_line[h.kind]:format(h.count, u, zone)
@@ -219,7 +224,7 @@ end
 
 -- The short form of a shopping-list row: "ton Dépeçage · Les Tarides · ~35 bêtes", "rare au dépeçage (~7 h)".
 function SY.Short(h, S, names)
-  if h.rare then return S.syn_rare_row[h.kind]:format(hoursOf(h)) end
+  if h.rare then return S.syn_rare_row[h.kind]:format(duration(h.hours, S)) end
   return S.syn_row[h.kind]:format(names.zone(h.zone), h.count, unit(h.kind, h.count, S))
 end
 
@@ -239,5 +244,5 @@ end
 
 -- "À farmer d'abord : Les Tarides (Dépeçage, ~1 h)".
 function SY.FarmText(farm, S, names)
-  return S.shop_farm:format(names.zone(farm.zone), S.prof_names[farm.prof] or farm.prof, math.max(1, math.floor(farm.hours + 0.5)))
+  return S.shop_farm:format(names.zone(farm.zone), S.prof_names[farm.prof] or farm.prof, duration(farm.hours, S))
 end

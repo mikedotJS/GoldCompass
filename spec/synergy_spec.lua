@@ -209,7 +209,7 @@ describe("Synergy texts", function()
   it("short forms of the shopping list and the farm note", function()
     assert.are.equal("ton Dépeçage · Zone1413 · ~35 bêtes", SY.Short(hint(), S, names))
     assert.are.equal("rare au dépeçage (~7 h)", SY.Short(hint({ rare = true, hours = 6.7 }), S, names))
-    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~1 h)", SY.FarmText({ zone = BARRENS, prof = "Skinning", hours = 0.58, units = 26 }, S, names))
+    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~35 min)", SY.FarmText({ zone = BARRENS, prof = "Skinning", hours = 0.58, units = 26 }, S, names))
   end)
 
   it("is singular for one beast, plant or vein (and plural otherwise)", function()
@@ -221,6 +221,30 @@ describe("Synergy texts", function()
     assert.are.equal("ton Dépeçage · Zone1413 · ~1 bête", SY.Short(hint({ count = 1 }), S, names))
     assert.are.equal("ton Dépeçage · Zone1413 · ~2 bêtes", SY.Short(hint({ count = 2 }), S, names))
     assert.are.equal("ton Dépeçage · Zone1413 · ~0 bêtes", SY.Short(hint({ count = 0 }), S, names))
+  end)
+
+  it("shows minutes under an hour and rounded hours above, on the rare lines and the farm note", function()
+    local function farm(hours) return SY.FarmText({ zone = BARRENS, prof = "Skinning", hours = hours, units = 1 }, S, names) end
+    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~5 min)", farm(5 / 60))
+    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~1 min)", farm(0.001))
+    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~59 min)", farm(59 / 60))
+    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~1 h)", farm(0.999))       -- never "~60 min"
+    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~1 h)", farm(1.4))
+    assert.are.equal("À farmer d'abord : Zone1413 (Dépeçage, ~2 h)", farm(1.6))
+    assert.are.equal("rare au dépeçage (~2 h)", SY.Short(hint({ rare = true, hours = 2.2 }), S, names))
+    assert.are.equal("rare au dépeçage (~3 h)", SY.Short(hint({ rare = true, hours = 2.6 }), S, names))
+    assert.are.equal("rare au dépeçage (~400 bêtes, ~2 h)", SY.Line(hint({ rare = true, count = 400, hours = 2.1 }), S, names))
+  end)
+
+  it("the 2 h 'rare' threshold is on the raw hours: 2.4 h is rare, 1.9 h is not, whatever the text says", function()
+    local data = fixture()                                   -- Barrens: 60 actions an hour, 0.035 Light Hide each
+    local rare = SY.Hint(LIGHT_HIDE, 1, SKILLS, data)        -- ceil(1 / 0.035) = 29 beasts, under 1 hour: not rare
+    assert.is_false(rare.rare)
+    assert.is_false(SY.Hint(LIGHT_HIDE, 4, SKILLS, data).rare)   -- ceil(4 / 0.035) = 115 beasts = 1.9 hours
+    local h = SY.Hint(LIGHT_HIDE, 5, SKILLS, data)           -- ceil(5 / 0.035) = 143 beasts = 2.4 hours
+    assert.is_true(h.hours > 2 and h.hours < 2.5)
+    assert.is_true(h.rare)
+    assert.are.equal("rare au dépeçage (~2 h)", SY.Short(h, S, names))
   end)
 
   it("every new string stays in the Latin-1 font: no check mark, arrow or ellipsis", function()
