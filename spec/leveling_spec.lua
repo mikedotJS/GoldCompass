@@ -1573,3 +1573,34 @@ describe("Leveling.Roadmap: the effort of the reagents (ctx.effort), and nothing
     assert.is_near(4, why.altPerPoint, 1e-9)                          -- one drop at 4, chance 1 (orange) at 100
   end)
 end)
+
+describe("Leveling.Roadmap: the bag steps come first, the plan goes on from the skill they reach", function()
+  -- Meat (known, effort 2 per craft) and Fish (to learn at a vendor, effort 1, learn 40) from skill 1, Snap (to learn, from 50) after.
+  -- Empty bags: Fish saves 1 per point on 1..50, worth its learn. 40 meats in the bags: the bag step takes 1 to 41, and from 41 Fish
+  -- would save 9 only, not worth its learn: the plan shown at 1 must not announce it, or it vanishes once the player is at 41.
+  local EFFORT = { [10] = 2, [20] = 1, [30] = 1 }
+  local MEAT = { id = 1, name = "Meat", d = 0, out = 101, oq = 1, mats = { { 10, 1 } } }
+  local FISH = { id = 2, name = "Fish", learn = 1, mats = { { 20, 1 } }, th = { 1, 40, 70, 100 }, way = { kind = "vendor" } }
+  local SNAP = { id = 3, name = "Snap", learn = 50, mats = { { 30, 1 } }, th = { 50, 300, 300, 301 }, way = { kind = "vendor" } }
+  local function steps(skill, bag)
+    local r = V.Roadmap({ skill = skill, max = 300, recipes = { [1] = MEAT } },
+      { owned = function(id) return bag[id] or 0 end, effort = function(id) return EFFORT[id] end },
+      { thresholds = function() return { 1, 45, 65, 85 } end,
+        candidates = { { rec = FISH, recommend = true, effort = 40 }, { rec = SNAP, recommend = true, effort = 40 } } })
+    local out = {}
+    for i, s in ipairs(r.steps) do out[i] = s.kind .. " " .. s.rec.name .. " " .. (s.from or s.at) .. ">" .. (s.to or "") .. (s.bonus and " bag" or "") end
+    return table.concat(out, ", ")
+  end
+
+  it("empty bags: Fish is learned at 1", function()
+    assert.are.equal("learn Fish 1>50, craft Fish 1>50, learn Snap 50>300, craft Snap 50>300", steps(1, {}))
+  end)
+
+  it("a learn shown after the bag step is still there when the player reaches it (no flicker)", function()
+    local before = steps(1, { [10] = 40 })
+    assert.are.equal("craft Meat 1>41 bag, craft Meat 41>50, learn Snap 50>300, craft Snap 50>300", before)
+    -- at 41, the meats spent: the rest of the plan shown at 1
+    assert.are.equal("craft Meat 41>50, learn Snap 50>300, craft Snap 50>300", steps(41, {}))
+    assert.are.equal(before:gsub("^craft Meat 1>41 bag, ", ""), steps(41, {}))
+  end)
+end)

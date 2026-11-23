@@ -956,12 +956,15 @@ function V.Roadmap(prof, ctx, opts)
   local byOut = {}
   for _, rec in pairs(prof.recipes or {}) do if rec.out then byOut[rec.out] = rec end end
   local list, seen = {}, {}
-  local function add(rec, th, lo, entry, row)
+  local function add(rec, th, from, entry, row)
     local units = planUnits(rec, ctx)
+    -- a recipe to learn: nothing to walk on below the skill, its learn is paid from `start` on (`from`: the skill it can be learned at)
+    local lo = row and math.max(from, start) or from
     if units <= 0 or lo >= th[4] then return end
     local eS = th[4]
     if th[4] > th[2] then eS = math.min(th[4], math.floor(th[4] - V.MIN_CHANCE * (th[4] - th[2]) + 1e-9) + 1) end
-    list[#list + 1] = { rec = rec, id = rec.id, th = th, units = units, lo = lo, eS = eS, eA = th[4], entry = entry, known = entry == 0, row = row }
+    list[#list + 1] = { rec = rec, id = rec.id, th = th, units = units, lo = lo, from = from, eS = eS, eA = th[4], entry = entry,
+      known = entry == 0, row = row }
   end
   for _, rec in pairs(prof.recipes or {}) do
     seen[rec.id] = true
@@ -978,12 +981,17 @@ function V.Roadmap(prof, ctx, opts)
         lo = result.nextRank and math.max(lo, result.rankAt) or math.huge
       end
       local kind = rec.way and rec.way.kind or "trainer"
-      -- not learned yet: nothing to walk on below the skill, its learn is paid from `start` on
-      add(rec, rec.th, math.max(lo, start), row.effort or V.LEARN_EFFORT[kind] or V.LEARN_EFFORT.other, row)
+      add(rec, rec.th, lo, row.effort or V.LEARN_EFFORT[kind] or V.LEARN_EFFORT.other, row)
     end
   end
-  local plan = V.Cheapest(list, start, target, 1)
-  result.reach = plan.reach
+  -- the plan from skill `s`, as the roadmap computed at `s` sees it: a recipe to learn is paid from `s` on. The bag steps below move the
+  -- skill before the plan starts, so the plan goes on from where they end, not from `start` (a learn chosen for points the bags then
+  -- give would be dropped once the player gets there).
+  local function planFrom(s)
+    for _, r in ipairs(list) do if r.row then r.lo = math.max(r.from, s) end end
+    return V.Cheapest(list, s, target, 1)
+  end
+  local plan = planFrom(start)
   local function costAt(r, s)
     local p = chanceAt(r.th, s)
     return p > 0 and r.units / p or math.huge
@@ -1105,8 +1113,10 @@ function V.Roadmap(prof, ctx, opts)
     if n > 0 and to > at then                         -- a step must move the skill: less than one point is not a step
       bagSteps[#bagSteps + 1] = craftStep(best, at, to, n, true)
       at = to
+      plan = planFrom(at)
     end
   end
+  result.reach = plan.reach
 
   -- the plan from there: the rank that can be trained now (and what to learn at that visit) comes before the bags
   segs = plan.path(at)

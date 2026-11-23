@@ -202,16 +202,34 @@ local function journey(w, opts)
       local unrelated = planOf(select(2, roadmap(w)))
       for _, rec in pairs(data.recipes) do for _, m in ipairs(rec.mats) do BAG[m[1]], BANK[m[1]] = 200, 200 end end
       ns.ForgetProfessions()
-      local stocked, stockedLearns = planOf(select(2, roadmap(w)))
+      local stockedRoad = select(2, roadmap(w))
+      local stocked, stockedLearns = planOf(stockedRoad)
+      local bagEnd = P.skill
+      for _, st in ipairs(stockedRoad.steps) do if st.bonus then bagEnd = math.max(bagEnd, st.to) end end
       BAG, BANK = {}, {}
+      ns.ForgetProfessions()
+      -- the plan without bags, asked from the skill the bag steps reach: what the player will be shown once there
+      -- (at the cap, the rank the plan trains there first)
+      local here, cap = P.skill, P.max
+      setSkill(bagEnd)
+      if bagEnd >= cap and cap < 300 then P.max, data.max = cap + 75, cap + 75 end
+      local thereLearns = select(2, planOf(select(2, roadmap(w))))
+      setSkill(here)
+      P.max, data.max = cap, cap
       ns.ForgetProfessions()
       R.purityChecks = R.purityChecks + 1
       local function bad(what) R.impure[#R.impure + 1] = ("skill %d: %s"):format(P.skill, what) end
       if same ~= base then bad("the same inputs gave another plan") end
       if unrelated ~= base then bad("bags and bank full of unrelated items changed the plan") end
       -- reagents in the bags: the "bonus" steps spend them first and the plan goes on from the skill they reach, so a recipe to learn for a
-      -- few points may be skipped (the entry cost no longer pays off); it never learns a recipe the plan without bags did not, nor reaches less
-      for id in pairs(stockedLearns) do if not baseLearns[id] then bad("the bags made the plan learn " .. id) end end
+      -- few points may be skipped (the entry cost no longer pays off). It learns only what the plan without bags learns from that skill
+      -- (a learn shown now is still there when the player gets there), and it never reaches less.
+      for id in pairs(stockedLearns) do
+        if not thereLearns[id] then bad(("the bags made the plan learn %d, the plan from %d does not"):format(id, bagEnd)) end
+      end
+      if bagEnd == P.skill then
+        for id in pairs(stockedLearns) do if not baseLearns[id] then bad("the bags made the plan learn " .. id) end end
+      end
       if stocked:match("reach=%S+$") ~= base:match("reach=%S+$") then bad("the bags changed the reach of the plan") end
     end
     local steps = road.steps
