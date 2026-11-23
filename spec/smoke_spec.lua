@@ -182,6 +182,7 @@ local function loadAddon()
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
   if _G.stubDB then ns.ForeverDB = _G.stubDB end
+  ns.FrameBudget = math.huge   -- the whole refresh in one call, whatever the machine's speed (the frame split has its own specs)
   -- The older Métier tests describe the bag filter, the learn lists and the gold figures, which now belong to "Gagner de l'or": unless a test
   -- asks for the roadmap with goal = "level", the tab runs in that mode.
   ns.RealGoal = ns.Goal
@@ -3140,6 +3141,77 @@ describe("Refreshes cost little: one calculation per event, nothing recomputed t
     ns.ForgetProfessions()                                                          -- the refresh button
     ns.RunLeveling(function(r) again = r end)
     assert.are.equal(2, built)
+  end)
+
+  it("a refresh that used its frame budget goes on in the next frames, one stage per frame, and answers once", function()
+    local ns = start()
+    ns.ForgetProfessions()
+    ns.FrameBudget = 0
+    local answers, res = 0, nil
+    ns.RunLeveling(function(r) answers = answers + 1; res = r end)
+    assert.is_nil(res)                                                              -- nothing computed in the calling frame
+    local frames = 0
+    while not res and frames < 20 do frames = frames + 1; runTimers() end
+    assert.are.equal(1, answers)
+    assert.are.equal("ok", res.state)
+    assert.are.equal("plan", res.profs[1].status)
+    assert.is_not_nil(res.profs[1].road)
+    assert.is_true(frames >= 3)                                                     -- plan, places to learn, roadmap
+    local sync
+    ns.RunLeveling(function(r) sync = r end)                                        -- now cached: the answer is immediate
+    assert.are.equal(res.profs[1], sync.profs[1])
+  end)
+
+  it("the split refresh gives the same answer as the one-frame refresh", function()
+    local ns = start()
+    local whole
+    ns.ForgetProfessions()
+    ns.RunLeveling(function(r) whole = r end)
+    ns.ForgetProfessions()
+    ns.FrameBudget = 0
+    local split
+    ns.RunLeveling(function(r) split = r end)
+    local frames = 0
+    while not split and frames < 20 do frames = frames + 1; runTimers() end
+    local function steps(e) local out = {} for i, st in ipairs(e.road.steps) do out[i] = st.kind .. (st.rec and st.rec.id or "") end return table.concat(out, ",") end
+    assert.are.equal(steps(whole.profs[1]), steps(split.profs[1]))
+    assert.are.equal(whole.profs[1].plan.best.rec.id, split.profs[1].plan.best.rec.id)
+  end)
+
+  it("the place of a recipe is looked up once until the trainer records, the zone or the faction change", function()
+    local ns = start()                                                              -- the tab's own refresh already looked the places up
+    local looked, real = 0, ns.Where.Target
+    ns.Where.Target = function(...) looked = looked + 1; return real(...) end
+    local function refresh() ns.ForgetProfessions(); ns.RunLeveling(function() end) end
+    refresh()
+    assert.are.equal(0, looked)                                                     -- a refresh asked nobody again
+    local stamp, recorded = ns.TrainerLog.Stamp, 0
+    ns.TrainerLog.Stamp = function() return stamp() + recorded end
+    recorded = 1                                                                    -- a trainer window was recorded
+    refresh()
+    local first = looked
+    assert.is_true(first > 0)
+    refresh()
+    assert.are.equal(first, looked)
+    local zone = C_Map.GetBestMapForUnit
+    C_Map.GetBestMapForUnit = function() return 1412 end                            -- the character went to another zone
+    refresh()
+    assert.are.equal(2 * first, looked)
+    C_Map.GetBestMapForUnit = zone
+    ns.TrainerLog.Stamp = stamp
+  end)
+
+  it("a stage that fails ends the refresh with an error answer, never a silent hang", function()
+    local ns = start()
+    ns.ForgetProfessions()
+    ns.FrameBudget = 0
+    ns.BuildRoadmap = function() error("boom") end
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local frames = 0
+    while not res and frames < 20 do frames = frames + 1; runTimers() end
+    assert.are.equal("error", res.state)
+    assert.matches("boom", res.message)
   end)
 
   it("one bag event with the Métier tab and the shopping list on screen is one calculation, not two", function()

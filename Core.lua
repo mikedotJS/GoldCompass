@@ -385,14 +385,20 @@ end
 
 -- Environment for Where.Target: faction, the continent the player is on and a distance function (world coordinates of
 -- the player and of a map position; nil when the game cannot tell, then only the continent decides).
+local contOf
 local function whereEnv(ctx)
+  if ctx.whereEnv then return ctx.whereEnv end   -- one per refresh: every profession of the run shares it
+  if not contOf then
+    contOf = {}
+    for _, m in pairs(ns.MapIDs) do contOf[m[1]] = m[2] end
+  end
   local env = { trainers = ns.Trainers, npcs = ns.NPCs, where = ns.RecipeWhere, maps = ns.MapIDs, faction = ctx.faction,
-    db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, auctioneers = ns.NpcAuctioneers, recorded = ns.db and ns.db.npcs, contOf = {},
+    db = ns.Npcs, byName = ns.NpcByName, ntrainers = ns.NpcTrainers, auctioneers = ns.NpcAuctioneers, recorded = ns.db and ns.db.npcs, contOf = contOf,
     fdb = ns.FdbNpcs, fdbVendors = ns.FdbVendors, fdbTrainers = ns.FdbTrainers, fdbQuests = ns.FdbQuests }
-  for _, m in pairs(ns.MapIDs) do env.contOf[m[1]] = m[2] end
+  ctx.whereEnv = env
   local C = C_Map
   local here = C and C.GetBestMapForUnit and C.GetBestMapForUnit("player")
-  for _, m in pairs(ns.MapIDs) do if m[1] == here then env.continent = m[2] end end
+  env.continent, env.mapID = here and contOf[here], here
   if not (here and C.GetWorldPosFromMapPos and C.GetPlayerMapPosition and CreateVector2D) then return env end
   local function world(mapID, x, y)
     local ok, instance, pos = pcall(C.GetWorldPosFromMapPos, mapID, CreateVector2D(x, y))
@@ -411,6 +417,26 @@ local function whereEnv(ctx)
     end
   end
   return env
+end
+
+-- Where.Target answers per recipe (its id, and whether the teaching item has a price, the only thing of the price the lookup reads), kept
+-- until the trainer records, the zone or the faction change (the key) or two minutes pass (the player's position, which decides the nearest
+-- trainer). A copy is returned: the callers write the display text into it. A rank target (id 0) is keyed by its rank and skill.
+local targetCache = { key = nil, at = 0, by = {} }
+local function cachedTarget(rec, prof, env)
+  local key = ("%s:%s:%s"):format(ns.TrainerLog.Stamp(), tostring(env.mapID), env.faction)
+  local now = time()
+  if targetCache.key ~= key or now - targetCache.at >= 120 then
+    targetCache.key, targetCache.at, targetCache.by = key, now, {}
+  end
+  local byProf = targetCache.by[prof]
+  if not byProf then byProf = {}; targetCache.by[prof] = byProf end
+  local id = rec.id == 0 and ((rec.way and rec.way.rank or "") .. ":" .. (rec.learn or 0)) or rec.id * 2 + (rec.fee and 1 or 0)
+  local t = byProf[id]
+  if not t then t = ns.Where.Target(rec, prof, env); byProf[id] = t end
+  local copy = {}
+  for k, v in pairs(t) do copy[k] = v end
+  return copy
 end
 
 -- Crafts of a profession from the vendored Forever data (ForeverDB.lua): nil when it has none for this profession.
@@ -448,7 +474,7 @@ function ns.LearnFor(p, ctx, count, knownBest)
   local byOut = {}
   for _, r in pairs(data and data.recipes or {}) do if r.out then byOut[r.out] = r end end
   own.sub = function(item) return byOut[item] end
-  own.place = function(rec) return ns.Where.Target(rec, english, env) end
+  own.place = function(rec) return cachedTarget(rec, english, env) end
   local result = ns.Leveling.Learnable(crafts, p.skill or 0, own, count, nil, knownBest)
   -- every recipe that can be learned on the way to the maximum (the roadmap plans with them), without the ones this faction cannot get
   result.ahead = {}
@@ -457,11 +483,11 @@ function ns.LearnFor(p, ctx, count, knownBest)
   end
   if result.beyond and result.beyond.rank then   -- where to train the rank that lifts the cap
     local b = result.beyond
-    b.target = ns.Where.Target({ id = 0, learn = b.max + 1, src = nil, way = { rank = b.rank } }, english, env)
+    b.target = cachedTarget({ id = 0, learn = b.max + 1, src = nil, way = { rank = b.rank } }, english, env)
   end
   -- where to go for a recipe, with the text the window shows; also asked by the roadmap for a recipe further ahead (result.place)
   local function place(row)
-      row.target = row.target or ns.Where.Target(row.rec, english, env)
+      row.target = row.target or cachedTarget(row.rec, english, env)
       -- never an empty answer: the source itself ("butin", "conteneur", ...) when no place is known
       local t, way = row.target, row.rec.way
       if not t.mapID or t.dropZone then
@@ -642,7 +668,7 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   end
   -- where to train the next rank (the rank trainer of the profession)
   if road.nextRank then
-    road.rankTarget = ns.Where.Target({ id = 0, learn = (data.max or 0) + 1, src = nil, way = { rank = road.nextRank } }, SKILL_LINES[p.line], whereEnv(ctx))
+    road.rankTarget = cachedTarget({ id = 0, learn = (data.max or 0) + 1, src = nil, way = { rank = road.nextRank } }, SKILL_LINES[p.line], whereEnv(ctx))
   end
   -- hover tooltips ("comment l'obtenir"): built when the mouse is over the row, with what the game knows by then
   local byOut = {}
@@ -722,6 +748,90 @@ local function profSignature(p, ctx, withRoad)
   return h
 end
 
+-- One profession's entry, in stages that RunLeveling spreads over frames: returns the entry (filled by the stages), the list of stages
+-- (the first one adds the following ones) and the index of the stage run last (0).
+local clock = debugprofilestop or function() return os.clock() * 1000 end
+local function clockMs() return clock() end
+ns.FrameBudget = 2   -- ms of work after which a frame starts no further stage: the rest of the refresh waits for the next frame
+local function buildStages(p, ctx, withRoad)
+  local entry = { name = p.name, skill = p.skill, max = p.max }
+  local data = ns.char.profs[p.name]
+  local count, thresholds, best
+  local function learnStage()
+    entry.learn = ns.LearnFor(p, ctx, count, best and not best.uncertain and (entry.goal == "gold" and -best.profit or best.unitsPerPoint) or nil)
+    if entry.learn then
+      for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {}, entry.learn.books or {} }) do
+        for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end
+      end
+      for _, row in ipairs(entry.learn.otherFaction or {}) do row.name = ns.Fmt.RecipeName(row.rec) end
+      for _, row in ipairs(entry.learn.books or {}) do row.name = ns.BookName(row.rec) end
+    end
+    local seen, names = {}, {}
+    for i = 1, math.min(3, #entry.plan.unpriced) do
+      for _, id in ipairs(entry.plan.unpriced[i].missing) do
+        if not seen[id] then seen[id] = true; names[#names + 1] = ns.ItemName(id) end
+      end
+    end
+    entry.missingNames = names
+  end
+  local function roadStage()
+    if entry.goal ~= "gold" then entry.road = ns.BuildRoadmap(p, data, ctx, entry, thresholds)
+    elseif withRoad then
+      local built, road = pcall(ns.BuildRoadmap, p, data, ctx, entry, thresholds)
+      entry.road = built and road or nil
+    end
+  end
+  local stages
+  local function planStage()
+    if data then
+      local english = SKILL_LINES[p.line]
+      local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction, ns.charKey) or {}
+      -- known: the game says so, or this character's own trainer window lists it as already known
+      data = ns.SectionData(data, p.line, { skill = p.skill, max = p.max, crafts = libCrafts(p, ctx.faction),
+        known = function(id) return ctx.known(id) or (offers[id] ~= nil and offers[id].mine and offers[id].status == "used") or false end })
+    end
+    -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
+    -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
+    if ns.RouteMap.LINES[p.line] and ns.Goal() ~= "gold" and (not data or next(data.recipes) == nil) then
+      -- "Où monter": Herbalism and Skinning have no profession window to read, their roadmap is the zones that give skill points
+      entry.status, entry.road = "plan", ns.BuildRoadmap(p, { skill = p.skill, max = p.max, recipes = {} }, ctx, {}, function() end)
+    elseif not data then
+      entry.status = "unseen"
+    elseif next(data.recipes) == nil then
+      entry.status = "norecipes"
+    else
+      entry.status = "plan"
+      -- "Avec mon sac": count what is carried (bags only: no bank, no reagent bank)
+      -- the roadmap of "Monter le métier" always uses the bag first: the checkbox only belongs to "Gagner de l'or"
+      count = ns.char.onlyBag and ns.Goal() == "gold" and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
+      entry.filtered = count ~= nil
+      thresholds = function(id)
+        local r = ns.ForeverDB:GetRecipes(p.line)
+        local e = r and r[id]
+        return e and ns.Leveling.Difficulty(e.difficulty, e.requiredSkill, ns.ForeverTrainers[id])
+      end
+      entry.plan = ns.Leveling.Plan(data, ctx, nil, count, thresholds, ns.Goal())
+      -- the "Fabriquer" button crafts the recommended recipe as many times as the bags allow, filter or not
+      best = entry.plan.best
+      if best then
+        local times = ns.Leveling.Craftable(best.rec, function(id) return C_Item.GetItemCount(id, false, false, false) end)
+        entry.craft = { id = best.rec.id, times = times, prof = p.name, line = p.line }
+      end
+      for _, row in ipairs(entry.plan.rows) do row.name = ns.Fmt.RecipeName(row.rec) end
+      if entry.plan.second then entry.plan.second.e.name = entry.plan.second.e.name or ns.Fmt.RecipeName(entry.plan.second.e.rec) end
+      local almost = entry.plan.almost
+      if almost then
+        entry.almost = { name = ns.Fmt.RecipeName(almost.rec), missing = {} }
+        for i, s in ipairs(almost.short) do entry.almost.missing[i] = { ns.ItemName(s[1]), s[2] } end
+      end
+      entry.goal = entry.plan.goal
+      stages[2], stages[3] = learnStage, roadStage
+    end
+  end
+  stages = { planStage }
+  return entry, stages, 0
+end
+
 function ns.RunLeveling(done, withRoad)
   if not ns.Prices.Installed() then return done({ state = "no_auctionator_addon" }) end
   local list = ns.ProfessionList()
@@ -746,90 +856,56 @@ function ns.RunLeveling(done, withRoad)
     end
   end
   ns.LoadItems(ids, function()
-    local ok, res = pcall(function()
+    local started = clockMs()
+    local ok, step = pcall(function()
       local ctx = ns.Context()
-      local profs = {}
-      local function build(p)
-        local entry = { name = p.name, skill = p.skill, max = p.max }
-        local data = ns.char.profs[p.name]
-        if data then
-          local english = SKILL_LINES[p.line]
-          local offers = english and ns.TrainerLog.Offers(ns.db or {}, english, ctx.faction, ns.charKey) or {}
-          -- known: the game says so, or this character's own trainer window lists it as already known
-          data = ns.SectionData(data, p.line, { skill = p.skill, max = p.max, crafts = libCrafts(p, ctx.faction),
-            known = function(id) return ctx.known(id) or (offers[id] ~= nil and offers[id].mine and offers[id].status == "used") or false end })
-        end
-        -- What the game said when the window was read decides: no remembered window = "open it once"; a window that
-        -- listed no known recipe = "no recipes" (learned from the game, not assumed per profession).
-        if ns.RouteMap.LINES[p.line] and ns.Goal() ~= "gold" and (not data or next(data.recipes) == nil) then
-          -- "Où monter": Herbalism and Skinning have no profession window to read, their roadmap is the zones that give skill points
-          entry.status, entry.road = "plan", ns.BuildRoadmap(p, { skill = p.skill, max = p.max, recipes = {} }, ctx, {}, function() end)
-        elseif not data then
-          entry.status = "unseen"
-        elseif next(data.recipes) == nil then
-          entry.status = "norecipes"
-        else
-          entry.status = "plan"
-          -- "Avec mon sac": count what is carried (bags only: no bank, no reagent bank)
-          -- the roadmap of "Monter le métier" always uses the bag first: the checkbox only belongs to "Gagner de l'or"
-          local count = ns.char.onlyBag and ns.Goal() == "gold" and function(id) return C_Item.GetItemCount(id, false, false, false) end or nil
-          entry.filtered = count ~= nil
-          local function thresholds(id)
-            local r = ns.ForeverDB:GetRecipes(p.line)
-            local e = r and r[id]
-            return e and ns.Leveling.Difficulty(e.difficulty, e.requiredSkill, ns.ForeverTrainers[id])
-          end
-          entry.plan = ns.Leveling.Plan(data, ctx, nil, count, thresholds, ns.Goal())
-          -- the "Fabriquer" button crafts the recommended recipe as many times as the bags allow, filter or not
-          local best = entry.plan.best
-          if best then
-            local times = ns.Leveling.Craftable(best.rec, function(id) return C_Item.GetItemCount(id, false, false, false) end)
-            entry.craft = { id = best.rec.id, times = times, prof = p.name, line = p.line }
-          end
-          for _, row in ipairs(entry.plan.rows) do row.name = ns.Fmt.RecipeName(row.rec) end
-          if entry.plan.second then entry.plan.second.e.name = entry.plan.second.e.name or ns.Fmt.RecipeName(entry.plan.second.e.rec) end
-          local almost = entry.plan.almost
-          if almost then
-            entry.almost = { name = ns.Fmt.RecipeName(almost.rec), missing = {} }
-            for i, s in ipairs(almost.short) do entry.almost.missing[i] = { ns.ItemName(s[1]), s[2] } end
-          end
-          entry.goal = entry.plan.goal
-          entry.learn = ns.LearnFor(p, ctx, count, best and not best.uncertain and (entry.goal == "gold" and -best.profit or best.unitsPerPoint) or nil)
-          if entry.learn then
-            for _, bucket in ipairs({ entry.learn.now or {}, entry.learn.soon or {}, entry.learn.gray or {}, entry.learn.books or {} }) do
-              for _, row in ipairs(bucket) do row.name = ns.Fmt.RecipeName(row.rec) end
-            end
-            for _, row in ipairs(entry.learn.otherFaction or {}) do row.name = ns.Fmt.RecipeName(row.rec) end
-            for _, row in ipairs(entry.learn.books or {}) do row.name = ns.BookName(row.rec) end
-          end
-          local seen, names = {}, {}
-          for i = 1, math.min(3, #entry.plan.unpriced) do
-            for _, id in ipairs(entry.plan.unpriced[i].missing) do
-              if not seen[id] then seen[id] = true; names[#names + 1] = ns.ItemName(id) end
-            end
-          end
-          entry.missingNames = names
-          if entry.goal ~= "gold" then entry.road = ns.BuildRoadmap(p, data, ctx, entry, thresholds)
-          elseif withRoad then
-            local built, road = pcall(ns.BuildRoadmap, p, data, ctx, entry, thresholds)
-            entry.road = built and road or nil
-          end
-        end
-        return entry
-      end
+      local entries, jobs = {}, {}
       local now = time()
-      for _, p in ipairs(list) do
+      for i, p in ipairs(list) do
         local sig = profSignature(p, ctx, withRoad)
         local hit = profCache[p.name]
-        if not (hit and hit.sig == sig and now - hit.at < CACHE_TTL) then
-          hit = { sig = sig, at = now, entry = build(p) }
-          profCache[p.name] = hit
-        end
-        profs[#profs + 1] = hit.entry
+        if hit and hit.sig == sig and now - hit.at < CACHE_TTL then entries[i] = hit.entry
+        else jobs[#jobs + 1] = { i = i, p = p, sig = sig } end
       end
-      return { state = "ok", profs = profs }
+      -- The professions to rebuild, one stage after the other. A frame runs stages until it has used FrameBudget ms, then the rest waits for
+      -- the next frame (C_Timer.After(0)): the game never freezes for the whole calculation. `done` comes once, in the order of `list`.
+      local function advance()
+        local job = jobs[1]
+        if not job.stages then
+          local hit = profCache[job.p.name]   -- a run started after this one may have built it meanwhile
+          if hit and hit.sig == job.sig and time() - hit.at < CACHE_TTL then
+            entries[job.i] = hit.entry
+            return table.remove(jobs, 1)
+          end
+          job.entry, job.stages, job.n = buildStages(job.p, ctx, withRoad)
+        end
+        job.n = job.n + 1
+        job.stages[job.n]()
+        if job.n >= #job.stages then
+          profCache[job.p.name] = { sig = job.sig, at = time(), entry = job.entry }
+          entries[job.i] = job.entry
+          table.remove(jobs, 1)
+        end
+      end
+      local function frame(first)
+        local good, problem = pcall(function()
+          local stages = 0
+          while #jobs > 0 do
+            -- a frame always makes progress, except the first one when the signatures alone used its budget
+            if clockMs() - started >= ns.FrameBudget and (stages > 0 or first) then break end
+            advance()
+            stages = stages + 1
+          end
+        end)
+        if not good then return done({ state = "error", message = tostring(problem) }) end
+        if #jobs > 0 then
+          return C_Timer.After(0, function() started = clockMs(); frame() end)
+        end
+        done({ state = "ok", profs = entries })
+      end
+      return frame
     end)
-    done(ok and res or { state = "error", message = tostring(res) })
+    if ok then step(true) else done({ state = "error", message = tostring(step) }) end
   end)
 end
 
