@@ -754,7 +754,7 @@ function V.Candidates(crafts, skill, ctx)
         local place = ctx.place and ctx.place(rec)                   -- no place on the map (a text only): a search, not a trip
         out[#out + 1] = { rec = rec, recommend = true, needMax = way and way.rank and RANK_MAX[way.rank] or nil,
           rankGated = at <= skill and V.WindowGated(offer, at) or nil,
-          effort = (place and not place.mapID or (kind == "vendor" and not way.vendorCost)) and V.LEARN_EFFORT.unknown
+          effort = (place and not place.mapID) and V.LEARN_EFFORT.unknown
             or kind == "trainer" and V.LEARN_EFFORT.trainer or (gold and V.LEARN_EFFORT.vendor) or V.LEARN_EFFORT.other }
       end
     end
@@ -796,7 +796,7 @@ V.BAG_STEPS = 2
 -- What a recipe to learn must save, in ingredients, to be part of the plan (the trip, the fee). Estimates: a trainer is on the way, a
 -- vendor selling for gold less so, and the rest (a quest, a pattern from the auction house, a vendor asking a currency, a standing or
 -- an unknown price) is taken only when it saves a lot.
--- `unknown`: no place on the map (a text only) or a vendor whose price is unknown: a search, not a trip.
+-- `unknown`: no place on the map (a text only): a search, not a trip. A vendor on the map whose price is unknown stays `other`.
 V.LEARN_EFFORT = { trainer = 12, vendor = 20, other = 30, unknown = 60 }
 V.SWITCH = 10            -- what changing recipe costs, in ingredients: the plan does not go A, B, then A again for a few units
 V.MIN_STINT = 15         -- a recipe the plan takes (to learn or known) is kept that many points at least: no learn for a few points,

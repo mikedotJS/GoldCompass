@@ -1488,17 +1488,19 @@ describe("Leveling.Cheapest: switching cost, one walk, and the learn rules of th
     assert.are.same({ "craft", "A", 125, 150 }, { r.path[3].kind, r.path[3].rec.name, r.path[3].from, r.path[3].to })
   end)
 
-  it("a learn with no place on the map, or a vendor with an unknown price, costs V.LEARN_EFFORT.unknown", function()
+  it("a learn with no place on the map costs V.LEARN_EFFORT.unknown", function()
     local crafts = {
       { id = 5, name = "Pinned", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },
       { id = 6, name = "TextOnly", learn = 100, mats = { { 10, 1 } }, how = { kind = "trainer" } },
+      { id = 7, name = "VendorNoPrice", learn = 100, mats = { { 10, 1 } }, how = { kind = "vendor" } },
     }
     local ctx = { known = function() return false end,
-      place = function(rec) return rec.id == 5 and { kind = "pin", mapID = 1, x = 0.5, y = 0.5 } or { kind = "text" } end }
+      place = function(rec) return rec.id ~= 6 and { kind = "pin", mapID = 1, x = 0.5, y = 0.5 } or { kind = "text" } end }
     local by = {}
     for _, row in ipairs(V.Candidates(crafts, 100, ctx)) do by[row.rec.name] = row.effort end
     assert.are.equal(V.LEARN_EFFORT.trainer, by.Pinned)
     assert.are.equal(V.LEARN_EFFORT.unknown, by.TextOnly)
+    assert.are.equal(V.LEARN_EFFORT.other, by.VendorNoPrice)       -- on the map: a trip whose price is not known, not a search
     assert.is_true(V.LEARN_EFFORT.unknown > V.LEARN_EFFORT.other)
   end)
 end)
