@@ -50,6 +50,25 @@ def parse_gather(text):
     return kinds, zones
 
 
+OWN_FOREVER = 5         # a map where players saw the beast at least this often keeps its Classic points (the beast does live there)
+LARGER = 4              # ... otherwise they are dropped when another map holds LARGER times more Forever-seen points than this one
+BORDER_MAPS = 4         # only a beast met on at most this many maps can be a border stray (Rabbit, Deer, Sheep, Cow live everywhere)
+
+
+def border_stray(zones, kind, zid):
+    """True when the Classic points of a skinnable kind on a map are a border stray. ForeverDB attributes a CMaNGOS spawn to a map by
+    rectangle, so a beast of the Barrens that spawns next to Durotar shows up as Classic points on Durotar, off the land (x 19-35 percent
+    while Durotar's own beasts stand at 35 and more). They cannot be moved to the right map (no conversion here), so they are dropped
+    when players saw the kind fewer than OWN_FOREVER times on the map while another map holds LARGER times more Forever-seen points.
+    A kind met on more than BORDER_MAPS maps, or with no Forever point anywhere else, keeps its Classic points."""
+    here = zones.get(zid, {"k": {}})["k"].get(kind)
+    maps = [z["k"][kind] for z in zones.values() if kind in z["k"] and z["k"][kind][0] + z["k"][kind][1]]
+    if not here or not here[0] or len(maps) > BORDER_MAPS:
+        return False
+    other = max((len(o[1]) for o in maps if o is not here), default=0)
+    return len(here[1]) < OWN_FOREVER and other >= LARGER * max(len(here[1]), 1)
+
+
 def parse_items(text):
     """item -> (top source name, observed in Forever) from the d field of Items.lua."""
     out = {}
