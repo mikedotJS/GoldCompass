@@ -139,6 +139,14 @@ function R.Plan(input)
   else
     zones(max)
   end
+  -- two zone steps in a row in the same zone (another beast or herb turns gray, the zone is the same): one step
+  for i = #steps, 2, -1 do
+    local a, b = steps[i - 1], steps[i]
+    if a.kind == "zone" and b.kind == "zone" and a.zone.zone == b.zone.zone then
+      a.to = b.to
+      table.remove(steps, i)
+    end
+  end
   -- the same zone on both sides of the rank: one zone step (stay there), the rank after it at the skill it can be learned
   for i = #steps - 1, 2, -1 do
     local a, r, b = steps[i - 1], steps[i], steps[i + 1]

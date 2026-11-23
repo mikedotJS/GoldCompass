@@ -119,6 +119,16 @@ function RM.Plan(p, road, english)
       if z.all then has[z] = #skinPoints(z.zone, z.all) > 0 end
     end
     ns.Route.Order(list, ctx)
+    -- the zone the character was sent to stays first while it still gives points (and is not far above the level): the best zone by
+    -- spots changes as nodes turn gray, and a plan that moved on before the zone was spent contradicted the one announced earlier
+    local stay = ns.char and ns.char.routeZone and ns.char.routeZone[english]
+    for i, z in ipairs(stay and list or {}) do
+      if z.zone == stay then
+        local lo = ctx.lowest(z.zone)
+        if not (lo and ctx.level and lo - ctx.level > ns.Route.FAR) then table.remove(list, i); table.insert(list, 1, z) end
+        break
+      end
+    end
     local kept, rest = {}, {}
     for _, z in ipairs(list) do table.insert(has[z] == false and rest or kept, z) end
     for _, z in ipairs(rest) do kept[#kept + 1] = z end
@@ -157,6 +167,15 @@ function RM.Plan(p, road, english)
       end
     end
     steps[#steps + 1] = step
+  end
+  for _, step in ipairs(steps) do                 -- the first zone of the plan is the one the character is sent to
+    if step.kind == "zone" then
+      if ns.char then
+        ns.char.routeZone = ns.char.routeZone or {}
+        ns.char.routeZone[english] = step.zone
+      end
+      break
+    end
   end
   return { steps = steps, skin = english == "Skinning" }
 end

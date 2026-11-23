@@ -189,3 +189,26 @@ describe("Route.Plan merge", function()
     assert.are.same({ "rank", 125 }, { steps[2].kind, steps[2].at })
   end)
 end)
+
+describe("Route.Plan one step per zone", function()
+  local function plan(lookup, input)
+    local ns = {}
+    assert(loadfile("Route.lua"))("GoldCompass", ns)
+    input.lookup = lookup
+    return ns.Route.Plan(input)
+  end
+
+  it("two zone steps in a row in the same zone are one step (another herb turns gray, the zone is the same)", function()
+    local zones = { [100] = { zone = 1413, last = 140 }, [140] = { zone = 1413, last = 190 } }
+    local steps = plan(function(skill) return { skill >= 140 and zones[140] or zones[100] } end, { skill = 100, max = 225 })
+    assert.are.equal(1, #steps)
+    assert.are.same({ "zone", 100, 190 }, { steps[1].kind, steps[1].from, steps[1].to })
+  end)
+
+  it("different zones stay different steps", function()
+    local steps = plan(function(skill) return { skill >= 140 and { zone = 1442, last = 190 } or { zone = 1413, last = 140 } } end, { skill = 100, max = 225 })
+    assert.are.equal(2, #steps)
+    assert.are.equal(1413, steps[1].zone.zone)
+    assert.are.equal(1442, steps[2].zone.zone)
+  end)
+end)

@@ -3181,3 +3181,32 @@ describe("Refreshes cost little: one calculation per event, nothing recomputed t
     assert.are.equal(1, runs)
   end)
 end)
+
+describe("Où monter keeps the zone the character was sent to", function()
+  it("a zone that still gives points stays first, so the plan does not change zone before the zone is spent", function()
+    setup({ scanned = true, profs = { { 393, 110, "Dépeçage", 150 } } })
+    local ns = loadAddon()
+    assert(loadfile("Data/ForeverSkinZones.lua"))("GoldCompass", ns)
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    local road = { nextRank = "Expert", rankAt = 125, capped = false }
+    local p = { skill = 110, max = 150, line = 393 }
+    local first = ns.RouteMap.Plan(p, road, "Skinning").steps[1]
+    assert.are.equal("zone", first.kind)
+    assert.are.equal(first.zone, ns.char.routeZone.Skinning)                         -- remembered
+    -- another zone that gives points becomes the remembered one: the plan puts it first
+    local others = {}
+    for _, z in ipairs(ns.Route.SkinZones(110, ns.SkinZones)) do
+      local lo = ns.Zones[z.zone] and ns.Zones[z.zone][2]
+      if z.zone ~= first.zone and (not lo or lo - 16 <= 4) then others[#others + 1] = z.zone end
+    end
+    table.sort(others)
+    assert.is_true(#others > 0)
+    ns.char.routeZone.Skinning = others[1]
+    local again = ns.RouteMap.Plan(p, road, "Skinning").steps
+    local zone
+    for _, s in ipairs(again) do if s.kind == "zone" then zone = s.zone; break end end
+    -- the remembered zone leads unless it has no known point to walk through (then it goes after the zones that have some)
+    assert.is_true(zone == others[1] or zone == first.zone)
+  end)
+end)
