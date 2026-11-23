@@ -3292,6 +3292,9 @@ describe("Où monter walks through every known spawn point of the beasts (Data/F
     ns.SkinPoints = nil                                              -- no data file at all: still a plan, steps without points
     for _, s in ipairs(ns.RouteMap.Plan({ skill = 210, max = 225, line = 393 }, road, "Skinning").steps) do
       if s.kind == "zone" then assert.equals(0, #s.points) end
+    end
+  end)
+end)
 
 describe("Mining: the smelting roadmap (Fondre) next to the zones (Où monter)", function()
   local function lineTexts(ns)
@@ -3382,8 +3385,8 @@ describe("Mining: the smelting roadmap (Fondre) next to the zones (Où monter)",
   end)
 
   it("says there is nothing to smelt at this skill (the zones carry the gap) instead of leaving an empty block", function()
-    -- skill 139 with copper, bronze, silver and iron known: nothing to smelt until Smelt Gold (155)
-    local ns = start(139, 225, nil, nil, function(n) return known(n, { 2657, 2659, 2658, 3307 }) end)
+    -- skill 150 with copper, bronze, silver and iron known: nothing to smelt until Smelt Gold (155)
+    local ns = start(150, 225, nil, nil, function(n) return known(n, { 2657, 2659, 2658, 3307 }) end)
     local p = run(ns).profs[1]
     assert.are.equal(0, #p.road.steps)
     assert.is_not_nil(p.road.where)
