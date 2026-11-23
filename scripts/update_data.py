@@ -2,7 +2,7 @@
 """Daily data update for Gold Compass (driver of scripts/update-data.sh; stdlib only).
 
 Checks the upstream data sources once a day, rebuilds only the generated Data/ files that depend on a source that changed, runs the
-gates (luacheck, busted, audit score, personal-data scan, load test) in a temporary copy of the repo, and only when every gate passes
+gates (data consistency check, luacheck, busted, audit score, personal-data scan, load test) in a temporary copy of the repo, and only when every gate passes
 copies the result into the repo, commits, deploys to the gaming PC (scripts/deploy.sh) and pushes to origin. A failure leaves the repo
 exactly as it was (the build never touches it) and sends a notification.
 
@@ -408,6 +408,13 @@ def changed_files(tmp):
 
 def gates(tmp, baseline):
     changed = changed_files(tmp)
+    force_fail("check")                                                       # 0. consistency of the generated Data/ (tools/check-data.lua)
+    p = run(["lua", "tools/check-data.lua", "--baseline", REPO / "Data"], cwd=tmp, check=False)
+    for line in p.stdout.splitlines():
+        log.info("check-data: %s", line)
+    if p.returncode != 0:
+        problems = [l for l in p.stdout.splitlines() if l.startswith("ERROR")]
+        raise GateFailed(f"check-data found {len(problems)} new data problems, first: {problems[0] if problems else p.stderr.strip()[:200]}")
     force_fail("luacheck")                                                    # 1. luacheck, 0 warnings
     p = run(["luacheck", "--no-color", "."], cwd=tmp, check=False)
     if not re.search(r"Total: 0 warnings / 0 errors", p.stdout):
