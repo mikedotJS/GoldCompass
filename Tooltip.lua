@@ -23,17 +23,36 @@ local function ledgerLoaded()
   return isLoaded and isLoaded("ForeverLedger")
 end
 
+-- Which items of the bags are soulbound: the game's item count has no such flag, so the same scan as the Bags tab runs once after each change of
+-- the bags (BAG_UPDATE_DELAYED), not at each hover.
+local boundIds, boundStale = {}, true
+local function isBound(id)
+  if boundStale then
+    boundIds, boundStale = {}, false
+    for _, it in ipairs(ns.BagItems() or {}) do if it.bound then boundIds[it.id] = true end end
+  end
+  return boundIds[id]
+end
+
+-- What an item is used for (the price of every recipe that takes it) is the costly part of a tooltip: kept for a few seconds, so a redraw
+-- (Shift) or a second look at the same item costs nothing. The whole table is dropped when the window is over.
+local USES_TTL = 5
+local usesCache, usesFrom = {}, 0
+local function usesOf(id, ctx)
+  local now = time()
+  if now - usesFrom >= USES_TTL then usesCache, usesFrom = {}, now end
+  local uses = usesCache[id]
+  if not uses then uses = ns.Advice.Uses(id, ctx); usesCache[id] = uses end
+  return uses
+end
+
 local function addSection(tt, id)
   if InCombatLockdown() or not (ns.Prices.Installed() and ns.RecipeRows) then return end
   current = id
   local ctx = ns.Context()
-  -- the same bag scan as the Bags tab, so both agree on the count and on soulbound items
-  local bag
-  for _, it in ipairs(ns.BagItems() or {}) do
-    if it.id == id then bag = it end
-  end
-  local d = ns.Advice.Decide({ id = id, count = bag and bag.count or 1, gear = ns.IsGear(id), bound = bag and bag.bound }, ctx)
-  local uses = ns.Advice.Uses(id, ctx)
+  local owned = ctx.owned(id)   -- what the bags hold, from the game's own count
+  local d = ns.Advice.Decide({ id = id, count = owned > 0 and owned or 1, gear = ns.IsGear(id), bound = owned > 0 and isBound(id) or nil }, ctx)
+  local uses = usesOf(id, ctx)
   local showVerdict = not ledgerLoaded()
   if not showVerdict and uses.total == 0 then return end
 
@@ -94,7 +113,9 @@ ns.Log("hook", "MODIFIER_STATE_CHANGED listener registered (calls GameTooltip:Re
 local shift = CreateFrame("Frame")
 shift:RegisterEvent("MODIFIER_STATE_CHANGED")
 shift:RegisterEvent("SPELL_DATA_LOAD_RESULT")
+pcall(shift.RegisterEvent, shift, "BAG_UPDATE_DELAYED")
 shift:SetScript("OnEvent", function(_, event, spellID)
+  if event == "BAG_UPDATE_DELAYED" then boundStale = true; return end
   if InCombatLockdown() or not GameTooltip:IsShown() or not GameTooltip.RefreshData then return end
   if not GameTooltip.GetItem then return end
   local _, link = GameTooltip:GetItem()

@@ -16,6 +16,7 @@ local function proxy()
         return child
       end
       if k == "RegisterEvent" or k == "RegisterUnitEvent" then self.events = self.events or {}; self.events[a] = true end
+      if k == "UnregisterEvent" and self.events then self.events[a] = nil end
       if k == "SetText" then self.text = a end
       if k == "SetWidth" then self.width = a end
       if k == "Show" then self.shown = true end
@@ -182,6 +183,7 @@ local function loadAddon()
     assert(loadfile(f .. ".lua"))("GoldCompass", ns)
   end
   if _G.stubDB then ns.ForeverDB = _G.stubDB end
+  ns.FrameBudget = math.huge   -- the whole refresh in one call, whatever the machine's speed (the frame split has its own specs)
   -- The older Métier tests describe the bag filter, the learn lists and the gold figures, which now belong to "Gagner de l'or": unless a test
   -- asks for the roadmap with goal = "level", the tab runs in that mode.
   ns.RealGoal = ns.Goal
@@ -384,6 +386,36 @@ describe("review fixes (stubbed WoW API)", function()
     local inVendor = {}
     for _, e in ipairs(res.groups.vendor) do inVendor[e.item.id] = true end
     assert.is_true(inVendor[2449]) -- Earthroot, bound: vendor group in the Bags tab as well
+  end)
+
+  it("a tooltip scans the bags only for an item the bags hold, once per change of the bags, and keeps the recipe uses for a few seconds", function()
+    setup({ scanned = true, alchemy = true, bound = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {} }
+    local scans, uses, clock = 0, 0, 1000
+    local realScan, realUses = ns.BagItems, ns.Advice.Uses
+    ns.BagItems = function() scans = scans + 1; return realScan() end
+    ns.Advice.Uses = function(...) uses = uses + 1; return realUses(...) end
+    _G.time = function() return clock end
+    local function hover() GameTooltip.lines = {}; handlers.item(GameTooltip, { id = 2449 }) end
+    hover(); hover(); hover()
+    assert.are.equal(1, scans)                                                      -- one scan for three looks at a bag item
+    assert.are.equal(1, uses)                                                       -- and one price walk over its recipes
+    assert.matches("Vendre au marchand", table.concat(GameTooltip.lines, "\n"))     -- still the soulbound verdict
+    clock = clock + 6
+    hover()
+    assert.are.equal(2, uses)                                                       -- the uses expire
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.BAG_UPDATE_DELAYED and fr.events.MODIFIER_STATE_CHANGED then fr.scripts.OnEvent(fr, "BAG_UPDATE_DELAYED") end
+    end
+    hover()
+    assert.are.equal(2, scans)                                                      -- the bags changed: scanned again
+    _G.C_Item.GetItemCount = function() return 0 end                                -- an item the bags do not hold: no scan at all
+    local before = scans
+    handlers.item(GameTooltip, { id = 2449 })
+    assert.are.equal(before, scans)
+    _G.time = os.time
   end)
 
   it("shows the no-price verdict with the scan hint", function()
@@ -625,6 +657,46 @@ describe("fishing", function()
   end)
 end)
 
+describe("saved data kept small", function()
+  local function loaded(db)
+    setup({ scanned = true })
+    local ns = loadAddon()
+    _G.GoldCompassDB = db
+    for _, fr in ipairs(frames) do
+      if fr.events and fr.events.ADDON_LOADED then fr.scripts.OnEvent(fr, "ADDON_LOADED", "GoldCompass") end
+    end
+    return ns
+  end
+
+  it("forgets a vendor price not seen for 90 days, keeps the fresh ones, dates the undated ones from today", function()
+    local today = math.floor(os.time() / 86400)
+    local ns = loaded({ buy = { [1] = 10, [2] = 20, [3] = 30 }, buyDay = { [1] = today - 10, [2] = today - 91, [9] = today } })
+    assert.are.equal(10, ns.db.buy[1])
+    assert.is_nil(ns.db.buy[2])
+    assert.is_nil(ns.db.buyDay[2])
+    assert.are.equal(30, ns.db.buy[3])                                              -- an old save without days: counted from today
+    assert.are.equal(today, ns.db.buyDay[3])
+    assert.is_nil(ns.db.buyDay[9])                                                  -- a day without a price goes too
+  end)
+
+  it("a merchant window dates the prices it records", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    local buy, days = {}, {}
+    ns.Learned.RecordMerchant({ count = function() return 1 end, item = function() return 5, 300, 10 end }, buy, days)
+    assert.are.equal(30, buy[5])
+    assert.are.equal(math.floor(os.time() / 86400), days[5])
+  end)
+
+  it("drops a profession entry with an empty name at load, for every character", function()
+    local ns = loaded({ chars = { ["A-R"] = { learned = {}, profs = { [""] = { recipes = { [1] = {} } }, Cuisine = { recipes = {} } } },
+      ["B-R"] = { learned = {}, profs = { [""] = { recipes = {} } } } } })
+    assert.is_nil(ns.db.chars["A-R"].profs[""])
+    assert.is_not_nil(ns.db.chars["A-R"].profs.Cuisine)
+    assert.is_nil(ns.db.chars["B-R"].profs[""])
+  end)
+end)
+
 describe("diagnostic log", function()
   local function fire(event, ...)
     for _, fr in ipairs(frames) do
@@ -638,12 +710,22 @@ describe("diagnostic log", function()
     return ns
   end
 
-  it("keeps at most 300 entries and drops the oldest", function()
+  it("keeps the newest 300 entries: trimmed in one pass once 50 over, and down to 300 when the game saves", function()
     local ns = start()
     for i = 1, 350 do ns.Log("test", "entry " .. i) end
+    assert.is_true(#ns.db.log <= 350)
+    assert.are.equal("entry 350", ns.db.log[#ns.db.log].text)
+    assert.are.equal("entry 349", ns.db.log[#ns.db.log - 1].text)                   -- chronological
+    local removes, real = 0, table.remove
+    table.remove = function(...) removes = removes + 1; return real(...) end
+    for i = 351, 700 do ns.Log("test", "entry " .. i) end
+    table.remove = real
+    assert.are.equal(0, removes)                                                    -- nothing shifts at each entry
+    assert.is_true(#ns.db.log <= 350)
+    fire("PLAYER_LOGOUT")
     assert.are.equal(300, #ns.db.log)
-    assert.are.equal("entry 51", ns.db.log[1].text)
-    assert.are.equal("entry 350", ns.db.log[300].text)
+    assert.are.equal("entry 401", ns.db.log[1].text)
+    assert.are.equal("entry 700", ns.db.log[300].text)
     assert.matches("^%d%d:%d%d:%d%d$", ns.db.log[1].time)
   end)
 
@@ -1268,6 +1350,180 @@ describe("profession leveling tab", function()
     assert.are.equal(42, profs.Alchimie.recipes[2].greenAt) -- seen green earlier: lowered
     assert.is_nil(profs.Alchimie.recipes[1].greenAt)        -- orange: unknown
     assert.are.equal(2, reads)                -- schematics read once per recipe
+  end)
+end)
+
+describe("Learned.Capture stays quiet when the window did not change", function()
+  local function window(skill, ids, counter)
+    return {
+      GetBaseProfessionInfo = function() return { professionName = "Alchimie", skillLevel = skill(), maxSkillLevel = 75 } end,
+      GetAllRecipeIDs = function() return ids() end,
+      GetRecipeInfo = function(id) counter.n = counter.n + 1; return { learned = true, name = "Recette " .. id, relativeDifficulty = 1 } end,
+      GetRecipeSchematic = function() return { outputItemID = 30, quantityMin = 1, quantityMax = 1, reagentSlotSchematics = { { reagents = { { itemID = 10 } }, quantityRequired = 2 } } } end,
+    }
+  end
+
+  it("a quick read with the same skill and recipe count reads no recipe and reports no change", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    local skill, list, counter, clock = 50, { 1, 2 }, { n = 0 }, 5000
+    _G.time = function() return clock end
+    local T = window(function() return skill end, function() return list end, counter)
+    local learned, profs = {}, {}
+    local added, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.are.equal(2, added); assert.is_true(changed)                              -- the first reading is a full one
+    local updated, reads = profs.Alchimie.updated, counter.n
+    clock = clock + 5
+    added, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.are.equal(0, added); assert.is_false(changed)
+    assert.are.equal(reads, counter.n)                                              -- no GetRecipeInfo at all
+    assert.are.equal(updated, profs.Alchimie.updated)                               -- the plans are not told to start again
+    added, changed = ns.Learned.Capture(T, learned, profs)                          -- a full read finds nothing new either
+    assert.is_false(changed)
+    assert.are.equal(updated, profs.Alchimie.updated)
+    skill = 51                                                                      -- a skill-up: read again
+    _G.time = function() return clock + 1 end
+    _, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.is_true(changed)
+    assert.are.equal(51, profs.Alchimie.skill)
+    list = { 1, 2, 3 }                                                              -- a recipe more
+    added, changed = ns.Learned.Capture(T, learned, profs, true)
+    assert.are.equal(1, added); assert.is_true(changed)
+    clock = clock + 100                                                             -- a minute later the quick read looks again
+    _G.time = function() return clock end
+    local before = counter.n
+    ns.Learned.Capture(T, learned, profs, true)
+    assert.is_true(counter.n > before)
+    _G.time = os.time
+  end)
+
+  it("the window events: a refresh only when something changed, the opening always read in full, merchant bursts apart", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    local counter = { n = 0 }
+    _G.C_TradeSkillUI = window(function() return 50 end, function() return { 1, 2 } end, counter)
+    local onData = 0
+    ns.Window.OnData = function() onData = onData + 1 end
+    local function fire(event)
+      for _, fr in ipairs(frames) do
+        if fr.events and fr.events.TRADE_SKILL_SHOW and fr.scripts.OnEvent then fr.scripts.OnEvent(fr, event) end
+      end
+    end
+    local function drain() local t = timers; timers = {}; for _, fn in ipairs(t) do pcall(fn) end end
+    timers = {}
+    fire("TRADE_SKILL_SHOW"); drain()
+    assert.are.equal(1, onData)                                                     -- first reading: new
+    fire("TRADE_SKILL_LIST_UPDATE"); drain()
+    fire("TRADE_SKILL_LIST_UPDATE"); drain()
+    assert.are.equal(1, onData)                                                     -- the list refreshed, nothing changed: no redraw
+    local reads = counter.n
+    fire("TRADE_SKILL_SHOW"); drain()
+    assert.is_true(counter.n > reads)                                               -- opening the window reads every recipe again
+    assert.are.equal(1, onData)
+    _G.GetMerchantNumItems, _G.GetMerchantItemLink = function() return 0 end, function() end
+    fire("MERCHANT_UPDATE")                                                         -- a merchant burst does not swallow the window event
+    fire("TRADE_SKILL_LIST_UPDATE")
+    assert.are.equal(2, #timers)
+    _G.C_TradeSkillUI, _G.GetMerchantNumItems, _G.GetMerchantItemLink = nil, nil, nil
+  end)
+end)
+
+describe("BankEvents listens to the bags only while the bank is open", function()
+  local function bankFrame()
+    for _, fr in ipairs(frames) do if fr.events and fr.events.BANKFRAME_OPENED then return fr end end
+  end
+
+  it("registers the bag and bank slot events at the opening and drops them at the closing", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {}, bank = nil }
+    local fr = bankFrame()
+    for _, e in ipairs({ "BAG_UPDATE", "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED" }) do assert.is_nil(fr.events[e]) end
+    assert.is_true(fr.events.BANKFRAME_CLOSED)                                      -- the window events stay
+    fr.scripts.OnEvent(fr, "BANKFRAME_OPENED")
+    for _, e in ipairs({ "BAG_UPDATE", "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED" }) do assert.is_true(fr.events[e]) end
+    local before = #timers
+    fr.scripts.OnEvent(fr, "BAG_UPDATE")                                            -- a change while open is scanned (debounced)
+    assert.are.equal(before + 1, #timers)
+    fr.scripts.OnEvent(fr, "BANKFRAME_CLOSED")
+    for _, e in ipairs({ "BAG_UPDATE", "BAG_UPDATE_DELAYED", "PLAYERBANKSLOTS_CHANGED", "PLAYERBANKBAGSLOTS_CHANGED" }) do assert.is_nil(fr.events[e]) end
+  end)
+end)
+
+describe("the item-data listener of the row tooltips", function()
+  it("listens to GET_ITEM_INFO_RECEIVED only while a tooltip waits for an item", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    for _, k in ipairs({ "SetOwner", "ClearAllPoints", "SetPoint", "SetText", "Show", "Hide" }) do GameTooltip[k] = function() end end
+    local loading, shows = true, 0
+    local row = { tip = function() shows = shows + 1; return { title = "Peau", lines = {}, loading = loading, item = 123 } end }
+    local W = ns.Window
+    local function listening() return W.itemEvents and W.itemEvents.events and W.itemEvents.events.GET_ITEM_INFO_RECEIVED end
+    W.ShowTip(row)
+    assert.is_true(listening())
+    loading = false
+    W.itemEvents.scripts.OnEvent(W.itemEvents, "GET_ITEM_INFO_RECEIVED", 123)       -- the item arrived: redrawn, nothing left to wait for
+    assert.are.equal(2, shows)
+    assert.is_nil(listening())
+    loading = true
+    W.ShowTip(row)
+    assert.is_true(listening())
+    W.HideTip(row)                                                                  -- the mouse left
+    assert.is_nil(listening())
+  end)
+end)
+
+describe("RouteMap driver runs only where it has something to follow", function()
+  local function started(opts)
+    setup(opts or { scanned = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    ns.Window.OpenMap = function() end
+    local at = { GetXY = function() return 0.5, 0.5 end }
+    local reads = 0
+    _G.C_Map.GetPlayerMapPosition = function() reads = reads + 1; return at end
+    ns.RouteMap.Start({ zone = 1411, points = { { x = 10, y = 10 }, { x = 20, y = 20 } } })
+    local driver
+    for _, fr in ipairs(frames) do if fr.events and fr.events.ZONE_CHANGED_NEW_AREA then driver = fr end end
+    return ns, driver, function() return reads end, function(v) at = v end
+  end
+
+  it("is armed by the route, stopped when the player is elsewhere, started again by a zone change, ended by Clear", function()
+    local ns, driver, reads, setAt = started()
+    assert.is_function(driver.scripts.OnUpdate)
+    assert.is_true(driver.events.PLAYER_ENTERING_WORLD)
+    setAt(nil)                                                                      -- the player left the zone
+    ns.RouteMap.Tick()
+    assert.is_nil(driver.scripts.OnUpdate)                                          -- no more OnUpdate calls
+    driver.scripts.OnEvent(driver, "ZONE_CHANGED_NEW_AREA")
+    assert.is_nil(driver.scripts.OnUpdate)                                          -- a zone change that does not bring the player back
+    setAt({ GetXY = function() return 0.4, 0.4 end })
+    driver.scripts.OnEvent(driver, "ZONE_CHANGED_NEW_AREA")
+    assert.is_function(driver.scripts.OnUpdate)                                     -- back on the route's map
+    ns.RouteMap.Clear()
+    assert.is_nil(driver.scripts.OnUpdate)
+    assert.is_nil(driver.events.ZONE_CHANGED_NEW_AREA)
+    assert.is_nil(driver.events.PLAYER_ENTERING_WORLD)
+    assert.is_nil(ns.RouteMap.Active())
+    local before = reads()
+    driver.scripts.OnEvent(driver, "ZONE_CHANGED_NEW_AREA")                         -- an event arriving late changes nothing
+    assert.is_nil(driver.scripts.OnUpdate)
+    assert.are.equal(before, reads())
+  end)
+
+  it("a tick in combat reads nothing", function()
+    local ns, _, reads = started()
+    ns.RouteMap.Tick()
+    assert.is_true(reads() > 1)                                                     -- out of combat the tick reads the position
+    local before = reads()
+    _G.InCombatLockdown = function() return true end
+    ns.RouteMap.Tick()
+    assert.are.equal(before, reads())
+    _G.InCombatLockdown = function() return false end
   end)
 end)
 
@@ -3157,6 +3413,77 @@ describe("Refreshes cost little: one calculation per event, nothing recomputed t
     ns.ForgetProfessions()                                                          -- the refresh button
     ns.RunLeveling(function(r) again = r end)
     assert.are.equal(2, built)
+  end)
+
+  it("a refresh that used its frame budget goes on in the next frames, one stage per frame, and answers once", function()
+    local ns = start()
+    ns.ForgetProfessions()
+    ns.FrameBudget = 0
+    local answers, res = 0, nil
+    ns.RunLeveling(function(r) answers = answers + 1; res = r end)
+    assert.is_nil(res)                                                              -- nothing computed in the calling frame
+    local frames = 0
+    while not res and frames < 20 do frames = frames + 1; runTimers() end
+    assert.are.equal(1, answers)
+    assert.are.equal("ok", res.state)
+    assert.are.equal("plan", res.profs[1].status)
+    assert.is_not_nil(res.profs[1].road)
+    assert.is_true(frames >= 3)                                                     -- plan, places to learn, roadmap
+    local sync
+    ns.RunLeveling(function(r) sync = r end)                                        -- now cached: the answer is immediate
+    assert.are.equal(res.profs[1], sync.profs[1])
+  end)
+
+  it("the split refresh gives the same answer as the one-frame refresh", function()
+    local ns = start()
+    local whole
+    ns.ForgetProfessions()
+    ns.RunLeveling(function(r) whole = r end)
+    ns.ForgetProfessions()
+    ns.FrameBudget = 0
+    local split
+    ns.RunLeveling(function(r) split = r end)
+    local frames = 0
+    while not split and frames < 20 do frames = frames + 1; runTimers() end
+    local function steps(e) local out = {} for i, st in ipairs(e.road.steps) do out[i] = st.kind .. (st.rec and st.rec.id or "") end return table.concat(out, ",") end
+    assert.are.equal(steps(whole.profs[1]), steps(split.profs[1]))
+    assert.are.equal(whole.profs[1].plan.best.rec.id, split.profs[1].plan.best.rec.id)
+  end)
+
+  it("the place of a recipe is looked up once until the trainer records, the zone or the faction change", function()
+    local ns = start()                                                              -- the tab's own refresh already looked the places up
+    local looked, real = 0, ns.Where.Target
+    ns.Where.Target = function(...) looked = looked + 1; return real(...) end
+    local function refresh() ns.ForgetProfessions(); ns.RunLeveling(function() end) end
+    refresh()
+    assert.are.equal(0, looked)                                                     -- a refresh asked nobody again
+    local stamp, recorded = ns.TrainerLog.Stamp, 0
+    ns.TrainerLog.Stamp = function() return stamp() + recorded end
+    recorded = 1                                                                    -- a trainer window was recorded
+    refresh()
+    local first = looked
+    assert.is_true(first > 0)
+    refresh()
+    assert.are.equal(first, looked)
+    local zone = C_Map.GetBestMapForUnit
+    C_Map.GetBestMapForUnit = function() return 1412 end                            -- the character went to another zone
+    refresh()
+    assert.are.equal(2 * first, looked)
+    C_Map.GetBestMapForUnit = zone
+    ns.TrainerLog.Stamp = stamp
+  end)
+
+  it("a stage that fails ends the refresh with an error answer, never a silent hang", function()
+    local ns = start()
+    ns.ForgetProfessions()
+    ns.FrameBudget = 0
+    ns.BuildRoadmap = function() error("boom") end
+    local res
+    ns.RunLeveling(function(r) res = r end)
+    local frames = 0
+    while not res and frames < 20 do frames = frames + 1; runTimers() end
+    assert.are.equal("error", res.state)
+    assert.matches("boom", res.message)
   end)
 
   it("one bag event with the Métier tab and the shopping list on screen is one calculation, not two", function()
