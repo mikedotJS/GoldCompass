@@ -679,14 +679,17 @@ function W.ShowTip(row)
     if C_Item and C_Item.RequestLoadItemDataByID then pcall(C_Item.RequestLoadItemDataByID, tip.item) end
     if not W.itemEvents then
       W.itemEvents = CreateFrame("Frame")
-      W.itemEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")
       W.itemEvents:SetScript("OnEvent", function(_, _, id) if W.hover and W.hoverItem == id then W.ShowTip(W.hover) end end)
     end
+    W.itemEvents:RegisterEvent("GET_ITEM_INFO_RECEIVED")   -- listened to only while a tooltip waits for an item
+  elseif W.itemEvents then
+    W.itemEvents:UnregisterEvent("GET_ITEM_INFO_RECEIVED")
   end
 end
 function W.HideTip(row)
   if W.hover ~= row then return end
   W.hover, W.hoverItem = nil, nil
+  if W.itemEvents then W.itemEvents:UnregisterEvent("GET_ITEM_INFO_RECEIVED") end
   GameTooltip:Hide()
 end
 

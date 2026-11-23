@@ -336,11 +336,23 @@ local function yards(zone, ax, ay, bx, by)
   end
 end
 
--- Every half second: the next point is reached within ARRIVE yards, the one after takes over (waypoint and marker).
+-- The driver (an OnUpdate frame) runs only while the player is on the route's map: it stops when the route is cleared or the player leaves
+-- the zone, and starts again when a zone change brings the player back.
+local function disarm() if driver then driver:SetScript("OnUpdate", nil) end end
+local function arm()
+  acc = 0
+  driver:SetScript("OnUpdate", function(_, dt)
+    acc = acc + dt
+    if acc >= TICK then acc = 0; RM.Tick() end
+  end)
+end
+local ZONE_EVENTS = { "ZONE_CHANGED_NEW_AREA", "PLAYER_ENTERING_WORLD" }
+
+-- Every half second: the next point is reached within ARRIVE yards, the one after takes over (waypoint and marker). Nothing in combat.
 function RM.Tick()
-  if not route then return end
+  if not route or InCombatLockdown() then return end
   local px, py = playerPos(route.zone)
-  if not px then return end
+  if not px then return disarm() end   -- elsewhere: nothing to follow until a zone change brings the player back
   local pt = route.points[route.next]
   local d = yards(route.zone, px, py, pt.x, pt.y)
   if d and d <= ARRIVE then
@@ -356,7 +368,10 @@ function RM.Active() return route end
 function RM.Clear(say)
   if not route then return end
   route = nil
-  if driver then driver:SetScript("OnUpdate", nil) end
+  if driver then
+    disarm()
+    for _, e in ipairs(ZONE_EVENTS) do driver:UnregisterEvent(e) end
+  end
   hideAll()
   drawBar()
   clearWaypoint()
@@ -382,12 +397,12 @@ function RM.Start(step)
       if WorldMapFrame.HookScript then WorldMapFrame:HookScript("OnShow", RM.Draw) end
     end)
   end
-  driver = driver or CreateFrame("Frame")
-  acc = 0
-  driver:SetScript("OnUpdate", function(_, dt)
-    acc = acc + dt
-    if acc >= TICK then acc = 0; RM.Tick() end
-  end)
+  if not driver then
+    driver = CreateFrame("Frame")
+    driver:SetScript("OnEvent", function() if route then if playerPos(route.zone) then arm() else disarm() end end end)
+  end
+  for _, e in ipairs(ZONE_EVENTS) do pcall(driver.RegisterEvent, driver, e) end
+  arm()
   ns.Window.OpenMap(step.zone)
   RM.Draw()
   if C_Timer and C_Timer.After then C_Timer.After(0.2, RM.Draw) end   -- the map is laid out a moment after it opens

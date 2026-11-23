@@ -1396,6 +1396,80 @@ describe("BankEvents listens to the bags only while the bank is open", function(
   end)
 end)
 
+describe("the item-data listener of the row tooltips", function()
+  it("listens to GET_ITEM_INFO_RECEIVED only while a tooltip waits for an item", function()
+    setup({ scanned = true })
+    local ns = loadAddon()
+    for _, k in ipairs({ "SetOwner", "ClearAllPoints", "SetPoint", "SetText", "Show", "Hide" }) do GameTooltip[k] = function() end end
+    local loading, shows = true, 0
+    local row = { tip = function() shows = shows + 1; return { title = "Peau", lines = {}, loading = loading, item = 123 } end }
+    local W = ns.Window
+    local function listening() return W.itemEvents and W.itemEvents.events and W.itemEvents.events.GET_ITEM_INFO_RECEIVED end
+    W.ShowTip(row)
+    assert.is_true(listening())
+    loading = false
+    W.itemEvents.scripts.OnEvent(W.itemEvents, "GET_ITEM_INFO_RECEIVED", 123)       -- the item arrived: redrawn, nothing left to wait for
+    assert.are.equal(2, shows)
+    assert.is_nil(listening())
+    loading = true
+    W.ShowTip(row)
+    assert.is_true(listening())
+    W.HideTip(row)                                                                  -- the mouse left
+    assert.is_nil(listening())
+  end)
+end)
+
+describe("RouteMap driver runs only where it has something to follow", function()
+  local function started(opts)
+    setup(opts or { scanned = true })
+    local ns = loadAddon()
+    ns.db = { buy = {} }
+    ns.char = { learned = {}, profs = {} }
+    ns.Window.OpenMap = function() end
+    local at = { GetXY = function() return 0.5, 0.5 end }
+    local reads = 0
+    _G.C_Map.GetPlayerMapPosition = function() reads = reads + 1; return at end
+    ns.RouteMap.Start({ zone = 1411, points = { { x = 10, y = 10 }, { x = 20, y = 20 } } })
+    local driver
+    for _, fr in ipairs(frames) do if fr.events and fr.events.ZONE_CHANGED_NEW_AREA then driver = fr end end
+    return ns, driver, function() return reads end, function(v) at = v end
+  end
+
+  it("is armed by the route, stopped when the player is elsewhere, started again by a zone change, ended by Clear", function()
+    local ns, driver, reads, setAt = started()
+    assert.is_function(driver.scripts.OnUpdate)
+    assert.is_true(driver.events.PLAYER_ENTERING_WORLD)
+    setAt(nil)                                                                      -- the player left the zone
+    ns.RouteMap.Tick()
+    assert.is_nil(driver.scripts.OnUpdate)                                          -- no more OnUpdate calls
+    driver.scripts.OnEvent(driver, "ZONE_CHANGED_NEW_AREA")
+    assert.is_nil(driver.scripts.OnUpdate)                                          -- a zone change that does not bring the player back
+    setAt({ GetXY = function() return 0.4, 0.4 end })
+    driver.scripts.OnEvent(driver, "ZONE_CHANGED_NEW_AREA")
+    assert.is_function(driver.scripts.OnUpdate)                                     -- back on the route's map
+    ns.RouteMap.Clear()
+    assert.is_nil(driver.scripts.OnUpdate)
+    assert.is_nil(driver.events.ZONE_CHANGED_NEW_AREA)
+    assert.is_nil(driver.events.PLAYER_ENTERING_WORLD)
+    assert.is_nil(ns.RouteMap.Active())
+    local before = reads()
+    driver.scripts.OnEvent(driver, "ZONE_CHANGED_NEW_AREA")                         -- an event arriving late changes nothing
+    assert.is_nil(driver.scripts.OnUpdate)
+    assert.are.equal(before, reads())
+  end)
+
+  it("a tick in combat reads nothing", function()
+    local ns, _, reads = started()
+    ns.RouteMap.Tick()
+    assert.is_true(reads() > 1)                                                     -- out of combat the tick reads the position
+    local before = reads()
+    _G.InCombatLockdown = function() return true end
+    ns.RouteMap.Tick()
+    assert.are.equal(before, reads())
+    _G.InCombatLockdown = function() return false end
+  end)
+end)
+
 describe("Avec mon sac (bag filter on the leveling tab)", function()
   local function lineTexts(ns)
     local out = {}
