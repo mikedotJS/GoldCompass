@@ -613,13 +613,16 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
   for _, bucket in ipairs({ lr and lr.now or {}, lr and lr.soon or {} }) do
     for _, row in ipairs(bucket) do near[row.rec.id] = row end
   end
-  -- the gathering professions have nothing to craft the way the roadmap means it: only their rank is followed
+  -- the gathering professions have nothing to craft the way the roadmap means it: only their rank is followed. Mining also raises its
+  -- skill by smelting (the Smelting recipes are in its window): it is planned like a crafting profession, on top of its zones.
   local GATHERING = { [393] = true, [182] = true, [186] = true, [356] = true }
   local gathering = GATHERING[p.line] or false
+  local smelting = p.line == 186
+  local plain = gathering and not smelting
   local road
   for _ = 1, 6 do
-    road = L.Roadmap(gathering and { skill = data.skill, max = data.max, recipes = {} } or data, rctx,
-      { thresholds = thresholds, candidates = gathering and {} or (lr and lr.ahead or {}) })
+    road = L.Roadmap(plain and { skill = data.skill, max = data.max, recipes = {} } or data, rctx,
+      { thresholds = thresholds, candidates = plain and {} or (lr and lr.ahead or {}) })
     local again = false   -- a recipe the place lookup finds to be the other faction's leaves the plan, which is then made again
     for _, s in ipairs(road.steps) do
       if s.kind == "learn" then
@@ -632,6 +635,8 @@ function ns.BuildRoadmap(p, data, ctx, entry, thresholds)
     if not again then break end
   end
   road.gathering = gathering
+  -- "Fondre": "seen" = the Mining window listed recipes (a plan of smelting follows), "unseen" = it was never opened (zones only)
+  road.smelt = smelting and (next(data.recipes) and "seen" or "unseen") or nil
   -- a rank the character is too low to train (Classic's rule, Data/ForeverRanks.lua): the step says the level it asks for
   for _, s in ipairs(road.steps) do
     if s.kind == "rank" then

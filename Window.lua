@@ -1138,8 +1138,14 @@ local function addRoadmap(entries, p)
       target = rank and r.trainer or nil, recipe = rank, tip = rank and r.rankTip or nil }
     return
   end
-  if r.gathering and r.where then return addWhere(entries, p) end
-  if #r.steps > 0 then entries[#entries + 1] = { wide = true, left = "|cffffd100" .. S.road_title .. "|r" } end
+  if r.gathering and r.where then
+    addWhere(entries, p)
+    -- Mining: the smelting roadmap "Fondre" follows the zones (the ore of its steps is mined there); a window never opened asks to open it
+    if r.smelt == "unseen" then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_unseen:format(p.name) .. "|r" } end
+    if r.smelt ~= "seen" then return end
+  end
+  local smelt = r.smelt == "seen"
+  if #r.steps > 0 or smelt then entries[#entries + 1] = { wide = true, left = "|cffffd100" .. (smelt and S.smelt_title or S.road_title) .. "|r" } end
   local primary, rankShown = true, false
   for _, s in ipairs(r.steps) do
     if s.kind == "rank" then       -- a rank where the skill allows it: it lifts the cap. The trainer and the tooltip are the next rank's
@@ -1195,8 +1201,16 @@ local function addRoadmap(entries, p)
       end
     end
   end
-  if #r.steps == 0 and not r.gathering then
+  if #r.steps == 0 and smelt then   -- a gap between two smelting recipes: the skill comes from the ore of the zones above
+    entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.smelt_none .. "|r" }
+  elseif #r.steps == 0 and not r.gathering then
     entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_none .. "|r", target = r.trainer, recipe = rank, tip = rank and r.rankTip or nil }
+  end
+  -- the ore a smelting step still lacks is mined in the zones above
+  for _, s in ipairs(smelt and r.steps or {}) do
+    local short = false
+    for _, m in ipairs(s.missing or {}) do short = short or m.how == "ore" end
+    if short then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.smelt_ore .. "|r" }; break end
   end
   -- the next rank, while the skill does not allow it yet (unless a step above already says it)
   if rank and not r.rankNow and not rankShown then entries[#entries + 1] = { wide = true, left = "|cff9d9d9d" .. S.road_next:format(rank, r.rankAt) .. "|r", tip = r.rankTip } end
