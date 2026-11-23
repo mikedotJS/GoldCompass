@@ -2706,6 +2706,16 @@ describe("recipes follow the Forever client data where the other sources differ 
     for id, th in pairs(ns.ForeverFixes.th) do assert.is_true(th[1] <= th[2] and th[2] <= th[3], tostring(id)) end
   end)
 
+  it("Alchemy camp recipes show the colours the site saw in game, not ForeverDB's flat yellow = green = gray", function()
+    -- Mana Well and Fermenter: ForeverDB 20/20/20 and 140/140/140, wowforever.be (observed) 20/22/25 and 140/142/145
+    local alchemy, ns = crafts(171, true)
+    assert.are.same({ 20, 22, 25 }, { alchemy[1230564].y, alchemy[1230564].g, alchemy[1230564].gr })
+    assert.are.same({ 140, 142, 145 }, { alchemy[1263005].y, alchemy[1263005].g, alchemy[1263005].gr })
+    assert.is_nil(ns.ForeverFixes.th[1230564]); assert.is_nil(ns.ForeverFixes.th[1263005])
+    -- a flat ForeverDB value stays where the site has no real colours either (Alchemy Laboratory 300/300/300)
+    assert.are.same({ 300, 300, 300 }, { alchemy[1263078].y, alchemy[1263078].g, alchemy[1263078].gr })
+  end)
+
   it("a recipe that is not in the Forever client is never listed, the rank books stay", function()
     local n = 0
     for _, line in ipairs({ 171, 164, 333, 202, 165, 197, 185, 129, 356 }) do

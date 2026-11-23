@@ -32,7 +32,12 @@ for line, english in pairs(LINES) do
         local info, ft = F.recipeInfo[id] or {}, ns.ForeverTrainers[id]
         -- skill needed: the client's own value (r[13] == 1 marks ForeverDB's Classic trainer data, 0 = it has none)
         if r[13] ~= 1 and r[3] > 0 and c.learn ~= r[3] then learn[id] = r[3] end
-        if r[4] > 0 and r[5] > 0 and r[6] > 0 and (c.y ~= r[4] or c.g ~= r[5] or c.gr ~= r[6]) then th[id] = { r[4], r[5], r[6] } end
+        -- ForeverDB gives the camp station recipes (Mana Well, Fermenter, ...) a flat yellow = green = gray; the site saw their real
+        -- colours in game (20/22/25, 140/142/145): the observed, non-flat thresholds win over the flat ones
+        local st = ft and ft.th
+        local siteReal = st and st[2] > 0 and st[2] <= st[3] and st[3] <= st[4] and not (st[2] == st[3] and st[3] == st[4])
+        local flat = r[4] == r[5] and r[5] == r[6]
+        if r[4] > 0 and r[5] > 0 and r[6] > 0 and (c.y ~= r[4] or c.g ~= r[5] or c.gr ~= r[6]) and not (flat and siteReal) then th[id] = { r[4], r[5], r[6] } end
         if r[8] > 0 and c.oq ~= r[8] then oq[id] = r[8] end
         -- trainer fee: the two sources (the site's table, ForeverDB) are observations. 10 % apart with a round higher price: one
         -- observer had the Honored discount, the full price is the higher one. Any other gap (5 %, or far apart) has no such
