@@ -21,6 +21,7 @@ end
 --   zones  = ns.SkinZones,
 --   skill  = the player's skinning skill (nil = no skinning: nothing skinnable),
 --   price, vendor, ageKnown, constants: as in ZoneRank.Rank,
+--   skinLoot = ns.db.skinLoot (optional): a beast measured in game (SkinLoot.lua) uses its measured yield in place of Classic's,
 -- }
 -- Returns what ZoneRank.Rank returns. Each row also has noYield = true when a beast gives an item whose yield is unknown (counted 0).
 -- Beasts whose skill is above the player's are left out. A zone's value per skin is the spawn-weighted average over its beasts.
@@ -38,7 +39,7 @@ function SR.Rank(input)
       local w = weight(beast)
       if beast[5] <= skill and w > 0 then
         spots = spots + w
-        for _, it in ipairs(beast.items) do
+        for _, it in ipairs(input.skinLoot and ns.SkinLoot.Yields(input.skinLoot, beast) or beast.items) do
           local item, perSkin = it[1], it[2]
           if not perSkin then
             noYield = true

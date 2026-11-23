@@ -302,8 +302,9 @@ function W.RowTooltipLines(row)
     -- skinning: the beasts first (Forever-seen spawns or Classic), then what one skin is worth per item (Classic yield)
     out[#out + 1] = S.tt_beasts
     for _, b in ipairs(row.beasts) do
+      local measured = ns.SkinLoot and ns.SkinLoot.Measured(ns.db and ns.db.skinLoot, b[1])
       out[#out + 1] = S.tt_beast:format(b[2], b[3] == b[4] and tostring(b[3]) or (b[3] .. "-" .. b[4]),
-        (b.foreverSpots or 0) > 0 and "" or S.howto_classic)
+        ((b.foreverSpots or 0) > 0 and "" or S.howto_classic) .. (measured and S.tt_skin_measured:format(measured) or ""))
     end
     out[#out + 1] = S.tt_skin_items
     for _, d in ipairs(row.detail or {}) do out[#out + 1] = S.tt_skin_item:format(ns.ItemName(d.item), ns.Money(d.unit)) end

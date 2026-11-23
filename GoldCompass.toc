@@ -27,6 +27,7 @@ Data\ForeverSkinZones.lua
 Data\ForeverGather.lua
 ZoneRank.lua
 Route.lua
+SkinLoot.lua
 SkinRank.lua
 Advice.lua
 Here.lua

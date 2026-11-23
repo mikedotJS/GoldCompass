@@ -147,7 +147,7 @@ local function computeSkinning(price)
   local skill = ns.Skills()["Skinning"]
   local supposed = not skill and math.min(300, 5 * UnitLevel("player")) or nil
   local input = { zones = ns.SkinZones, skill = skill or supposed, price = price, vendor = ns.Prices.Vendor,
-    ageKnown = ns.Prices.HasAge(), constants = { maxRows = math.huge } }
+    ageKnown = ns.Prices.HasAge(), constants = { maxRows = math.huge }, skinLoot = ns.db and ns.db.skinLoot }
   local result = ns.SkinRank.Rank(input)
   if result.status == "no_nodes" then return { state = "noskin" } end
   if result.status == "no_scan" then return { state = "noscan" } end

@@ -253,10 +253,11 @@ do
   -- Carte tab, Skinning (Data/ForeverSkinZones.lua)
   S.noskin_t, S.noskin_p = "Aucune bête à dépecer", "Aucune bête connue que ton niveau de Dépeçage permet de dépecer."
   S.tt_beasts, S.tt_beast = "Bêtes à dépecer", "%s · niv. %s%s"
+  S.tt_skin_measured = " |cff9d9d9d(rendement mesuré en jeu sur %d dépeçages)|r"
   S.tt_skin_items, S.tt_skin_item = "Valeur par objet", "%s : ~%s l'unité"
   S.tt_skin_noyield = "Certains cuirs n'ont pas de rendement connu : comptés 0."
-  S.footer_skin = "~ estimation : 60 bêtes dépecées par heure, rendement de Classic, taxe HV de 5 %. Calculée d'après ton dernier scan, pas une garantie."
-  S.tt_skin_assume = "Hypothèses : 60 bêtes dépecées par heure, rendement de Classic (aucun chiffre Forever), taxe HV de 5 %."
+  S.footer_skin = "~ estimation : 60 bêtes dépecées par heure, rendement de Classic (sauf bêtes mesurées en jeu), taxe HV de 5 %. Calculée d'après ton dernier scan, pas une garantie."
+  S.tt_skin_assume = "Hypothèses : 60 bêtes dépecées par heure, rendement de Classic (aucun chiffre Forever) sauf bêtes mesurées en jeu, taxe HV de 5 %."
 end
 -- "Où monter" and "Itinéraire" (Route.lua, RouteMap.lua): the gathering professions of the Métier tab, and the loop drawn on the world map.
 for k, v in pairs({

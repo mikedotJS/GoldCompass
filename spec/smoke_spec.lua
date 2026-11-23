@@ -909,6 +909,13 @@ describe("window layout and drawing", function()
     assert.matches("Item2770 : ~", tip)
     assert.matches("prix de 1 j", tip)
     assert.matches("60 points de récolte par heure, 2 objets chacun, taxe HV de 5 %%.", tip)
+    -- skinning: a beast measured in game (20 skins or more) says so, a beast with fewer skins does not
+    assert(loadfile("SkinLoot.lua"))("GoldCompass", ns)
+    ns.db = { skinLoot = { [1] = { n = 25, d = 1, i = {} }, [2] = { n = 19, d = 1, i = {} } } }
+    local beasts = { { 1, "Boar", 5, 6, 1, items = {} }, { 2, "Bear", 5, 5, 1, items = {} } }
+    local lines = ns.Window.RowTooltipLines({ zone = 1411, name = "Durotar", spots = 100, beasts = beasts, detail = {} })
+    assert.matches("Boar · niv%. 5%-6.*mesuré en jeu sur 25 dépeçages", lines[4])
+    assert.is_nil(lines[5]:find("mesuré", 1, true))
   end)
 end)
 
