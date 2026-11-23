@@ -49,7 +49,7 @@ end
 -- of every recipe when the profession's skill, maximum and recipe count are those of the last reading less than QUICK_TTL seconds ago.
 -- `T` is C_TradeSkillUI (a parameter so it can be tested).
 local lastRead = {}   -- [profession name] = { sig, at, entry } of the last full reading
-local QUICK_TTL = 60
+local QUICK_TTL = 15   -- seconds: the count of recipe ids does not change when a recipe is learned, so a quick skip must not last long
 function L.Capture(T, learned, profs, quick)
   if not (T and T.GetAllRecipeIDs and T.GetRecipeInfo) then return 0 end
   -- skip other players' linked windows, guild windows and NPC crafting
